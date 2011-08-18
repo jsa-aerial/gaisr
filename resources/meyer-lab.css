@@ -1,0 +1,517 @@
+/* Basic element styles */
+
+body {
+  background-color: #E8E9FF; /* #CDD7FF;//#E5ECF9;//#CECECE; */
+  color: #000;
+  font: small Verdana, Arial, sans-serif;
+}
+
+
+h1 {
+  font-family:"Helvetica Neue", Arial, Helvetica, sans-serif;
+  font-weight:normal;
+  font-size: 2.5em;
+  line-height: 1;
+  margin-bottom:0.5em;
+}
+
+.h1header {
+  margin:0;padding:0;border:0;
+  color: #FFF;
+}
+
+
+.container {width: 69em;margin:0 auto;}
+.span-24 {width:67em; margin:0;}
+.div-span-24 {width:67em;}
+div.span-24 {float:left;margin-right: 5px;}
+.last, div.last {margin-right:0;}
+
+
+.alt {
+  color: #669;
+  font-family: "Warnock Pro", "Goudy Old Style","Palatino","Book Antiqua", Georgia, serif;
+  font-style: italic;
+  font-weight: normal;
+}
+
+
+
+
+.userBox {
+    display: inline;
+    float: right;
+    border: none;
+}
+
+.wloud {color: maroon;}
+
+#header {
+    background-image: url(S23.png);
+    height: 8em;
+    float: left;
+    width: 67em;
+    border: 1px solid #d2d7e4;
+}
+
+
+
+
+/*
+--  Navigation menu bar styling.
+*/
+
+#navigation {
+    font-size: 90%;
+    float: right;
+}
+
+#navigation ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    padding-top: 3em;
+}
+
+#navigation li {
+    display: inline;
+    border: none;
+}
+
+#navigation li:hover, #navigation li#selected {
+    color: maroon;
+    background-color: #E8E9FF;
+}
+
+.tab-active {
+    padding: 0.4em 1.5em 0.4em 1.5em;
+    color: maroon;
+    font-weight: bold;
+    background-color: #E8E9FF;
+    text-decoration: none;
+    border: none;
+}
+
+.tab-inactive {
+    padding: 0.4em 1.5em 0.4em 1.5em;
+    color: maroon;
+    font-weight: normal;
+    background-color: #ccc;
+    text-decoration: none;
+    border: none;
+}
+
+
+
+
+/* Chat/IM block */
+
+.im {
+  background-color: #E8E9FF;
+  height: 9em;
+  overflow: auto;
+  border: 1px solid #667;
+  margin: 0px;
+}
+
+.im p {
+  margin: 0;
+}
+
+.im-alice {
+  color: maroon;
+  font-size: 0.75em;
+  font-weight: bold;
+}
+
+
+/* Form styles... */
+
+ #searchForm fieldset {
+  background: #eee;
+  border: 1px solid #667;
+  margin: 0px;
+  width: 98%;
+}
+
+.fieldL {
+    position: relative;
+    display: inline;
+    float: left;
+    width: 100%;
+    margin-right: 2em;
+    border: 1px solid #667;
+}
+
+#query {
+    /* Totally unclear why our font is NOT inherited by text fields!! */
+    font: small Verdana, Arial, sans-serif;
+    height: 1.5em;
+    width: 95%;
+    padding: 0 0.2ex;
+}
+#query:active, #query:focus {
+  background: #fff;
+  border: 2px solid black;
+}
+
+/* This idiocy is needed in order to make the damn form still submit
+  when you hit enter in the query field.  This is because the form now
+  has a second text field (the user field).  It is applied to a
+  "hidden" submit button
+*/
+.input-hidden {
+    border: none !important;
+    height : 0px !important;
+    padding : 0px !important;
+    width : 0px !important;
+}
+
+
+
+/* Results style and sizing for scrolling. */
+
+.result-head {
+  color: #669;
+  font-weight: normal;
+  border: 1px solid #667;
+  margin: 7px 0 3px 0;
+  padding: 3px 0 3px 0;
+}
+
+.result-bar {
+  color: #669;
+  font-weight: normal;
+  border-bottom: none;
+  margin: 0;
+  padding: 3px 0 3px 0;
+}
+
+#results {
+  background-color: #E8E9FF; /* #eee; */
+  height: 37em;
+  overflow: auto;
+  border: 1px solid #FFF;
+  border-width: 2px 0;
+}
+
+.actionForm {
+  float: right;
+  font-weight: bold;
+}
+
+#view-div {
+  float: right;
+  font-weight: bold;
+}
+
+
+.marker {
+  display: inline;
+  float: left;
+  color: maroon;
+  font-weight: bold;
+}
+
+.marker-box {
+  display: inline;
+  float: left;
+}
+
+.item-box {
+  display: inline;
+  float: left;
+}
+
+
+/* Accordion styles (static) */
+
+.accordion {
+  color: #000000;
+}
+
+ul.accordion {
+  background-color: #CECECE;
+  border: 1px solid #FFF;
+  border-top: none;
+  display: block;
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  position: relative; /* Forces the bottom border of the h2 to display in IE */
+}
+
+ul.accordion li {
+  clear: left;
+  background-color: #E8E9FF;
+}
+
+ul.accordion h2 {
+  /* background-color: #bbb; */
+  border: 1px solid #667; /* #FFF; */
+  border-width: 1px 0 0 0;
+  font-size: 1.0em;
+  margin: 0 0 -1px;
+}
+
+ul.accordion h2 a:link, ul.accordion h2 a:visited {
+  color: #769;
+  display: block;
+  margin: 1px;
+  padding: 0 0.667em;
+  text-decoration: none;
+}
+
+
+/* Accordion styles (dynamic) */
+
+.accordionContent {
+  overflow: hidden;
+  padding: 0 1em 0 0; /* T R B L */
+}
+
+li.collapsed .accordionContent {
+  position: absolute;
+  left: -9999px;
+}
+
+/* Fixes Safari bug that prevents expanded content from displaying.
+   See http://betech.virginia.edu/bugs/safari-stickyposition.html */
+li.collapsed .accordionContent p {
+  position: relative;
+}
+
+ul.accordion li.collapsed h2 a:hover,
+ul.accordion li.collapsed h2 a:focus,
+ul.accordion li.collapsed h2 a:active,
+ul.accordion li.expanded h2 a:link,
+ul.accordion li.expanded h2 a:visited {
+  background-color: #ddd; /* #ccc; */
+}
+
+/* Accordion content styles (static) */
+
+ul.accordion h3 {
+  font-size: 1.1em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+ul.accordion p {
+  display: inline;
+  float: left;
+  clear: left;
+  width: 50%;
+  margin: 0.5em 1em 0 0;  /* T R B L */
+}
+
+ul.accordion div.links {
+  margin: 1em 0 1em 0;
+}
+
+div.links ul {
+  list-style: none;
+  margin: 0.5em 0 0 0;
+  padding: 0;
+}
+
+div.links li {
+  clear: none;
+  display: inline;
+  margin: 0 0.5em 0 0;
+}
+
+
+
+
+/* Features window basics are like main body's */
+
+.features {
+  background-color: #E8E9FF; /* #CDD7FF;//#E5ECF9;//#CECECE; */
+  color: #000;
+  font: small Verdana, Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+#fresults {
+  background-color: #E8E9FF; /* #eee; */
+  height: 51em;
+  overflow: auto;
+  border: 1px solid #FFF;
+  border-width: 2px 0;
+}
+
+
+/* Locations */
+
+ul.accordion div.locs {
+  display: inline;
+  float: left;
+  width: 49%;
+  margin: 1em 0 0.5em 0;
+}
+
+div.locs ul {
+  list-style: none;
+  margin: 0.5em 0 0 0;
+  padding: 0;
+}
+
+div.locs li {
+  clear: none;
+  display: inline;
+  margin: 0 0 0 0;
+}
+
+
+/* Qualifiers */
+
+ul.accordion div.nvs {
+  display: inline;
+  float: left;
+  width: 49%;
+  margin:  1em 0 0.5em 0;
+  padding: 0 0 0 0;
+}
+
+div.nvs ul {
+  list-style: none;
+  margin: 0.5em 0 0 0;
+  padding: 0;
+}
+
+div.nvs li {
+  clear: none;
+  display: inline;
+  margin: 0 0 0 0;
+}
+
+
+/* Scribl styling */
+
+#scriblCtrl {
+    margin: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: 1px solid #667;
+}
+
+.scrib-item-box {
+  display: inline;
+  float: left;
+}
+
+#genomeNamesDiv {
+    border: 2px solid #667;
+    display: center;
+}    
+
+.scrib-box {
+  display: inline;
+  float: right;
+  margin-right: 3em;
+}
+
+
+.canvas {
+  margin: 1em 0.2em 0 0.2em;
+}
+
+#chartUL {
+    margin: 0 0.2em 0 0.2em;
+    padding: 0;
+    list-style: none;
+    height: 790px;
+    overflow: auto;
+}
+
+#chartUL li {
+    margin: 0;
+    padding: 0;
+}
+
+
+
+
+/* Action window styling stuff */
+
+
+.feature-head {
+  color: #669;
+  font-weight: normal;
+  margin: 0 0 3px 0;
+  padding: 3px 0 3px 0;
+}
+
+
+.action-head {
+  color: #669;
+  font-weight: normal;
+  margin: 3px 0 3px 0;
+  padding: 3px 0 3px 0;
+}
+
+.action {
+    background-color: #E8E9FF; /* #CDD7FF;//#E5ECF9;//#CECECE; */
+    color: #000;
+    font: small Verdana, Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+#actionOptions {
+    display: inline;
+    float: left;
+    margin-top: 2em;
+    margin-left: 1em;
+}
+
+.options {
+    display: inline;
+    float: left;
+    margin-right: 1em;
+    /* border: 1px solid #667; */
+}
+
+#selUL {
+    background-color: #E8E9FF; /* #eee; */
+    height: 23em;
+    width: 17em;
+    overflow: auto;
+    padding-left: 1.1em;
+    margin-left: 0.5em;
+    border: 1px solid #FFF;
+    border-width: 2px 0;
+}
+
+#selUL li {
+    margin: 0.1em 0 0 0;
+    padding: 0;
+}
+
+#selUL li p {
+    font-size: 0.75em;
+    margin: 0;
+    padding: 0;
+}
+
+
+.suboptions {
+    display: inline;
+    margin: 0 0.3em 0 0.3em;
+}
+
+#optUL {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#optUL li {
+    display: inline;
+    margin-left: 1em;
+}
+

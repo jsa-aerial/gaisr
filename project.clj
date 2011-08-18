@@ -1,5 +1,5 @@
-(defproject netty-test "1.0.0-SNAPSHOT"
-  :description "Testing Netty and ring, etc for meyer-lab web app"
+(defproject gaisr "1.0.0-SNAPSHOT"
+  :description "Genomic Analysis Illuminating Stuctured RNA pipeline, scoring, curation system for ncRNA"
   :dependencies [[org.clojure/clojure "1.2.1"]
                  [org.clojure/clojure-contrib "1.2.0"]
                  [clojure-csv "1.3.0"]

@@ -1,0 +1,73 @@
+
+edu.bc.bio.seq-utils> (monte-carlo-subseq-freq :size 10000 :sseq "TATAAT" :seed :yes :sample-size 1000)
+[3436 9995000 3.437718859429715E-4 {9 10, 8 9, 1 2, 7 8, 6 7, 5 6, 2 3, 4 5, 3 4}]
+edu.bc.bio.seq-utils> (monte-carlo-subseq-freq :size 10000 :sseq "TATAAT" :seed :yes :sample-size 10000)
+[34435 99950000 3.445222611305653E-4 {1 2, 2 3, 3 4, 4 5, 5 6, 6 7, 7 8, 8 9, 9 10, 10 11, 11 12, 13 14}]
+
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 25000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 34976.896262 msecs"
+[7138 24995000 2.855771154230846E-4 {1 2, 2 24, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 117, 13 70, 14 105, 15 16, 16 34}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 27000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 38308.95003 msecs"
+[7687 26995000 2.847564363771069E-4 {2 15, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 104, 13 112, 14 105, 15 80, 16 17, 17 18, 18 19}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 38993.033582 msecs"
+[7967 27995000 2.845865333095196E-4 {1 4, 2 12, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 75, 15 64, 16 51, 17 54, 18 19}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 29000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 41373.852924 msecs"
+[8249 28995000 2.844973271253664E-4 {2 18, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 105, 15 128, 16 68, 17 36, 19 20, 21 22}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 38439.050153 msecs"
+[7845 27995000 2.802286122521879E-4 {2 15, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 117, 13 84, 14 120, 15 64, 16 17, 17 18, 19 20}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 38824.981472 msecs"
+[7857 27995000 2.806572602250402E-4 {2 12, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 126, 14 105, 15 32, 16 51, 17 18, 18 19}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28500 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 39320.055378 msecs"
+[7834 28495000 2.749254255132479E-4 {1 2, 2 15, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 98, 14 105, 15 32, 16 85, 17 18, 18 38}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28500 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 39613.261106 msecs"
+[8025 28495000 2.816283558519038E-4 {2 18, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 126, 14 135, 15 128, 16 119, 17 36, 18 38}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28700 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 40145.791793 msecs"
+[7888 28695000 2.748910960097578E-4 {1 4, 2 21, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 98, 14 105, 15 64, 16 34}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28700 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 39772.19797 msecs"
+[8023 28695000 2.795957483882209E-4 {1 4, 2 9, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 120, 15 64, 16 102, 17 72, 18 19}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28900 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 39703.343783 msecs"
+[8016 28895000 2.774182384495587E-4 {1 2, 2 15, 3 32, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 112, 14 135, 15 96, 16 34, 17 36, 21 22}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 39675.48152 msecs"
+[7964 28795000 2.765757944087515E-4 {2 18, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 126, 14 60, 15 96, 16 85, 17 18, 18 38, 20 21}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28700 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 40336.683475 msecs"
+[7853 28695000 2.736713713190451E-4 {2 6, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 75, 15 48, 16 17, 17 18}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 40109.827513 msecs"
+[7993 28795000 2.775829137002952E-4 {1 4, 2 12, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 135, 15 80, 16 34, 17 18, 18 38, 19 20, 20 21}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 39830.320408 msecs"
+[8147 28795000 2.829310644209064E-4 {1 2, 2 12, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 90, 15 80, 16 51, 17 36}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000 :par 5))
+"Elapsed time: 54807.977577 msecs"
+[8061 28795000 2.799444347977079E-4 {1 2, 2 6, 3 20, 4 25, 5 30, 6 35, 7 40, 8 45, 9 50, 10 55, 11 60, 12 65, 13 70, 14 75, 15 48, 16 17}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000 :par 12))
+"Elapsed time: 40505.770841 msecs"
+[7906 28795000 2.745615558256642E-4 {1 2, 2 18, 3 36, 4 60, 5 72, 6 84, 7 96, 8 108, 9 120, 10 132, 11 144, 12 156, 13 168, 14 135, 15 80, 16 68, 17 36}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28900 :sseq "TATAAT" :seed :yes :sample-size 1000 :par 10))
+"Elapsed time: 40702.069843 msecs"
+[8025 28895000 2.777297110226683E-4 {2 15, 3 36, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 112, 14 90, 15 64, 16 51, 17 18, 18 19}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 30000 :sseq "TATAAT" :seed :yes :sample-size 1000 :par 10))
+"Elapsed time: 43288.005801 msecs"
+[8279 29995000 2.760126687781297E-4 {2 6, 3 40, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 120, 15 112, 16 68, 18 19}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 30000 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 41193.343223 msecs"
+[8363 29995000 2.788131355225871E-4 {2 9, 3 28, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 105, 15 112, 16 51, 17 36, 18 38, 20 21}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000 :par 12))
+"Elapsed time: 40206.374415 msecs"
+[7815 28795000 2.71401284945303E-4 {2 21, 3 36, 4 60, 5 72, 6 84, 7 96, 8 108, 9 120, 10 132, 11 144, 12 156, 13 140, 14 120, 15 80, 16 17, 17 54, 20 42}]
+edu.bc.bio.seq-utils> (time (monte-carlo-subseq-freq :size 28800 :sseq "TATAAT" :seed :yes :sample-size 1000))
+"Elapsed time: 40536.549906 msecs"
+[8153 28795000 2.831394339295016E-4 {1 4, 2 6, 3 32, 4 50, 5 60, 6 70, 7 80, 8 90, 9 100, 10 110, 11 120, 12 130, 13 140, 14 120, 15 128, 16 51, 17 18, 19 20}]
+edu.bc.bio.seq-utils> 

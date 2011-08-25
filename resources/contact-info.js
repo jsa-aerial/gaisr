@@ -48,7 +48,7 @@ var Templates = {
         '<h3>Links</h3>' +
         '<ul>' +
            '<li><a href="#" onclick="return createScriblGBWindow(\'#{name}\', \'#{name}\', #{bioentry_id}, #{gbid})">Scribl Features</a></li>' +
-           '<li><a href="#" onclick="return createFeatureGBWindow(\'#{name}\', \'#{name}\', #{bioentry_id})">List Features</a></li>' +
+           '<li><a href="#" onclick="return createFeatureGBWindow(\'#{name}\', \'#{name}\', #{bioentry_id}, #{gbid})">List Features</a></li>' +
            '<li><a href="http://www.ncbi.nlm.nih.gov/nuccore/#{name}" onclick="return GB_showCenter(\'#{name}\', this.href, 700, 800)">NCBI</a></li>' +
            '<li><a href="http://www.ebi.ac.uk/genomes/bacteria.html" onclick="return GB_showCenter(\'#{name}\', this.href, 700, 800)">EMBL</a></li>' +
         '</ul>' +
@@ -283,11 +283,16 @@ function makeQuery (form, e) {
 function createFeatureElement(item) {
     var elt = $(document.createElement('li'));
     elt.update(Templates['feature'].evaluate(item));
+    //console.log("createFeatureElement, item = " + item + ", elt = " + elt);
     return elt;
 }
 
 
+var itemDbg = "NA";
+
 function addLocsNVS (item) {
+    //console.log("Start addLocsNVS");
+    itemDbg = item;
     var sfid = item.sfid;
     var sftype = item.sftype;
     var locs = item.locs;
@@ -307,15 +312,19 @@ function addLocsNVS (item) {
         elt.update(Templates['nv'].evaluate(x));
         nvs_ul.appendChild(elt);
     });
+    //console.log("***DONE");
 }
 
 
 function processFeatures (request) {
-    //console.log("Start Process Features");
+    //console.log("Start processFeatures");
+    reqJson = request;
     var size = {count: 0};
     var items = request.responseJSON;
+    var gbid = items[0];
     var fresults = $('fresults');
 
+    items = items.slice(1);
     size.count = items.length;
     $('fcount').update(Templates['count'].evaluate(size));
 
@@ -344,12 +353,12 @@ function listGBox (title, w, h) {
 }
 
 
-function createFeatureGBWindow (title, fname, fid) {
+function createFeatureGBWindow (title, fname, fid, gbid) {
     listGBox(title, 800, 700);
     var launchAjax = function () {
         new Ajax.Request("/mlab/features", {
             method: 'get',
-            parameters: {id: fid, name: fname},
+            parameters: {id: fid, name: fname, gbid: gbid},
             onSuccess: function (request) {
                 //processFoo(request)
                 processFeatures(request);
@@ -853,9 +862,17 @@ function dbSaveNames () {
 }
 
 
+
+var imgPNGs = undefined;
+
 function genGenomePNG () {
-    console.log("genGenomePage ...");
-    //var png = $('NC_005966').toDataURL('image/png')
+    console.log("genGenomePNG ...");
+    var entries = gatherChecked('.scrib-item-box');
+    entries = entries.map(function(e) {
+            var name = e.slice(0, e.search("Scrib"));
+            return $(name).toDataURL('image/png');
+        });
+    imgPNGs = entries;
 }
 
 

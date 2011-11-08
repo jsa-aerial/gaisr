@@ -1,5 +1,21 @@
 
-(in-ns 'edu.bc.bio.crutch-csv)
+(in-ns 'edu.bc.bio.R-be)
+
+(def jdkbin (fs/listdir "/opt/Java/java/bin/"))
+(def altbin (fs/listdir "/etc/alternatives/"))
+
+(io/with-out-writer (fs/fullpath "~/fix-java" )
+  (println "#!/bin/tcsh")
+  (println)
+  (doseq [x (map #(str "rm -f " %)
+                 (sort (set/intersection (set jdkbin) (set altbin))))]
+    (println x))
+  (doseq [x (let [base "/opt/Java/java/bin/"]
+              (map #(str "ln -s " base % " " %)
+                   (sort (set/intersection (set jdkbin) (set altbin)))))]
+    (println x)))
+
+
 
 (def *jsa* nil)
 
@@ -8,6 +24,19 @@
     (sql/with-connection mysql-ds
       (sql/with-query-results qresults [stmt]
         (doall qresults)))))
+
+
+
+
+(doseq [i (range 1 133)]
+  (let [stmt (str "select t.name,sfqv.* from term as t, seqfeature_qualifier_value as sfqv where t.term_id=sfqv.term_id and sfqv.term_id=" i " limit 10;")]
+    (sql/with-connection mysql-ds
+      (sql/with-query-results qresults [stmt]
+        (println "\n" stmt ":")
+        (doseq [m (doall qresults)]
+          (println i (m :name) "==>" (m :seqfeature_id) "," (m :value)))))))
+
+
 
 (first *jsa*)
 (count *jsa*)

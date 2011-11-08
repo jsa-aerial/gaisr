@@ -1,6 +1,7 @@
 (ns edu.bc.fs
   ^{:doc "File system utilities in Clojure"
     :author "Miki Tebeka <miki.tebeka@gmail.com>"}
+  (:refer-clojure :exclude [empty?])
   (:require [clojure.contrib.io :as io]
             [clojure.contrib.string :as str]
             [clojure.zip :as zip])
@@ -49,10 +50,38 @@
 
 
 
-(defn listdir
-  "List files under path."
+(defn join
+  "Join parts of path.\n\t(join [\"a\" \"b\"]) -> \"a/b\""
+  [& parts]
+  (apply str (interpose separator parts)))
+
+(defn split
+  "Split path to componenets.\n\t(split \"a/b/c\") -> (\"a\" \"b\" \"c\")"
   [path]
-  (seq (.list (io/file path))))
+  (into [] (.split path separator)))
+
+(defn rename
+  "Rename old-path to new-path."
+  [old-path new-path]
+  (.renameTo (io/file old-path) (io/file new-path)))
+
+
+
+
+(defn exists?
+  "Return true if path exists."
+  [path]
+  (.exists (io/file path)))
+
+(defn directory?
+  "Return true if path is a directory."
+  [path]
+  (.isDirectory (io/file path)))
+
+(defn file?
+  "Return true if path is a file."
+  [path]
+  (.isFile (io/file path)))
 
 (defn executable?
   "Return true if path is executable."
@@ -69,15 +98,15 @@
   [path]
   (.canWrite (io/file path)))
 
+
+
+
+;;; From clj-file-utils
 (defn delete
   "Delete path."
   [path]
   (.delete (io/file path)))
 
-
-
-
-;;; From clj-file-utils
 (defn rm
   "Remove a file. Will throw an exception if the file cannot be deleted."
   [file]
@@ -102,11 +131,6 @@ if it is not or if the file cannot be deleted."
 
 
 
-(defn exists?
-  "Return true if path exists."
-  [path]
-  (.exists (io/file path)))
-
 (defn abspath
   "Return absolute path."
   [path]
@@ -130,15 +154,15 @@ if it is not or if the file cannot be deleted."
   [path]
   (.getParent (io/file path)))
 
-(defn directory?
-  "Return true if path is a directory."
-  [path]
-  (.isDirectory (io/file path)))
+(defn replace-type
+  "Replace the file extension type of FILESPEC to be EXT"
+  [filespec ext]
+  (let [dir (dirname filespec)
+        fname (str/replace-re #"\..*$" ext (basename filespec))]
+    (if dir (str dir separator fname) fname)))
 
-(defn file?
-  "Return true if path is a file."
-  [path]
-  (.isFile (io/file path)))
+
+
 
 (defn mtime
   "Return file modification time."
@@ -150,6 +174,19 @@ if it is not or if the file cannot be deleted."
   [path]
   (.length (io/file path)))
 
+
+
+
+(defn listdir
+  "List files under path."
+  [path]
+  (seq (.list (io/file path))))
+
+(defn directory-files [directory file-type]
+  (let [pat (re-pattern (str file-type "$"))]
+    (map #(join directory %)
+         (filter #(re-find pat %) (listdir directory)))))
+
 (defn mkdir
   "Create a directory."
   [path]
@@ -160,28 +197,6 @@ if it is not or if the file cannot be deleted."
   [path]
   (.mkdirs (io/file path)))
 
-(defn join
-  "Join parts of path.\n\t(join [\"a\" \"b\"]) -> \"a/b\""
-  [& parts]
-  (apply str (interpose separator parts)))
-
-(defn split
-  "Split path to componenets.\n\t(split \"a/b/c\") -> (\"a\" \"b\" \"c\")"
-  [path]
-  (into [] (.split path separator)))
-
-(defn replace-type
-  "Replace the file extension type of FILESPEC to be EXT"
-  [filespec ext]
-  (let [dir (dirname filespec)
-        fname (str/replace-re #"\..*$" ext (basename filespec))]
-    (if dir (str dir separator fname) fname)))
-
-(defn rename
-  "Rename old-path to new-path."
-  [old-path new-path]
-  (.renameTo (io/file old-path) (io/file new-path)))
-
 (defn copy [from to]
   (let [from (io/file from)
         to (io/file to)]
@@ -189,6 +204,8 @@ if it is not or if the file cannot be deleted."
     (with-open [to-channel (.getChannel (FileOutputStream. to))
                 from-channel (.getChannel (FileInputStream. from))]
       (.transferFrom to-channel from-channel 0 (.size from-channel)))))
+
+
 
 ; FIXME: Write this
 ; (defn copytree [from to] ...
@@ -219,6 +236,9 @@ if it is not or if the file cannot be deleted."
   "Return the current working directory."
   []
   (abspath "."))
+
+
+
 
 ; Taken from https://github.com/jkk/clj-glob. (thanks Justin!)
 (defn- glob->regex
@@ -253,6 +273,9 @@ if it is not or if the file cannot be deleted."
                                           (accept [_ _ filename]
                                             (if (re-find regex filename)
                                               true false))))))))
+
+
+
 ; walk helper functions
 (defn- w-directory? [f]
   (.isDirectory f))

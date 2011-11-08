@@ -64,6 +64,22 @@
                      result))))))))
 
 
+(defn prime-factors [num]
+  (loop [ps (primes (int (math/sqrt num)))
+         factors []]
+    (if (empty? ps)
+      factors
+      (let [pf (loop [n num
+                      cnt 0]
+                 (let [f (first ps)
+                       [q r] (div n f)]
+                   (if (not= 0 r)
+                     (when (> cnt 0) [f cnt])
+                     (recur q (inc cnt)))))]
+        (recur (rest ps)
+               (if pf (conj factors pf) factors))))))
+
+
 
 (defn merge-with*
   "Merge-with needs to call user supplied F with the KEY as well!!!
@@ -95,6 +111,18 @@
   (if (map? coll)
     (find coll e)
     (some #(= % e) coll)))
+
+
+(defn random-subset [s cnt]
+  (let [s (seq (set s))]
+    (cond
+     (<= cnt 0) #{}
+     (<= (count s) cnt) (set s)
+     :else
+     (loop [ss #{(rand-nth s)}]
+       (if (= (count ss) cnt)
+         ss
+         (recur (conj ss (rand-nth s))))))))
 
 
 (defn drop-until [pred coll] (drop-while (complement pred) coll))
@@ -147,6 +175,17 @@
   (zero? (.compareToIgnoreCase l r)))
 
 
+
+(defn intstg?
+  "Test and return whether S is a string of only digits 0-9.  If so,
+  return generalized boolean else return nil/false"
+  [s]
+  (let [hit (re-find #"[0-9]+" s)]
+    (and hit (= hit s))))
+
+
+
+
 ;;; Fixed cost Edit distance.
 ;;;
 ;;; (levenshtein "this" "")
@@ -196,6 +235,51 @@
 ;;;(float (ngram-compare
 ;;;        "TATATTTGGAGTTATACTATGTCTCTAAGCACTGAAGCAAA"
 ;;;        "TATATATTTTGGAGATGCACAT"))
+
+
+
+
+;;; -----------------------------------------------------------------
+;;; Simple vector stuff.  dot product, norm, distances, and such.
+
+
+(defn dot [v1 v2]
+  (reduce #(+ %1 %2) 0 (map #(* %1 %2) v1 v2)))
+
+(defn norm [v]
+  (math/sqrt (dot v v)))
+
+(defn vhat [v]
+  (let [n (norm v)] (vec (map #(/ % n) v))))
+
+(defn cos-vangle [v1 v2]
+  (dot (vhat v1) (vhat v2)))
+
+(defn vangle-dist [v1 v2]
+  (math/abs (dec (cos-vangle v1 v2))))
+
+(defn vecdist [v1 v2]
+  (let [v (vec (map #(- %1 %2) v1 v2))] (dot v v)))
+
+
+(defn normed-codepoints [s]
+  (vec (map #(let [nc (- % 97)]
+               (cond
+                (>= nc 0) nc
+                (= % 32) 27
+                :else 28))
+            (str/codepoints s))))
+
+(defn ngram-vec [s & {n :n :or {n 2}}]
+  (let [ngrams (word-letter-pairs s n)
+        ngram-points (map (fn [[x y]]
+                            (int (+ (* x 27) y)))
+                          (map normed-codepoints ngrams))
+        v (int-array 784 0)]
+    (doseq [i ngram-points]
+      (aset v i 1))
+    v))
+
 
 
 

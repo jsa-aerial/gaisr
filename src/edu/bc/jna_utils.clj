@@ -73,6 +73,39 @@
 (jna-invoke Float RNA/energy_of_struct "CGCAGGGAUACCCGCG" "(((.((....)).)))")
 
 
+;;; Alifold and energy_of_alistruct....
+;;;
+(let [stg "CGCAGGGAUACCCGCG"
+      [inptr inbuf] (jna-malloc (inc (count stg)))
+      [outptr outbuf] (jna-malloc (inc (count stg)))]
+  (.setString inptr 0 stg false)
+  (println "B4 Call" (.getString inptr 0 false))
+  (println (jna-invoke Float RNA/fold inptr outptr))
+  (println "Structure =" (.getString outptr 0 false))
+  )
+
+(let [stgarray (into-array
+                ["AGAUAUAUAUGCUAAGCGCCGCAGACAGCGGGU.GC....GUU....U.G"
+                 "CCCCAGUCGAAUAGCAAGCCGAAGACAGCAGGU.GCC..CGCG.....GG"
+                 "AAUAAAAUAACAUUUGUACCGUAGACAGCAGGU.GC....GAC....A.G"
+                 "GUUUUGAUAAAAAACUGACCUAAGACAGCAGGG.GAG..CAUG.....CU"])
+      ;; structure space to be filled in with structure
+      [outptr outbuf] (jna-malloc (inc (count (first stgarray))))
+      ;; Need array of floats for output energies
+      [eoutptr eoutbuf] (jna-malloc (* 2 4))] ; 2 * 4 bytes per float
+  ;; Amazingly, JNA just knows how to correctly pass an array of
+  ;; strings as a char**
+  (println (jna-invoke Float RNA/alifold stgarray outptr))
+  (println "Structure =" (.getString outptr 0 false))
+  ;;
+  (println "Alistruct free engery ret "
+           (jna-invoke Float RNA/energy_of_alistruct
+                       stgarray outptr (count stgarray) eoutptr))
+  (println "energies" (.getFloat eoutbuf) (.getFloat eoutbuf 4))
+  (println "Structure =" (.getString outptr 0 false)))
+
+
+
 
 ;;; Example 'arbitrary' C func.
 ;;;

@@ -42,15 +42,16 @@
    edu.bc.job-utils
    edu.bc.net-utils
 
-   edu.bc.bio.canned-jobs
-   edu.bc.bio.db-downloads
    edu.bc.bio.seq-utils
    edu.bc.bio.seq-utils2
+   edu.bc.bio.canned-jobs
+   edu.bc.bio.db-downloads
 
-   edu.bc.bio.gaisr.operon-ctx ; Initial Hit (blast, ...) operon ctx
-   edu.bc.bio.gaisr.pipeline   ; pipeline functions and framework
-   edu.bc.bio.gaisr.actions    ; web services implementation
-   edu.bc.bio.gaisr.www        ; web services REST interface
+   edu.bc.bio.gaisr.operon-ctx  ; Initial Hit (blast, ...) operon ctx
+   edu.bc.bio.gaisr.pipeline    ; pipeline functions and framework
+   edu.bc.bio.gaisr.post-db-csv ; Post database query processing
+   edu.bc.bio.gaisr.actions     ; web services implementation
+   edu.bc.bio.gaisr.www         ; web services REST interface
    ))
 
 

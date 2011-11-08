@@ -254,6 +254,9 @@ function makeQuery (form, e) {
     var user = form.children[0];
     user.setValue(u);
 
+    // Update input history
+    addHistoryItem($('query').getValue());
+
     // Actually, we don't need sleep here, but for consistent form of
     // how we are firing off Ajax requests, set things up like for all
     // the others and fire it off with setTimeout...

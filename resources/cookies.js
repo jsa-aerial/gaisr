@@ -42,7 +42,7 @@ var Cookies = {
     get: function (name) {
         return this[name] || getCookie(name);
     },
-    delete: function (name) {
+    del: function (name) {
         deleteCookie(name);
         this[name] = undefined;
     }

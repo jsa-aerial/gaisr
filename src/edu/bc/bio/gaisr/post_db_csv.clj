@@ -30,11 +30,11 @@
 ;;
 
 (ns edu.bc.bio.gaisr.post-db-csv
-  
+
   "Post processing of pipeline results.  Revolves around filtering
    output (remove duplicates, ev cutoffs, etc) as well as formatting
    to DB table (and corresponding CSV) formats"
-  
+
   (:require [clojure.contrib.sql :as sql]
             [org.bituf.clj-dbcp :as dbcp]
             [clojure.contrib.string :as str]
@@ -51,11 +51,11 @@
 
   (:use edu.bc.utils
         [edu.bc.log4clj
-	 :only [create-loggers log>]]
+         :only [create-loggers log>]]
         edu.bc.bio.seq-utils
-	[edu.bc.bio.gaisr.db-actions
-	 :only [+start-delta+ base-info-query hit-features-query]]
-	 
+        [edu.bc.bio.gaisr.db-actions
+         :only [+start-delta+ base-info-query hit-features-query]]
+
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]
         [clojure.contrib.pprint
@@ -79,6 +79,14 @@
              (map #(do [%1 %2])
                   "abcdefghijklmnopqrstuvwxyz"
                   (str/codepoints "abcdefghijklmnopqrstuvwxyz"))))
+
+
+
+
+;;; GAISR CSV Header
+;;;
+(def +cmsearch-csv-header+
+     "gaisr name,orig-start,orig-end,hit-start,hit-end,hit-strand,hit-rel-start,hit-rel-end,score,evalue,pvalue,gc,structure,tgt-seq,orig-tgt-seq")
 
 
 (defn legacy-csv [rows]
@@ -277,3 +285,124 @@
       (gather-hit-features hitseq))))
 
 
+
+
+;;; ----- Count various frequencies of characteristics of output (from csvs)
+
+
+(defn dodir [dir filterf actionf & args]
+  (let [files (filterf dir)]
+    (map #(apply actionf % args) files)))
+
+(defn freq [csv-dir cnt-fn & args]
+  (let [files (sort (fs/directory-files csv-dir ".cmsearch.csv"))
+        names (map #(second (str/split #"\." (re-find #"sto\..*\.cmsearch" %)))
+                   files)]
+    (map #(do [%1 (apply ev-freq %2 args)])
+         names files)))
+
+
+(defn ev-freq [cmsearch-csv ev-cutoff]
+  (reduce (fn [n x]
+            (let [ev (Float. (x 9))]
+              (if (< ev ev-cutoff) (inc n) n)))
+          0 (butlast (drop 1 (csv/parse-csv
+                              (slurp (fs/fullpath cmsearch-csv)))))))
+
+(defn ev-freq-ss [dirdir ev-cutoff outss-filespec]
+  (let [ev-cnts
+	(dodir dirdir
+	       #(butlast (drop 1 (sort (filter fs/directory?
+					       (fs/directory-files % "")))))
+	       #(do [(fs/basename %) (freq % ev-freq ev-cutoff)]))
+	cols (csv/csv-to-stg (cons "Names" (map first meta-ev-cnts)))
+	rows (apply map vector (cons (map first (second (first ev-cnts)))
+				     (map #(map second (second %)) ev-cnts)))
+	rows (csv/write-csv (map #(map str %) rows))]
+    (io/with-out-writer (fs/fullpath outss-filespec)
+      (println cols)
+      (print rows))))
+	
+
+
+
+;;; ----- Generate positive/negative kernel training sets from CSVs -----
+
+(defn get-positive-negative-sets
+  "Generate positive and negative training sets from cmsearch out
+  CSVs.  See ...gaisr.pipeline/cmsearch-out-csv, et.al.  Take the
+  found hits and separate them by EV-CUTOFF.  EV-CUTOFF defaults to
+  1.0.
+
+  Hits ->
+    Positives {h | (> (evalue h) ev-cutoff), h in Hits}
+    Negatives {h | (<= ev-cutoff (evalue h)), h in Hits}"
+  [cmsearch-out-csv & {ev-cutoff :ev-cutoff :or {ev-cutoff 1.0}}]
+
+  (let [[hd & rows] (csv/parse-csv (slurp cmsearch-out-csv))
+        nmpos 0
+        epos (first (seq/positions #(= "evalue" %) hd))
+        seqpos (first (seq/positions #(= "orig-tgt-seq" %) hd))
+        [p1 n1] (seq/separate #(and (> (count %) 1) ; Bogus empty set check
+                                    (< (Float. (nth % epos)) ev-cutoff))
+                              rows)
+        p1 (map #(do [(nth % nmpos) (nth % seqpos)]) p1)
+        n1 (keep #(when (> (count %) 1) ; bogus csv empty set check
+                    [(nth % nmpos) (nth % seqpos)])
+                 n1)]
+    [p1 n1]))
+
+
+(defn gen-positive-negative-sets
+  "Generate positive and negative training sets for Profile BPLA
+  string kernel from previously proposed candidates (via cmsearch).
+  Take the previous candidates in CSV format (see
+  ...gaisr.pipeline/cmsearch-out-csv, et.al) and separate them by
+  evalue.  Those with evalues < ev-cutoff are placed, in fasta format,
+  in pos-out-fspec file and those with evalues >= ev-cutoff are
+  placed, in fasta format, in neg-out-fspec."
+  [cmsearch-out-csv pos-out-fspec neg-out-fspec
+   & {ev-cutoff :ev-cutoff maxseqs :maxseqs
+      :or {ev-cutoff 1.0 maxseqs 3319}}]
+
+  (let [[pset nset] (get-positive-negative-sets
+                     cmsearch-out-csv :ev-cutoff ev-cutoff)
+        pset (if (> (count pset) maxseqs) (take maxseqs (shuffle pset)) pset)
+        nset (if (> (count nset) maxseqs) (take maxseqs (shuffle nset)) nset)
+        pout (fs/fullpath pos-out-fspec)
+        nout (fs/fullpath neg-out-fspec)]
+    (nms-sqs->fasta-file pset pout)
+    (nms-sqs->fasta-file nset nout)))
+
+
+(defn get-combined-csv
+  "Build a file of combined csv content.  csv-or-csv-dir is a filespec
+  of either a single csv file or a directory containing csv files,
+  either in subdirs or directly.  If subdirs is true (default) the
+  csvs are in dubdirs of the given directory otherwise they are
+  directly in the dir."
+
+  [csv-or-csv-dir & {subdirs :subdirs :or {subdirs true}}]
+
+  (let [f-or-d (fs/fullpath csv-or-csv-dir)]
+    (if (not (fs/directory? f-or-d))
+      f-or-d ; file - assumes it is a csv
+      ;; Else, directory
+      (let [tmp-file (fs/tempfile "catcsvs-" ".csv")]
+        (io/with-out-writer tmp-file
+          (println +cmsearch-csv-header+)
+          (let [base f-or-d
+                dirs (if subdirs ; csvs in subdirs of given dir
+                       (keep #(let [f (fs/join base %)]
+                                (when (fs/directory? f) f))
+                             (fs/listdir base))
+                       ;; else csvs in given dir
+                       [base])]
+            (doseq [d dirs]
+              (let [csvs (keep #(when (re-find #"cmsearch.csv$" %)
+                                  (fs/join d %))
+                               (fs/listdir d))]
+                (doseq [f csvs]
+                  (doseq [l (drop 1 (io/read-lines f))]
+                    (println l)))))))
+        tmp-file))))

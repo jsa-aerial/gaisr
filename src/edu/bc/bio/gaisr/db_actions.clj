@@ -73,6 +73,14 @@
         ds)))
 
 
+(defn sql-query [stmt & {f :f p :p :or {f identity p false}}]
+  (when p (println stmt))
+  (sql/with-connection mysql-ds
+    (sql/with-query-results qresults [stmt]
+      (let [results (doall qresults)]
+        (f results)))))
+
+
 
 
 ;;; -------------------- Operon Location Query ----------------------;;;
@@ -337,6 +345,22 @@
        from seqfeature group by bioentry_id)")
 
 
+;;; Try to get a root taxon from taxonomy based on a name or partial
+;;; name.  Selects minimum taxon-id from nodes whose name regexp
+;;; matches the substitution term for xxx.
+;;;
+;;; Known Bugs: This can misfire if the nodes of the subtrees are not
+;;; ordered by tree level by taxon_id.
+;;;
+(def root-taxon-table
+     "(select min(taxon.taxon_id) as taxid
+             from taxon_name as tn,
+                  taxon
+             where tn.name regexp \"^/xxx/\"
+             and tn.name_class=\"scientific name\"
+             and tn.taxon_id=taxon.taxon_id)")
+
+
 ;;; Sub query (table) for overall taxon scoped bioentries query.  This
 ;;; query attempts (and mostly succeeds) to obtain the set of all
 ;;; taxon categories under a given taxon category with something like
@@ -371,6 +395,133 @@
       and nodes.left_value between parent.left_value and parent.right_value
       and parent.taxon_id=root.taxid)")
 
+(def taxon-nodes-query
+     "select tn.name, nodes.*
+      from taxon_name as tn,
+           taxon as parent,
+           taxon as nodes
+      where tn.taxon_id=nodes.taxon_id
+      and tn.name_class=\"scientific name\"
+      and nodes.left_value between parent.left_value and parent.right_value
+      and parent.taxon_id=xxx")
+
+(def taxon-leafs-query
+     "select taxon_name.name, leafs.*
+       from taxon_name,
+            taxon as parent,
+            taxon as leafs
+       where taxon_name.taxon_id=leafs.taxon_id
+       and taxon_name.name_class=\"scientific name\"
+       and leafs.left_value between parent.left_value and parent.right_value
+       and leafs.left_value + 1 = leafs.right_value
+       and parent.taxon_id=xxx")
+
+
+
+
+(defn taxnode [term]
+  (let [taxid (cond
+               (integer? term) (str term)
+               (intstg? term) term
+               :else
+               (sql-query
+                (let [c1 (str/take 1 term)
+                      term-pat (cl-format nil "[~A~A]~A"
+                                          c1 (str/swap-case c1)
+                                          (str/drop 1 term))]
+                  (str/replace-re #"/xxx/" term-pat root-taxon-table))
+                :f #(:taxid (first %))))
+        fields "tn.name, nodes.*"
+        tables "taxon as nodes, taxon_name as tn"
+        constraints [(str "nodes.taxon_id=" taxid)
+                     "tn.taxon_id=nodes.taxon_id"
+                     "tn.name_class=\"scientific name\""]
+        stmt (str "select " fields " from " tables
+                  " where " (str/join " and " constraints))]
+    (sql-query stmt :f first)))
+
+
+(defn xform-taxnode [node]
+  ;; sql spins off new thread so must bind *ret-keys* in that
+  ;; thread and further, must force seq eval in that thread!
+  (binding [*ret-keys* (conj *ret-keys* :ncbi_taxon_id :node_rank)]
+    (doall (map xform-result node))))
+
+
+(defn taxon-subclasses [term]
+  (let [taxid (str (:taxon_id (taxnode term)))]
+      (sql-query (str/replace-re #"xxx" taxid taxon-nodes-query)
+                 :f xform-taxnode)))
+
+(defn taxon-leafs [term]
+  (let [taxid (str (:taxon_id (taxnode term)))]
+    (sql-query (str/replace-re #"xxx" taxid taxon-leafs-query)
+               :f xform-taxnode)))
+
+(defn taxon-direct-instances [term]
+  (let [taxid (str (:taxon_id (taxnode term)))
+        stmt (str "select * from bioentry where taxon_id=" taxid)]
+    (sql-query stmt)))
+
+
+(defn rand-insts-by-rank
+  "Fetch a 'random' set of instances (organisms) by taxon by rank.
+
+   TERM is a taxon denotation - an integer or integer string that is
+   the taxon_id, or a name or partial name that is a
+   prefix (potentially full) of the taxon's name.
+
+   RANK is the name of a taxonomic rank under the taxon denoted by
+   TERM.
+
+   PRED is a predicate to filter the instance sets of each rank
+   before random selection of instances from them.  Defaults to
+   identity - no filtering.
+
+   CNT is the size of the randomly selected subsets from each rank.
+
+   Result is a set of 'node' entries formed by the union of the
+   randomly selected subsets of each rank.  Each such entry is a map
+   of information on the organism, including its bioentry id, name,
+   taxon id, ncbi taxon id, et.al.
+   "
+  [term rank & {pred :pred cnt :cnt :or {pred identity cnt 1}}]
+
+  (apply
+   set/union
+   (keep (fn[s]
+           (when-let [s (filter pred (seq s))]
+             (random-subset s cnt)))
+         (map #(flatten
+                (keep (fn[m]
+                        (let [insts (taxon-direct-instances (m :taxon_id))]
+                          (when insts insts)))
+                      %))
+              (map #(taxon-leafs (% :taxon_id))
+                   (filter #(= (:node_rank %) rank)
+                           (taxon-subclasses term)))))))
+
+
+(defn rand-insts-by-rank-fasta-file
+  "Like rand-insts-by-rank, but with the additional operation of
+   taking the result set, generating an entry file from the names of
+   the entries, and then generating a fasta file of the entries and
+   their FULL sequences.  FILESPEC is a path to the file to be written.
+
+   Returns full path of the fasta file generated.
+   "
+  [term rank filespec & {pred :pred cnt :cnt :or {pred identity cnt 1}}]
+
+  (let [fasta-file (fs/fullpath filespec)
+        entfile (fs/replace-type fasta-file ".txt")
+        entries (rand-insts-by-rank term rank :pred pred :cnt cnt)]
+    (edu.bc.bio.seq-utils/gen-entry-file
+     (map #(% :name) entries) entfile)
+    (edu.bc.bio.seq-utils/entry-file->fasta-file entfile)))
+
+;;;(time (rand-insts-by-rank-fasta-file "Proteobacteria" "genus" "/data2/Bio/Training/FastaFiles/proteobacteria-genus2.fna" :pred #(= (subs (% :name) 0 2) "NC")))
+
+
 
 ;;; This is a set holding the DB fields to return out of a query.
 ;;; Clojure vars, being Lisp dynamic vars, are dynamically rebindable
@@ -379,14 +530,14 @@
 ;;; changable per query type by rebinding in the handlers for the
 ;;; different queries.
 ;;;
-(def ret-keys
+(def *ret-keys*
      (hash-set :taxname :taxon_id
                :bioentry_id :identifier :name :description
                :version :sfcount :ancestors))
 
 ;;; Take the result map from the taxon driven bioentries query, and
 ;;; transform the contents.  This revolves around keeping only the
-;;; keys listed in the RET-KEYS map and further, also transforms the
+;;; keys listed in the *RET-KEYS* map and further, also transforms the
 ;;; taxonomy ancestors result to filter out the top two nodes
 ;;; (cellular org and bacteria as they are _always_ part of _our_
 ;;; results) and the final node which is the originating taxon which
@@ -395,7 +546,7 @@
 (defn xform-result [result-map]
   (into {} (keep
             (fn [kv]
-              (let [v (ret-keys (key kv))]
+              (let [v (*ret-keys* (key kv))]
                 (when v
                   (cond
                    (= :ancestors v)

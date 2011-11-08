@@ -1,5 +1,6 @@
-(defproject gaisr "1.0.0-SNAPSHOT"
-  :description "Genomic Analysis Illuminating Stuctured RNA pipeline, scoring, curation system for ncRNA"
+(defproject mlab "1.0.0-SNAPSHOT"
+  :description "meyer lab server - will be GAISR"
+
   :dependencies [[org.clojure/clojure "1.2.1"]
                  [org.clojure/clojure-contrib "1.2.0"]
                  [clojure-csv "1.3.0"]
@@ -15,20 +16,23 @@
                  [org.bituf/clj-dbcp "0.2"]
                  [c3p0/c3p0 "0.9.1.2"]
                  [mysql/mysql-connector-java "5.1.15"]
+
+                 ;;[clj-http "0.2.0"]
+                 [org.clojars.ghoseb/enlive "1.2.0-alpha1"]
                  [commons-net "2.2"]
 
                  [org.clojure.contrib/macro-utils "1.3.0-alpha4"]
                  [core.logic "0.6.1-SNAPSHOT"]
 
                  [swingrepl "1.0.0-SNAPSHOT"]
-                 [incanter/incanter-core "1.2.3"]
-                 [incanter/incanter-io "1.2.3"]
-                 [incanter/incanter-charts "1.2.3"]
-                 [incanter/incanter-processing "1.2.3"]
-                 [incanter/incanter-mongodb "1.2.3"]
-                 [incanter/incanter-pdf "1.2.3"]
-                 [incanter/incanter-latex "1.2.3"]
-                 [incanter/incanter-excel "1.2.3"]
+                 [incanter/incanter-core "1.2.4"]
+                 [incanter/incanter-io "1.2.4"]
+                 [incanter/incanter-charts "1.2.4"]
+                 [incanter/incanter-processing "1.2.4"]
+                 [incanter/incanter-mongodb "1.2.4"]
+                 [incanter/incanter-pdf "1.2.4"]
+                 [incanter/incanter-latex "1.2.4"]
+                 [incanter/incanter-excel "1.2.4"]
                  ]
 
   :dev-dependencies [[swank-clojure "1.3.2"]
@@ -37,5 +41,6 @@
                      ;;[mycroft/mycroft "0.0.2"]
                      ]
 
-  :repositories {"commons-releases" "http://bizdirusa.com/mirrors/apache"
-                 "c3p0-releases"    "http://mirrors.ibiblio.org/pub/mirrors/maven2"})
+  :repositories
+  {"commons-releases" "http://bizdirusa.com/mirrors/apache"
+   "c3p0-releases"    "http://mirrors.ibiblio.org/pub/mirrors/maven2"})

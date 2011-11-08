@@ -5,6 +5,75 @@
 */
 
 
+// Histories are just typical circular buffers over an array.  Since
+// JS arrays are expandable, we don't need to allocate full size up
+// front.
+var inputHist = {
+    val: [],
+    index: 0,
+    len: 0,
+    max: 50,
+    lastKey: undefined
+}
+
+function initHistory () {
+    var q = Cookies.qhist;
+    inputHist.val = (q) ? q.split(',') : [];
+    inputHist.len = inputHist.val.length;
+    inputHist.index = 0;
+    //console.log(inputHist.val);
+}
+
+
+function handleInputHistory (e) {
+    var element = Event.element(e); // element = input "query" text box
+    var key = e.keyCode;
+    var lastKey = inputHist.lastKey;
+    var len = inputHist.len;
+
+    // This looks "upside down", because push and pop of JS arrays
+    // adds to the end of the array and there is no list type.
+    switch (key) {
+        case Event.KEY_UP:
+            e.stop;
+            if (lastKey == Event.KEY_DOWN) {
+                inputHist.index = (inputHist.index - 1 + len) % len;
+            }
+            inputHist.index = (inputHist.index - 1 + len) % len;
+            element.value = inputHist.val[inputHist.index];
+            break;
+
+        case Event.KEY_DOWN:
+            e.stop;
+            if (lastKey == Event.KEY_UP) {
+                inputHist.index = (inputHist.index + 1) % len;
+            }
+            element.value = inputHist.val[inputHist.index];
+            inputHist.index = (inputHist.index + 1) % len;
+            break;
+    }
+
+    inputHist.lastKey = key;
+}
+
+
+// Update history and reset index
+function addHistoryItem (item) {
+    if (inputHist.len < inputHist.max) {
+        inputHist.val.push(item);
+        inputHist.len = inputHist.val.length;
+    } else {
+        inputHist.val.shift(1);   // Drop oldest
+        inputHist.val.push(item); // len stays max
+    }
+    inputHist.index = 0;
+    setCookie("qhist", inputHist.val.toString(), 365);
+    return item;
+}
+
+
+
+
 function evaluePass (e) {
     var cutoff = $('evinput').getValue();
     //console.log(hitFeatures[e]["evalue"], " < ", cutoff,

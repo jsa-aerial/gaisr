@@ -1,7 +1,40 @@
+;;--------------------------------------------------------------------------;;
+;;                                                                          ;;
+;;                             N E T - U T I L S                            ;;
+;;                                                                          ;;
+;;                                                                          ;;
+;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;;                                                                          ;;
+;; Permission is hereby granted, free of charge, to any person obtaining    ;;
+;; a copy of this software and associated documentation files (the          ;;
+;; "Software"), to deal in the Software without restriction, including      ;;
+;; without limitation the rights to use, copy, modify, merge, publish,      ;;
+;; distribute, sublicense, and/or sell copies of the Software, and to       ;;
+;; permit persons to whom the Software is furnished to do so, subject to    ;;
+;; the following conditions:                                                ;;
+;;                                                                          ;;
+;; The above copyright notice and this permission notice shall be           ;;
+;; included in all copies or substantial portions of the Software.          ;;
+;;                                                                          ;;
+;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,          ;;
+;; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF       ;;
+;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND                    ;;
+;; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE   ;;
+;; LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION   ;;
+;; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION    ;;
+;; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.          ;;
+;;                                                                          ;;
+;; Author: Jon Anthony                                                      ;;
+;;                                                                          ;;
+;;--------------------------------------------------------------------------;;
+;;
+
 (ns edu.bc.net-utils
+
   "General Network utility functions and macros.  Basically these
    resources are fairly general and intended to be usable on most any
    project that needs to talk http, ftp, etc."
+
   (:require [clojure.contrib.string :as str]
             [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
@@ -10,6 +43,9 @@
             [clojure.contrib.io :as io]
             [clojure.contrib.properties :as prop]
             [clojure.xml :as xml]
+            [clj-http.client :as client]
+            [net.cgrand.enlive-html :as html]
+
             [edu.bc.fs :as fs])
 
   (:use clojure.contrib.math
@@ -143,14 +179,18 @@
       (.retrieveFile client fname))))
 
 
+;;; --------------- HTTP Client ------------
 
+(defn fetch-url [url]
+  (html/html-resource (java.net.URL. url)))
 
+(defn fetch-elements-by-tag [url-map tags]
+  (map html/text (html/select url-map tags)))
 
+(defn http-binary-download [url local-file]
+  (with-open [is (io/input-stream url)
+              os (io/output-stream local-file)]
+    (io/copy is os)))
 
-
-
-
-
-
-
+;(:body (client/get "http://www.bork.embl.de/~arumugam/Qin_et_al_2010/"))
 

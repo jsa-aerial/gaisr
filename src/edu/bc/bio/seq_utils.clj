@@ -30,11 +30,11 @@
 ;;
 
 (ns edu.bc.bio.seq-utils
-  
+
   "Intended to include/contain various utilities for operating with and on
    sequence data.  Originally this was all about working with (NCBI) Blast+,
    CMFINDER (and associated utils) and Infernal tools"
-  
+
   (:require [clojure.contrib.string :as str]
             [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
@@ -47,7 +47,61 @@
   (:use clojure.contrib.math
         edu.bc.utils
         [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]))
+         :only (raise handler-case *condition* print-stack-trace)]
+        [clojure.contrib.pprint
+         :only (cl-format compile-format)]
+        ))
+
+
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; Convert Sto and Fasta split sequence format files into conjoined
+;;; versions.  Many Sto and Fasta files from various sites come in old
+;;; fashioned 80 col mode where sequences are split at 80 column mark.
+;;; For aligned files this is even worse as you have groups of
+;;; sequences split across lines separated by whole pages of other
+;;; sequence (parts).  For example, RFAM alignments.  This group puts
+;;; all those back together so that each sequence is on a single line.
+
+
+(defn sto-GC-and-seq-lines [stofilespec]
+  (seq/separate
+   #(and (> (count %) 1)
+         (or (not (.startsWith % "#"))
+             (or (.startsWith % "#=GC SS_cons")
+                 (.startsWith % "#=GC RF"))))
+   (io/read-lines (fs/fullpath stofilespec))))
+
+(defn join-sto-fasta-lines [infilespec origin]
+  (let [[seq-lines gc-lines] (sto-GC-and-seq-lines infilespec)
+        gc-lines (if (not= origin "")
+                   (concat (take 1 gc-lines) [origin] (drop 1 gc-lines))
+                   gc-lines)
+        recombined-seqs (reduce
+                         (fn [m l]
+                           (let [[nm sq] (str/split #"\s{2,}+" l)
+                                 prev (get m nm [(gen-uid) ""])]
+                             (assoc m  nm [(first prev)
+                                           (str (second prev) sq)])))
+                         {} seq-lines)]
+    [gc-lines (sort-by #(-> % second first) (vec recombined-seqs))]))
+
+
+(defn join-sto-fasta-file
+  "Block/join unblocked sequence lines in a sto or fasta file.  For
+   sto files ORIGIN is a #=GF line indicating tool origin of file.
+   For example, '#=GF AU Infernal 1.0.2'.  Defaults to nothing."
+
+  [in-filespec out-filespec
+   & {origin :origin :or {origin ""}}]
+  (let [[gc-lines seq-lines] (join-sto-fasta-lines in-filespec origin)]
+    (io/with-out-writer (fs/fullpath out-filespec)
+      (doseq [gcl gc-lines] (println gcl))
+      (doseq [sl seq-lines]
+        (let [[nm [id sq]] sl]
+          (cl-format true "~A~40T~A~%" nm sq))))))
 
 
 
@@ -98,7 +152,7 @@
           strand (if (= "-1" strand) "minus" "plus") ; => default plus
           cmdargs ["-db" blastdb
                    "-entry" entry "-range" range "-strand" strand
-                   "-line_length" "12000"
+                   "-line_length" "14000000"
                    "-outfmt" "%f" "-out" (fs/fullpath fasta-filespec)]]
       (runx blastdbcmd cmdargs)
       fasta-filespec)))
@@ -116,7 +170,7 @@
               strand (if (= "-1" strand) "minus" "plus") ; => default plus
               cmdargs ["-db" blastdb
                        "-entry" entry "-range" range "-strand" strand
-                       "-line_length" "12000"
+                       "-line_length" "14000000"
                        "-outfmt" "%f" "-out" tmp-file]]
           (catch-all (runx blastdbcmd cmdargs))
           (do-text-file [tmp-file]
@@ -129,7 +183,7 @@
   (let [blast-path (get-tool-path :ncbi)
         blastdbcmd (str blast-path "blastdbcmd")
         cmdargs ["-db" blastdb "-entry_batch" efile
-                 "-line_length" "12000"
+                 "-line_length" "14000000"
                  "-outfmt" "%f" "-out" fasta-filespec]]
     (assert-tools-exist [blastdbcmd])
     (catch-all (runx blastdbcmd cmdargs))

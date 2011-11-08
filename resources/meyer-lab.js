@@ -159,6 +159,8 @@ function bindForm() {
     makeQuery(this, e);
   });
 
+  $('query').observe('keyup', handleInputHistory);
+
   var actionForm = $('actionForm');
 
   actionForm.children[3].observe('click', jobRequest);
@@ -187,7 +189,8 @@ function bindForm() {
 document.observe("dom:loaded", function () {
     var u = Cookies.user;
     if (u) $('user').setValue(u);
-    
+    initHistory();
+
     bindForm();
     Accordion.init($$('#results'));
     document.observe("results:updated", populateResults);

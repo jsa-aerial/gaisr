@@ -52,11 +52,14 @@
          :only [create-loggers log>]]
         edu.bc.utils
         edu.bc.bio.seq-utils
-	edu.bc.bio.seq-utils2
+        edu.bc.bio.seq-utils2
         [edu.bc.bio.gaisr.operon-ctx
          :only [get-region]]
         [edu.bc.bio.gaisr.actions
-         :only [map-names-to-ancestors]]))
+         :only [map-names-to-ancestors]]
+        [edu.bc.bio.gaisr.post-db-csv
+         :only [+cmsearch-csv-header+]]
+        ))
 
 
 
@@ -495,7 +498,7 @@
 (defn build-hitseq-map [hitfile]
   (reduce (fn[m [gi sq]]
             (let [nc (first (re-find #"N(C|S|Z)_[0-9A-Z]+" gi))
-                  k (str nc ":" (re-find #"[0-9]+-[0-9]+" gi))]
+                  k (if nc (str nc ":" (re-find #"[0-9]+-[0-9]+" gi)) gi)]
               (assoc m k sq)))
           {} (partition 2 (io/read-lines (io/file-str hitfile)))))
 
@@ -504,10 +507,11 @@
   (let [file-content (str/split #"\n" (slurp cmsearch-out))
         cmdline (first (drop-until #(re-find #"^# command" %) file-content))
         cmfile (subs (re-find #" /[A-Za-z0-9_\.\-/]+\.cm" cmdline) 1)
-        hitfile (subs (re-find #" /[A-Za-z0-9_\.\-/]+\.hitfna" cmdline) 1)
+        hitfile (subs (first (re-find #" /[A-Za-z0-9_\.\-/]+\.(hitfna|fa|fna)"
+                                      cmdline)) 1)
         stofile (get-cm-stofile cmfile)
-        lines (drop-until #(re-find #"^>gi" %) file-content)
-        parts (partition-by #(if (or (= % "#") (re-find #"^>gi" %)) :x :y)
+        lines (drop-until #(re-find #"^>" %) file-content)
+        parts (partition-by #(if (or (= % "#") (re-find #"^>" %)) :x :y)
                             lines)]
     [(get-sto-seq-locs stofile)
      (reduce (fn[m [k v]]
@@ -515,7 +519,7 @@
                  m
                  (let [k (first k)
                        nc (first (re-find #"N(C|S|Z)_[0-9A-Z]+" k))
-                       k (str nc ":" (re-find #"[0-9]+-[0-9]+$" k))
+                       k (if nc (str nc ":" (re-find #"[0-9]+-[0-9]+$" k)) k)
                        v (keep #(when (not= "" %) (str/trim %)) v)]
                    (assoc m k v))))
              {} (partition 2 parts))
@@ -561,7 +565,7 @@
 (defn cmsearch-hit-parts [[h v] hit-seq-map]
   (let [[nm loc] (str/split #":" h)
         orig-seq (hit-seq-map h)
-        [s e] (vec (str/split #"-" loc))
+        [s e] (if loc (vec (str/split #"-" loc)) ["1" (str (count orig-seq))])
         s (Integer. s)
         e (Integer. e)
         info (reduce
@@ -590,8 +594,6 @@
          :good :bad)))
    hit-parts))
 
-(def +cmsearch-csv-header+
-     "gaisr name,orig-start,orig-end,hit-start,hit-end,hit-strand,hit-rel-start,hit-rel-end,score,evalue,pvalue,gc,structure,tgt-seq,orig-tgt-seq")
 
 (defn cmsearch-out-csv [cmsearch-out]
   (let [csv-file (str/replace-re #"\.out$" ".csv" cmsearch-out)
@@ -613,7 +615,7 @@
 (defn gen-cmsearch-csvs [cmsearch-out-dir]
   (let [base cmsearch-out-dir]
     (doseq [x (filter #(re-find #"\.cmsearch\.out$" %)
-                      (map #(fs/join base %) (fs/listdir base)))]
+                      (sort (map #(fs/join base %) (fs/listdir base))))]
       (cmsearch-out-csv x))))
 
 
@@ -677,20 +679,15 @@
     (doall (process-clusters hitfna base (take 6 dir-info)))))
 
 
-(defn directory-files [directory file-type]
-  (let [pat (re-pattern (str file-type "$"))]
-    (map #(fs/join directory %)
-         (filter #(re-find pat %) (fs/listdir directory)))))
-
 (defn directory-cms [directory]
-  (directory-files directory ".cm"))
+  (fs/directory-files directory ".cm"))
 
 (defn directory-hitfnas [directory]
-  (directory-files directory ".hitfna"))
+  (fs/directory-files directory ".hitfna"))
 
 
 (defn mostos->calibrated-cms [mostos & {par :par :or {par 4}}]
-  (-> mostos
+  (-> (ensure-vec mostos)
       ((fn[mstos](map #(cmbuild %) mstos)))
       ((fn[cms](doall (pmap #(cmcalibrate % :par par) cms))))))
 
@@ -705,7 +702,7 @@
 
 
 (defn mostos&hitfna->cmsearch-out [mostos hit-fna]
-  (-> mostos
+  (-> (ensure-vec mostos)
       ((fn[mstos](map #(cmbuild %) mstos)))
       ((fn[cms](doall (pmap #(cmcalibrate %) cms))))
       ((fn[cms](pmap #(cmsearch % hit-fna (gen-hit-out-filespec %))
@@ -713,13 +710,13 @@
 
 
 (defn cms&hitfna->cmsearch-out
-  [cms hit-fna & {eval :eval :or {eval 1000.0}}]
+  [cms hit-fna & {eval :eval :or {eval 1.0}}]
   (pmap #(cmsearch % hit-fna (gen-hit-out-filespec % :hitfna hit-fna)
                    :eval eval)
-        cms))
+        (ensure-vec cms)))
 
 (defn cms&hitfnas->cmsearch-out
-  [cms hit-fnas & {par :par eval :eval :or {par false eval 1000.0}}]
+  [cms hit-fnas & {par :par eval :eval :or {par false eval 1.0}}]
   (let [mapper (if par pmap map)]
     (mapper #(cms&hitfna->cmsearch-out cms % :eval eval)
             (ensure-vec hit-fnas))))
@@ -734,14 +731,14 @@
         utrs-filter
         (nlsq-tuples-from-utrs hit-fna))
     (pmap #(cmsearch % hit-fna (gen-hit-out-filespec % :hitfna hit-fna))
-          cms)))
+          (ensure-vec cms))))
 
 
 
 (defn mostos&hitfiles->cmsearch-out [mostos hitfiles]
   (let [cms (mostos->calibrated-cms mostos)]
     (pmap #(cms&hitfile->cmsearch-out cms %)
-          (let [base "/data2/Bio/Paper/FastaFiles"]
+          (let [base "/data2/Bio/ECRibLeaders/FastaFiles"]
             (keep #(when (re-find #"blast$" %) (fs/join base %))
                   (fs/listdir base))))))
 

@@ -68,7 +68,8 @@
           <fieldset class="fieldL">
             <legend>Query</legend>
             <label for="query" accesskey="S"></label>
-            <input type="text" id="query" name="query" size="100%"/>
+            <input type="text" id="query" name="query"
+                    autocomplete="off" size="100%"/>
           </fieldset>
           <input type="submit" class="input-hidden"/>
         </form>
@@ -98,10 +99,10 @@
                  onclick="toggleChecks(this)"/>
           Results:
           <span id="count" style="display: none;">0</span>
-	  <span id="evspan"  style="display: none;">
-	    <input type="text" id="evinput" size="5" value="1.0"/>
-	    EV Cutoff <span id="evcutoffcnt">0</span>
-	  </span>
+          <span id="evspan"  style="display: none;">
+            <input type="text" id="evinput" size="5" value="1.0"/>
+            EV Cutoff <span id="evcutoffcnt">0</span>
+          </span>
           <img id="spinner" src="ajax-aerial-small.gif"
                style="display: none;"/>
           <form id="actionForm" class="actionForm"

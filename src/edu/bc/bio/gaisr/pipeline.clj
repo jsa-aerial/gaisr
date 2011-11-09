@@ -495,10 +495,17 @@
                                 #(re-find #"^BCOM" %)
                                 (str/split #"\n" (slurp cmfile)))))))
 
+(defn gi-name [gi]
+  (first (re-find #"N(C|S|Z)_[0-9A-Z]+" gi)))
+
+(defn gi-loc [gi]
+  (let [l (first (re-find #":(.)[0-9]+-[0-9]+" gi))]
+    (when l (subs l (first (pos-any "0123456789" l))))))
+
 (defn build-hitseq-map [hitfile]
   (reduce (fn[m [gi sq]]
-            (let [nc (first (re-find #"N(C|S|Z)_[0-9A-Z]+" gi))
-                  k (if nc (str nc ":" (re-find #"[0-9]+-[0-9]+" gi)) gi)]
+            (let [nc (gi-name gi)
+                  k (if nc (str nc ":" (gi-loc gi)) gi)]
               (assoc m k sq)))
           {} (partition 2 (io/read-lines (io/file-str hitfile)))))
 
@@ -583,6 +590,7 @@
 (defn group-hit-parts [sto-loc-map hit-parts]
   (group-by
    (fn[[nm s e & tail]]
+     ;;(prn (= @*dbg-hit-parts* hit-parts) nm (count (sto-loc-map nm)) s e)
      (let [locs (sort (sto-loc-map nm))
            [s e] (sort [s e])]
        (if (or (empty? locs)

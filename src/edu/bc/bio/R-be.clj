@@ -54,6 +54,50 @@
   (or (vector? x)
       (seq? x)))
 
+(defn fold-forms [sexp]
+  (if (not (sexp? sexp))
+    sexp
+    (let [hd (first sexp)
+          tail (rest sexp)
+          next-form (first tail)]
+      ;;(prn hd) (prn tail) (prn next-form)
+      (cond
+       (= hd 'function)
+       (let [params next-form
+             body (rest tail)]
+         ;;(prn params body)
+         `(function ~params ~@(map fold-forms body)))
+
+       (= hd 'do)
+       (if (and (sexp? next-form)
+                (= (first next-form) 'clojure.core/let))
+         (fold-forms tail)
+         (cons 'do (fold-forms tail)))
+
+       (and (sexp? hd)
+            (= (first hd) 'clojure.core/let))
+       (if (and (sexp? next-form)
+                (= (first next-form) 'clojure.core/let))
+         (let [[b1 & t1] (rest hd)
+               [b2 & t2] (rest next-form)]
+           ;;(prn :>>) (prn b1 t1) (prn b2 t2)
+           (fold-forms
+            (cons
+             `(let ~(vec (concat (fold-forms b1) (fold-forms b2)))
+                ~@(fold-forms t1)
+                ~@(fold-forms t2))
+             (list (fold-forms (rest tail))))))
+         ;;else
+	 (do ;(println "\n" :*** tail)
+	     (concat hd (fold-forms tail))))
+
+       :else
+       (let [folded (map fold-forms sexp)]
+         (if (vector? sexp)
+           (vec folded)
+           folded))))))
+
+
 (defn cleaner [sexp]
   ;;(prn :*** sexp)
   (cond
@@ -66,9 +110,13 @@
      (case k
        :special-form
        (if (in (second (first body)) ["<-"])
-         (let [[v exp] (take 2 (drop 1 body))]
-           `(let [~(cleaner v) ~(cleaner exp)]
-              ~@(keep cleaner (drop 3 body))))
+         (let [[v exp] (take 2 (drop 1 body))
+               v (cleaner v)
+               exp (cleaner exp)]
+           (if (and (sexp? v) (in (first v) [:aget]))
+             `(aset ~(nth  v 1) ~(nth v 2) ~exp)
+             `(let [~v ~exp]
+                ~@(keep cleaner (drop 3 body)))))
          (doall (keep cleaner body)))
 
        :call-closure
@@ -109,8 +157,49 @@
    (keep cleaner sexp)))
 
 
-(cleaner *R-poly*)
-(cleaner (first (drop 3 (first (drop 3 *R-poly*)))))
+
+(fold-forms (cleaner *R-poly*))
+
+(fold-forms
+ '(let [x (function (:params n x)
+                    (do (clojure.core/let [mu 10.0])
+                        (clojure.core/let [pu 0.0])
+                        (clojure.core/let [pol (double-array 1.0 100.0)])
+                        (clojure.core/let [tp1 2.0])
+                        (clojure.core/let [tm1 (/ 1.0 2.0)])
+                        (for i (double-array 1.0 n))))]))
+
+
+(let [trpol2 (function (:params n x)
+               (let [mu 10.0
+                     pu 0.0
+                     pol (double-array 1.0 100.0)
+                     tp1 2.0
+                     tm1 (/ 1.0 2.0)]
+                 (for i (double-array 1.0 n)
+                      (do (for j (double-array 1.0 100.0)
+                               (let [mu (* (+ mu tp1) tm1)]
+                                 (aset pol j mu)))
+                          (let [s 0.0])
+                          (for j (double-array 1.0 100.0) (clojure.core/let [s (+ (* x s) (:aget pol j))])) (clojure.core/let [pu (+ s pu)]))) (print pu) () ()))])
+
+
+(let [trpol2 (function (:params n x)
+               (let [mu 10.0
+                     pu 0.0
+                     pol (double-array 1.0 100.0)
+                     tp1 2.0 tm1 (/ 1.0 2.0)]
+                 (for i (double-array 1.0 n)
+                      (do (for j (double-array 1.0 100.0)
+                               (let [mu (* (+ mu tp1) tm1)
+                                     (:aget pol j) mu] ()))
+                          (let [s 0.0])
+                          (for j (double-array 1.0 100.0)
+                               (let [s (+ (* x s) (:aget pol j))]))
+                          (let [pu (+ s pu)])))
+                 (print pu)
+                 () ()))])
+
 
 (:set! trpol2
        (function (:params n x)

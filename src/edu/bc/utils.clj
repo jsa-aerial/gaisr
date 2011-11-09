@@ -113,6 +113,18 @@
     (some #(= % e) coll)))
 
 
+(defn pos
+  "Returns a lazy seq of positions of X within COLL taken as a sequence"
+  [x coll]
+  (keep-indexed #(when (= x %2) %1) coll))
+
+(defn pos-any
+  "Returns a lazy seq of positions of any element of TEST-COLL within
+   COLL taken as a sequence"
+  [test-coll coll]
+  (keep-indexed #(when (in %2 test-coll) %1) coll))
+
+
 (defn random-subset [s cnt]
   (let [s (seq (set s))]
     (cond

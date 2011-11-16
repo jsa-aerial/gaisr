@@ -298,7 +298,7 @@
   (let [files (sort (fs/directory-files csv-dir ".cmsearch.csv"))
         names (map #(second (str/split #"\." (re-find #"sto\..*\.cmsearch" %)))
                    files)]
-    (map #(do [%1 (apply ev-freq %2 args)])
+    (map #(do [%1 (apply cnt-fn %2 args)])
          names files)))
 
 
@@ -311,56 +311,77 @@
 
 (defn ev-freq-ss [dirdir ev-cutoff outss-filespec]
   (let [ev-cnts
-	(dodir dirdir
-	       #(butlast (drop 1 (sort (filter fs/directory?
-					       (fs/directory-files % "")))))
-	       #(do [(fs/basename %) (freq % ev-freq ev-cutoff)]))
-	cols (csv/csv-to-stg (cons "Names" (map first meta-ev-cnts)))
-	rows (apply map vector (cons (map first (second (first ev-cnts)))
-				     (map #(map second (second %)) ev-cnts)))
-	rows (csv/write-csv (map #(map str %) rows))]
+        (dodir dirdir
+               #(butlast (drop 1 (sort (filter fs/directory?
+                                               (fs/directory-files % "")))))
+               #(do [(fs/basename %) (freq % ev-freq ev-cutoff)]))
+        cols (csv/csv-to-stg (cons "Names" (map first ev-cnts)))
+        rows (apply map vector (cons (map first (second (first ev-cnts)))
+                                     (map #(map second (second %)) ev-cnts)))
+        rows (csv/write-csv (map #(map str %) rows))]
     (io/with-out-writer (fs/fullpath outss-filespec)
       (println cols)
       (print rows))))
-	
+
 
 
 
 ;;; ----- Generate positive/negative kernel training sets from CSVs -----
 
+
 (defn get-positive-negative-sets
   "Generate positive and negative training sets from cmsearch out
   CSVs.  See ...gaisr.pipeline/cmsearch-out-csv, et.al.  Take the
-  found hits and separate them by EV-CUTOFF.  EV-CUTOFF defaults to
-  1.0.
+  found hits and separate them by EV-CUTOFF.  EV-CUTOFF is either a
+  single floating point value or a two element vector of floating
+  point values denoting a range.  It defaults to 1.0.
 
   Hits ->
     Positives {h | (> (evalue h) ev-cutoff), h in Hits}
-    Negatives {h | (<= ev-cutoff (evalue h)), h in Hits}"
+    Negatives {h | (<= ev-cutoff (evalue h)), h in Hits}
+
+  Hits, ev-cutoff = [s e]->
+    Positives {h | (< (evalue h) s), h in Hits}
+    Negatives {h | (<= s (evalue h) e), h in Hits}"
+
   [cmsearch-out-csv & {ev-cutoff :ev-cutoff :or {ev-cutoff 1.0}}]
 
   (let [[hd & rows] (csv/parse-csv (slurp cmsearch-out-csv))
+        evs (if (coll? ev-cutoff) (first ev-cutoff) ev-cutoff)
+        eve (if (coll? ev-cutoff) (second ev-cutoff) (float Integer/MAX_VALUE))
         nmpos 0
         epos (first (seq/positions #(= "evalue" %) hd))
         seqpos (first (seq/positions #(= "orig-tgt-seq" %) hd))
         [p1 n1] (seq/separate #(and (> (count %) 1) ; Bogus empty set check
-                                    (< (Float. (nth % epos)) ev-cutoff))
+                                    (< (Float. (nth % epos)) evs))
                               rows)
+        n1 (filter #(and (> (count %) 1) ; Bogus empty set check
+                         (<= (Float. (nth % epos)) eve))
+                   n1)
         p1 (map #(do [(nth % nmpos) (nth % seqpos)]) p1)
-        n1 (keep #(when (> (count %) 1) ; bogus csv empty set check
-                    [(nth % nmpos) (nth % seqpos)])
-                 n1)]
+        n1 (map #(do [(nth % nmpos) (nth % seqpos)]) n1)]
     [p1 n1]))
 
 
 (defn gen-positive-negative-sets
-  "Generate positive and negative training sets for Profile BPLA
-  string kernel from previously proposed candidates (via cmsearch).
-  Take the previous candidates in CSV format (see
-  ...gaisr.pipeline/cmsearch-out-csv, et.al) and separate them by
-  evalue.  Those with evalues < ev-cutoff are placed, in fasta format,
-  in pos-out-fspec file and those with evalues >= ev-cutoff are
-  placed, in fasta format, in neg-out-fspec."
+  "Generate positive and negative training sets for various kernel/SVM
+   from previously proposed candidates (via cmsearch).  Take the
+   previous candidates in CSV format (see
+   ...gaisr.pipeline/cmsearch-out-csv, et.al) and separate them by
+   evalue.
+
+   EV-CUTOFF is either a single floating point value (such as 0.1) or
+   a two element vector of floating point values denoting the range of
+   evalues for negative examples.  Defaults to single value 1.0.
+
+   If EV-CUTOFF single value those entries with evalues < ev-cutoff
+   are placed, in fasta format, in POS-OUT-FSPEC file and those with
+   evalues >= ev-cutoff are placed, in fasta format, in NEG-OUT-FSPEC.
+
+   If EV-CUTOFF is a range [s e] then those entries with evalues < s
+   are placed, in fasta format, in pos-out-fspec and those enties with
+   s <= evalue < e are placed, in fasta format, in neg-out-fspec."
+
   [cmsearch-out-csv pos-out-fspec neg-out-fspec
    & {ev-cutoff :ev-cutoff maxseqs :maxseqs
       :or {ev-cutoff 1.0 maxseqs 3319}}]
@@ -372,37 +393,113 @@
         pout (fs/fullpath pos-out-fspec)
         nout (fs/fullpath neg-out-fspec)]
     (nms-sqs->fasta-file pset pout)
-    (nms-sqs->fasta-file nset nout)))
+    (nms-sqs->fasta-file nset nout)
+    [pout nout]))
 
 
 (defn get-combined-csv
-  "Build a file of combined csv content.  csv-or-csv-dir is a filespec
+  "Build a file of combined csv content.  CSV-OR-CSV-DIR is a filespec
   of either a single csv file or a directory containing csv files,
-  either in subdirs or directly.  If subdirs is true (default) the
-  csvs are in dubdirs of the given directory otherwise they are
-  directly in the dir."
+  either in subdirs or directly.
 
-  [csv-or-csv-dir & {subdirs :subdirs :or {subdirs true}}]
+  PRED is a predicate filter of a single filespec argument. Only those
+  files passing it are returned.  If given, PRED should return its
+  input argument, or nil (it acts as a filter to KEEP).
 
-  (let [f-or-d (fs/fullpath csv-or-csv-dir)]
-    (if (not (fs/directory? f-or-d))
-      f-or-d ; file - assumes it is a csv
-      ;; Else, directory
-      (let [tmp-file (fs/tempfile "catcsvs-" ".csv")]
-        (io/with-out-writer tmp-file
-          (println +cmsearch-csv-header+)
-          (let [base f-or-d
-                dirs (if subdirs ; csvs in subdirs of given dir
-                       (keep #(let [f (fs/join base %)]
-                                (when (fs/directory? f) f))
-                             (fs/listdir base))
-                       ;; else csvs in given dir
-                       [base])]
-            (doseq [d dirs]
-              (let [csvs (keep #(when (re-find #"cmsearch.csv$" %)
-                                  (fs/join d %))
-                               (fs/listdir d))]
-                (doseq [f csvs]
-                  (doseq [l (drop 1 (io/read-lines f))]
-                    (println l)))))))
-        tmp-file))))
+  If CSV-OR-CSV-DIR is a single csv file, return it if pred returns
+  true on it or nil otherwise.
+
+  If CSV-OR-CSV-DIR is a collection, run filter on it with pred and
+  return a temp file containing the combined entries for all elements
+  that pass pred.
+
+  If it is a directory, then if SUBDIRS is true (default) the csvs are
+  in subdirs of the given directory, otherwise they are taken to be
+  directly in the dir.  Return a temp file of the combined entries for
+  all such files which pass pred."
+
+  [csv-or-csv-dir
+   & {pred :pred subdirs :subdirs :or {pred identity subdirs true}}]
+
+  (let [f-or-d (if (coll? csv-or-csv-dir)
+                 (map fs/fullpath csv-or-csv-dir)
+                 (fs/fullpath csv-or-csv-dir))]
+    (cond
+     (coll? f-or-d)
+     (let [tmp-file (fs/tempfile "catcsvs-" ".csv")]
+       (io/with-out-writer tmp-file
+         (println +cmsearch-csv-header+)
+         (doseq [f (filter pred f-or-d)]
+           (doseq [l (drop 1 (io/read-lines f))]
+             (println l))))
+       tmp-file)
+
+     (not (fs/directory? f-or-d))
+     f-or-d ; file - assumes it is a csv
+
+     :Else ;  directory
+     (let [tmp-file (fs/tempfile "catcsvs-" ".csv")]
+       (io/with-out-writer tmp-file
+         (println +cmsearch-csv-header+)
+         (let [base f-or-d
+               dirs (if subdirs ; csvs in subdirs of given dir
+                      (keep #(let [f (fs/join base %)]
+                               (when (fs/directory? f) f))
+                            (fs/listdir base))
+                      ;; else csvs in given dir
+                      [base])]
+           (doseq [d dirs]
+             (let [csvs (keep #(when (and (re-find #"cmsearch.csv$" %)
+                                          (pred %))
+                                 (fs/join d %))
+                              (fs/listdir d))]
+               (doseq [f csvs]
+                 (doseq [l (drop 1 (io/read-lines f))]
+                   (println l)))))))
+       tmp-file))))
+
+
+(defn gen-aligned-pos-neg-sets
+
+  [cm csv-or-csv-dir base-out
+   & {pred :pred subdirs :subdirs ev-cutoff :ev-cutoff
+      :or {pred identity subdirs false ev-cutoff 0.00001}}]
+
+  (let [cm (fs/fullpath cm)
+        bos (map #(fs/fullpath (str base-out % ".x"))
+                 ["-pos" "-neg"])
+        [pfna nfna] (map #(fs/replace-type % ".fna") bos)
+        [psto nsto] (map #(fs/replace-type % ".sto") bos)]
+
+    (gen-positive-negative-sets
+     (get-combined-csv csv-or-csv-dir :subdirs subdirs :pred pred)
+     pfna nfna :ev-cutoff ev-cutoff)
+    (map (fn [seqf stof]
+           (if (fs/empty? seqf)
+             (do (io/with-out-writer stof
+                   (println (str "GEN-ALIGNED-POS-NEG-SETS: SeqFile '"
+                                 seqf "' is empty!")))
+                 stof)
+             (cmalign cm seqf stof)))
+         [pfna nfna]
+         [psto nsto])))
+
+
+
+(defn gen-aligned-training-sets [dir & args]
+  (let [cm (first (fs/directory-files dir ".cm"))
+        csv-groups (vals (group-by
+                          (fn[f]
+                            (->> f (str/split #"-") first
+                                 (str/split #"\.") last))
+                          (fs/directory-files dir ".cmsearch.csv")))
+        bouts (map #(str/replace-re #"[0-9]*$" ""
+                                    (fs/replace-type (first %) ["" ""]))
+                   csv-groups)]
+    (map #(apply gen-aligned-pos-neg-sets cm %1 %2 args)
+         csv-groups
+         bouts)))
+
+
+;;; (gen-aligned-training-sets
+;;;  "/data2/Bio/Training/MoStos/ECS4" :ev-cutoff 0.00001)

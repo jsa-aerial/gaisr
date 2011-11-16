@@ -155,12 +155,18 @@ if it is not or if the file cannot be deleted."
   (.getParent (io/file path)))
 
 (defn replace-type
-  "Replace the file extension type of FILESPEC to be EXT"
+  "Replace the file extension type of FILESPEC to be EXT.  The type
+   for FILESPEC is the last part dotted extension.  Formally, matches
+   regexp '\\.[^.]*$'.  If EXT is a seq/vec replace extensions in
+   last/first pairings.  Last extension replace by (first EXT), then
+   last of that result is replaced by (second EXT), etc."
   [filespec ext]
-  (let [dir (dirname filespec)
-        fname (str/replace-re #"\..*$" ext (basename filespec))]
-    (if dir (str dir separator fname) fname)))
-
+  (let [rep-type (fn [filespec ext]
+                   (let [dir (dirname filespec)
+                         fname (str/replace-re #"\.[^.]*$" ext
+                                               (basename filespec))]
+                     (if dir (str dir separator fname) fname)))]
+    (reduce #(rep-type %1 %2) filespec (if (coll? ext) ext [ext]))))
 
 
 

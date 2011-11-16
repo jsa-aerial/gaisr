@@ -550,3 +550,25 @@
               (recur (unchecked-inc i)
                      (conj motif-stos motif-ofile)))))))
     ))
+
+
+
+
+(defn cmalign [cm seqfile outfile
+               & {opts :opts par :par :or {opts ["-q" "-1"] par 3}}]
+  (let [infernal-path (get-tool-path :infernal)
+        cmaligncmd (str infernal-path "cmalign")
+        cmfile (fs/fullpath cm)
+        seqfile (fs/fullpath seqfile)
+        outfile (fs/fullpath outfile)
+        mpirun "mpirun"
+        cmdargs (conj (vec (concat ["-np" (str par)
+                                    cmaligncmd "--mpi" "-o" outfile]
+                                   opts))
+                      cmfile seqfile)]
+    (if (fs/empty? seqfile)
+      (raise :type :empty-seq-file :file seqfile)
+      (do (assert-tools-exist [cmaligncmd])
+          (runx mpirun cmdargs)))
+    outfile))
+

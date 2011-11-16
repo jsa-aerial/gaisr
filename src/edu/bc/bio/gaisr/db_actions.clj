@@ -312,27 +312,41 @@
 ;;; ----------------------- Taxonomic Based Querys ------------------------ ;;;
 
 
-(defn names->tax [names]
-  (let [names (map #(cl-format nil "~S" %) (keys names))
-        fields "be.name, a.ancestors"
-        tables ["bioentry as be"
-                "taxon as tx"
-                "ancestor as a"]
-        tables (str/join "," tables)
-        constraints [(str "be.name in ("
-                          (str/join "," names) ")")
-                     "be.taxon_id=tx.taxon_id"
-                     "tx.ncbi_taxon_id=a.ncbi_taxon_id"]
-        constraint (str/join " and " constraints)
-        stmt (str "select " fields
-                  " from " tables
-                  " where " constraint)]
-    ;;(prn stmt)
-    (sql/with-connection mysql-ds
-      (sql/with-query-results qresults [stmt]
-        (doall qresults)))))
+;;; This is a set holding the DB fields to return out of a query.
+;;; Clojure vars, being Lisp dynamic vars, are dynamically rebindable
+;;; per any call stack (including per thread and differnt points in
+;;; thread call trees).  So, this is easily dynamically changed and
+;;; changable per query type by rebinding in the handlers for the
+;;; different queries.
+;;;
+(def *ret-keys*
+     (hash-set :taxname :taxon_id
+               :bioentry_id :identifier :name :description
+               :version :sfcount :ancestors))
 
+;;; Take the result map from the taxon driven bioentries query, and
+;;; transform the contents.  This revolves around keeping only the
+;;; keys listed in the *RET-KEYS* map and further, also transforms the
+;;; taxonomy ancestors result to filter out the top two nodes
+;;; (cellular org and bacteria as they are _always_ part of _our_
+;;; results) and the final node which is the originating taxon which
+;;; is included as a separate field.
+;;;
+(defn xform-result [result-map]
+  (into {} (keep
+            (fn [kv]
+              (let [v (*ret-keys* (key kv))]
+                (when v
+                  (cond
+                   (= :ancestors v)
+                   (let [ans (vec (str/split #", " (val kv)))
+                         ans (subvec ans 2 (dec (count ans)))]
+                     [(key kv) (str/join ", " ans)])
 
+                   (= :identifier v) [:gbid (val kv)]
+
+                   :else kv))))
+            result-map)))
 
 
 ;;; Obtains the total count of "features" for bioentries.  The feature
@@ -415,6 +429,29 @@
        and leafs.left_value between parent.left_value and parent.right_value
        and leafs.left_value + 1 = leafs.right_value
        and parent.taxon_id=xxx")
+
+
+
+
+(defn names->tax [names]
+  (let [names (map #(cl-format nil "~S" %) (keys names))
+        fields "be.name, a.ancestors"
+        tables ["bioentry as be"
+                "taxon as tx"
+                "ancestor as a"]
+        tables (str/join "," tables)
+        constraints [(str "be.name in ("
+                          (str/join "," names) ")")
+                     "be.taxon_id=tx.taxon_id"
+                     "tx.ncbi_taxon_id=a.ncbi_taxon_id"]
+        constraint (str/join " and " constraints)
+        stmt (str "select " fields
+                  " from " tables
+                  " where " constraint)]
+    ;;(prn stmt)
+    (sql/with-connection mysql-ds
+      (sql/with-query-results qresults [stmt]
+        (doall qresults)))))
 
 
 
@@ -521,43 +558,6 @@
 
 ;;;(time (rand-insts-by-rank-fasta-file "Proteobacteria" "genus" "/data2/Bio/Training/FastaFiles/proteobacteria-genus2.fna" :pred #(= (subs (% :name) 0 2) "NC")))
 
-
-
-;;; This is a set holding the DB fields to return out of a query.
-;;; Clojure vars, being Lisp dynamic vars, are dynamically rebindable
-;;; per any call stack (including per thread and differnt points in
-;;; thread call trees).  So, this is easily dynamically changed and
-;;; changable per query type by rebinding in the handlers for the
-;;; different queries.
-;;;
-(def *ret-keys*
-     (hash-set :taxname :taxon_id
-               :bioentry_id :identifier :name :description
-               :version :sfcount :ancestors))
-
-;;; Take the result map from the taxon driven bioentries query, and
-;;; transform the contents.  This revolves around keeping only the
-;;; keys listed in the *RET-KEYS* map and further, also transforms the
-;;; taxonomy ancestors result to filter out the top two nodes
-;;; (cellular org and bacteria as they are _always_ part of _our_
-;;; results) and the final node which is the originating taxon which
-;;; is included as a separate field.
-;;;
-(defn xform-result [result-map]
-  (into {} (keep
-            (fn [kv]
-              (let [v (*ret-keys* (key kv))]
-                (when v
-                  (cond
-                   (= :ancestors v)
-                   (let [ans (vec (str/split #", " (val kv)))
-                         ans (subvec ans 2 (dec (count ans)))]
-                     [(key kv) (str/join ", " ans)])
-
-                   (= :identifier v) [:gbid (val kv)]
-
-                   :else kv))))
-            result-map)))
 
 
 ;;; Main function for obtaining the bioentries requested by the user

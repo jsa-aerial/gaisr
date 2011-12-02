@@ -8,6 +8,7 @@
 // Histories are just typical circular buffers over an array.  Since
 // JS arrays are expandable, we don't need to allocate full size up
 // front.
+//
 var inputHist = {
     val: [],
     index: 0,
@@ -74,6 +75,65 @@ function addHistoryItem (item) {
 
 
 
+/*
+  -- Page tabbing
+*/
+
+var pageInfo = {
+    1: {elts: ["seq-query", "actionForm"],
+        results: "", cnt: 0, tbox: false},
+    2: {elts: ["result-view", "evspan", "view-div"],
+        results: "", cnt: 0, tbox: false},
+    3: {elts: [], results: "", cnt: 0},
+    4: {elts: [], results: "", cnt: 0}
+}
+
+function setDisplay (o, n) {
+    o.each(function(e){$(e).hide()});
+    n.each(function(e){$(e).show()});
+}
+
+function recallResults(tp) {
+    var n = pageInfo[tp];
+    var results = $('results');
+    results.update("");
+    $('toggleBox').setValue(n.tbox);
+    if (n.results == "") {
+        $('count').hide();
+    } else {
+        n.results.each(function (i) {results.appendChild(i);});
+        var count = $('count');
+        count.update(n.cnt);
+        count.show();
+    }
+}
+
+var activeTab = undefined;
+
+function setActiveTab (elt) {
+    var tmp = activeTab;
+    tmp.removeClassName('tab-active');
+    tmp.addClassName('tab-inactive');
+    elt.removeClassName('tab-inactive');
+    elt.addClassName('tab-active');
+    activeTab = elt;
+
+    var tabPage = elt.getAttribute('value');
+    var oldPage = tmp.getAttribute('value');
+    pageInfo[oldPage].results = $('results').childElements();
+    pageInfo[oldPage].cnt = $('count').textContent;
+    pageInfo[oldPage].tbox = $('toggleBox').getValue();
+    setDisplay(pageInfo[oldPage].elts, pageInfo[tabPage].elts);
+    recallResults(tabPage);
+}
+
+
+
+
+/*
+  -- Toggling and selections
+*/
+
 function evaluePass (e) {
     var cutoff = $('evinput').getValue();
     //console.log(hitFeatures[e]["evalue"], " < ", cutoff,
@@ -138,10 +198,20 @@ function gatherChecked (boxClass) {
 
 
 
+
+/*
+  -- Job configuration, control, monitoring, etc.
+
+  !! Right now, this stuff isn't ready.  Needs a rethink and refactor
+  now that we have much better ideas of the tasks and such a user will
+  typically request.
+
+*/
+
 // OK, it is not clear that submitting the content of the action form
 // with secondary events makes all that much sense.  It may make
 // rather more sense to simply call the observer function (see
-// bindForm in meyer-lab.js) directly (after first factoring it out as
+// bindForm in gaisr-main.js) directly (after first factoring it out as
 // a named function).  Events decouple things more, but it isn't clear
 // that here that is of any real use.  The downside is that, well, it
 // decouples things more.

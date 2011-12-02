@@ -38,9 +38,7 @@ function bindForm() {
 }
 
 
-
-
-document.observe("dom:loaded", function () {
+function DOMLoaded () {
     console.log('GAISR client init...');
     var u = Cookies.user;
     if (u) $('user').setValue(u);
@@ -57,28 +55,30 @@ document.observe("dom:loaded", function () {
     activeTab = navList.children[0].down('a');
 
     Ajax.Responders.register({
-      onCreate: function () {
-          if ($('fspinner')) {
-            $('fcount').hide();
-            $('fspinner').show();
-          } else {
-            $('count').hide();
-            $('spinner').show();
-          }
-      },
-      onComplete: function () {
-          console.log("***Ajax COMPLETED");
-          if (0 == Ajax.activeRequestCount) {
-            if ($('fspinner')) {
-                $('fspinner').hide();
-                $('fcount').show();
-            } else {
-                $('spinner').hide();
-                $('count').show();
+            onCreate: function () {
+                if ($('fspinner')) {
+                    $('fcount').hide();
+                    $('fspinner').show();
+                } else {
+                    $('count').hide();
+                    $('spinner').show();
+                }
+            },
+            onComplete: function () {
+                console.log("***Ajax COMPLETED");
+                if (0 == Ajax.activeRequestCount) {
+                    if ($('fspinner')) {
+                        $('fspinner').hide();
+                        $('fcount').show();
+                    } else {
+                        $('spinner').hide();
+                        $('count').show();
+                    }
+                };
             }
-          };
-        }
-      });
+        });
     console.log('GAISR client initialized.');
-  });
+}
 
+
+// document.observe("dom:loaded", DOMLoaded);

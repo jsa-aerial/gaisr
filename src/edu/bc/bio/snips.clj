@@ -1,5 +1,5 @@
 
-(in-ns 'edu.bc.bio.R-be)
+(in-ns 'edu.bc.bio.gaisr.pipeline)
 
 
 
@@ -21,18 +21,42 @@
                       (directory-files "/data2/Bio/Training/FastaFiles" ".fna")
                       :eval 1.0)))))
 
+(def *cur-search*
+     (future (doall (cms&hitfnas->cmsearch-out
+                     @*cur-run*
+                     (sort (fs/directory-files
+                            "/data2/Bio/Training/FastaFiles" ".fna"))
+                     :eval 1.0))))
+
+
 (pds/gen-aligned-training-sets
  "/data2/Bio/Training/MoStos/ECS4" :ev-value 0.00001)
 
-(let [base "/data2/Bio/Training/MoStos"
-      dirs (sort (filter fs/directory? (fs/directory-files base "")))
-      names (map fs/basename dirs)]
-  (filter (fn [d]
-	    (and (not-empty (fs/directory-files d ".cmsearch.out"))
-		 (reduce #(and %1 (not (fs/empty? %2)))
-			 true (fs/directory-files d ".cmsearch.out"))
-		 (empty? (fs/directory-files d ".cmsearch.csv"))))
-	  dirs))
+(def *dirs-needing-training-sets*
+     (let [base "/data2/Bio/Training/MoStos"
+           dirs (sort (filter fs/directory? (fs/directory-files base "")))
+           names (map fs/basename dirs)]
+       (filter (fn [d]
+                 (and (not-empty (fs/directory-files d ".cmsearch.out"))
+                      (reduce #(and %1 (not (fs/empty? %2)))
+                              true (fs/directory-files d ".cmsearch.out"))
+                      (empty? (fs/directory-files d ".cmsearch.csv"))))
+               dirs)))
+
+
+(def *dirs-needing-cms*
+     (let [base "/data2/Bio/Training/MoStos"
+           dirs (sort (filter fs/directory? (fs/directory-files base "")))
+           names (map fs/basename dirs)]
+       (filter (fn [d] (and (not-empty (fs/directory-files d ".sto"))
+                            (empty? (fs/directory-files d ".cm"))))
+               dirs)))
+
+(def *cur-run*
+     (future
+      (mostos->calibrated-cms
+       (map #(first (fs/directory-files % ".sto"))
+            *dirs-needing-cms*))))
 
 
 

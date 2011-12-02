@@ -60,6 +60,10 @@ function stopEvent (e) {
 }
 
 
+// These are redefined later, but needed to placate Chrome (and others?)
+function uploadDone () {}
+DOMLoaded = undefined;
+
 // Pull in the rest of the client...
 //
 var filenames = ['JSLibs/prototype.js',
@@ -74,3 +78,26 @@ var filenames = ['JSLibs/prototype.js',
                  'gaisr-main.js'];
 
 includeJS(filenames);
+
+
+var gaisrInit = false;
+var gaisrWin = undefined;
+function syncDOMLoad (ms) {
+    if (DOMLoaded == undefined) {
+        setTimeout(syncDOMLoad, ms);
+    } else if (gaisrInit == false) {
+	//	if (gaisrWin != window) {
+	//    console.log("gaisrWin: " + gaisrWin + ", /= " + window);
+	//    gaisrWin = window;
+	//}
+	//console.log("Bef: gaisrInit = '" + gaisrInit + "'");
+        gaisrInit = true;
+        DOMLoaded();
+	//console.log("Aft: gaisrInit = '" + gaisrInit + "'");
+    } else {
+        console.log("onload fired twice - init once");
+    }
+}
+
+onload = function () {syncDOMLoad(500);}
+

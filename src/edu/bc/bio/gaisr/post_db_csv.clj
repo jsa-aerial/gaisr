@@ -490,7 +490,8 @@
   (let [cm (first (fs/directory-files dir ".cm"))
         csv-groups (vals (group-by
                           (fn[f]
-                            (->> f (str/split #"-") first
+                            (->> f (str/split #"sto\.") second
+                                 (str/split #"-") first
                                  (str/split #"\.") last))
                           (fs/directory-files dir ".cmsearch.csv")))
         bouts (map #(str/replace-re #"[0-9]*$" ""

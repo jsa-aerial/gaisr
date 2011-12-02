@@ -1,5 +1,5 @@
-(defproject mlab "1.0.0-SNAPSHOT"
-  :description "meyer lab server - will be GAISR"
+(defproject gaisr "1.0.0-SNAPSHOT"
+  :description "GAISR - Genomic Analysis Illuminating Structured RNA"
 
   :dependencies [[org.clojure/clojure "1.2.1"]
                  [org.clojure/clojure-contrib "1.2.0"]

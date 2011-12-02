@@ -75,18 +75,45 @@
    (io/read-lines (fs/fullpath stofilespec))))
 
 (defn join-sto-fasta-lines [infilespec origin]
-  (let [[seq-lines gc-lines] (sto-GC-and-seq-lines infilespec)
+  (let [[seqcons-lines gc-lines] (sto-GC-and-seq-lines infilespec)
         gc-lines (if (not= origin "")
                    (concat (take 1 gc-lines) [origin] (drop 1 gc-lines))
                    gc-lines)
-        recombined-seqs (reduce
-                         (fn [m l]
-                           (let [[nm sq] (str/split #"\s{2,}+" l)
-                                 prev (get m nm [(gen-uid) ""])]
-                             (assoc m  nm [(first prev)
-                                           (str (second prev) sq)])))
-                         {} seq-lines)]
-    [gc-lines (sort-by #(-> % second first) (vec recombined-seqs))]))
+        recombined-lines (sort-by
+                          #(-> % second first)
+                          (vec (reduce
+                                (fn [m l]
+                                  (let [[nm sq] (if (.startsWith l "#")
+                                                  (str/split #"\s{2,}+" l)
+                                                  (str/split #"\s+" l))
+                                        prev (get m nm [(gen-uid) ""])]
+                                    (assoc m  nm [(first prev)
+                                                  (str (second prev) sq)])))
+                                {} seqcons-lines)))
+        {seq-lines false cons-lines true} (group-by
+                                           #(or (.startsWith (first %) "//")
+                                                (.startsWith (first %) "#"))
+                                           recombined-lines)]
+    [gc-lines seq-lines cons-lines]))
+
+
+(defn join-sto-fasta-file
+  "Block/join unblocked sequence lines in a sto or fasta file. For sto
+   files ORIGIN is a #=GF line indicating tool origin of file.  For
+   example, '#=GF AU Infernal 1.0.2'. Defaults to nothing."
+
+  [in-filespec out-filespec
+   & {origin :origin :or {origin ""}}]
+  (let [[gc-lines seq-lines cons-lines]
+        (join-sto-fasta-lines in-filespec origin)]
+    (io/with-out-writer (fs/fullpath out-filespec)
+      (doseq [gcl gc-lines] (println gcl))
+      (doseq [sl seq-lines]
+        (let [[nm [_ sq]] sl]
+          (cl-format true "~A~40T~A~%" nm sq)))
+      (doseq [cl cons-lines]
+        (let [[nm [_ sq]] cl]
+          (cl-format true "~A~40T~A~%" nm sq))))))
 
 
 (defn join-sto-fasta-file
@@ -96,7 +123,7 @@
 
   [in-filespec out-filespec
    & {origin :origin :or {origin ""}}]
-  (let [[gc-lines seq-lines] (join-sto-fasta-lines in-filespec origin)]
+  (let [[gc-lines seq-lines cons-lines] (join-sto-fasta-lines in-filespec origin)]
     (io/with-out-writer (fs/fullpath out-filespec)
       (doseq [gcl gc-lines] (println gcl))
       (doseq [sl seq-lines]

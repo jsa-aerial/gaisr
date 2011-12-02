@@ -695,9 +695,19 @@
 
 
 (defn mostos->calibrated-cms [mostos & {par :par :or {par 4}}]
-  (-> (ensure-vec mostos)
-      ((fn[mstos](map #(cmbuild %) mstos)))
-      ((fn[cms](doall (pmap #(cmcalibrate % :par par) cms))))))
+  (loop [mostos (ensure-vec mostos)
+         results []]
+    (let [nextgrp (take 3 mostos)]
+      (if (empty? nextgrp)
+        (flatten results)
+        (recur
+         (drop 3 mostos)
+         (conj results
+               (-> nextgrp
+                   ((fn[mstos]
+                      (map #(cmbuild %) mstos)))
+                   ((fn[cms]
+                      (doall (pmap #(cmcalibrate % :par par) cms)))))))))))
 
 
 ;;; (defn mostos&hitfile->cmsearch-out [mostos hifile]
@@ -719,9 +729,19 @@
 
 (defn cms&hitfna->cmsearch-out
   [cms hit-fna & {eval :eval :or {eval 1.0}}]
-  (pmap #(cmsearch % hit-fna (gen-hit-out-filespec % :hitfna hit-fna)
-                   :eval eval)
-        (ensure-vec cms)))
+  (loop [cms (ensure-vec cms)
+         results []]
+    (let [nextgrp (take 3 cms)]
+      (if (empty? nextgrp)
+        (flatten results)
+        (recur
+         (drop 3 cms)
+         (conj results
+               (doall (pmap
+                       #(cmsearch
+                         % hit-fna (gen-hit-out-filespec % :hitfna hit-fna)
+                         :eval eval)
+                       nextgrp))))))))
 
 (defn cms&hitfnas->cmsearch-out
   [cms hit-fnas & {par :par eval :eval :or {par false eval 1.0}}]

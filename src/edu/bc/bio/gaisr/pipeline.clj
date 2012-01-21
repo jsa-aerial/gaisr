@@ -111,19 +111,20 @@
 ;;; name/loc/seq tuples
 
 
-(defn utrs-xform [nm-loc-stg & {upstream :upstream :or {upstream 25}}]
+(defn utrs-xform [nm-loc-stg upstream downstream]
   (let [[name loc] (str/split #" " nm-loc-stg)
         [s e] (map #(Integer. %) (str/split #"-" loc))
         strand (if (< e s) -1 1)
-        [ns ne] (get-region name strand s upstream)
+        [ns ne] (get-region name strand s upstream downstream)
         tmp ns
         ns (if (< ne ns) ne ns)
         ne (if (= ns ne) tmp ne)
         len (math/abs (- ne ns))]
     [name [ns ne] strand len]))
 
-(defn utrs-filter [entries & {par :par upstream :upstream
-                              :or {par 10 upstream 25}}]
+(defn utrs-filter [entries
+                   & {par :par upstream :upstream downstream :downstream
+                      :or {par 10 upstream 25 downstream 25}}]
   (let [q (math/floor (/ (count entries) par))
         entsets (partition q q [] entries)
         leftover (last entsets)
@@ -134,7 +135,7 @@
        (set/union v subv))
      []
      (pmap (fn[entset]
-             (doall (map #(utrs-xform % :upstream upstream) entset)))
+             (doall (map #(utrs-xform % upstream downstream) entset)))
            entsets))))
 
 
@@ -728,14 +729,14 @@
 
 
 (defn cms&hitfna->cmsearch-out
-  [cms hit-fna & {eval :eval :or {eval 1.0}}]
+  [cms hit-fna & {par :par eval :eval :or {par 3 eval 1.0}}]
   (loop [cms (ensure-vec cms)
          results []]
-    (let [nextgrp (take 3 cms)]
+    (let [nextgrp (take par cms)]
       (if (empty? nextgrp)
         (flatten results)
         (recur
-         (drop 3 cms)
+         (drop par cms)
          (conj results
                (doall (pmap
                        #(cmsearch
@@ -744,16 +745,18 @@
                        nextgrp))))))))
 
 (defn cms&hitfnas->cmsearch-out
-  [cms hit-fnas & {par :par eval :eval :or {par false eval 1.0}}]
+  [cms hit-fnas &
+   {cmpar :cmpar par :par eval :eval :or {cmpar 3 par false eval 1.0}}]
   (let [mapper (if par pmap map)]
-    (mapper #(cms&hitfna->cmsearch-out cms % :eval eval)
+    (mapper #(cms&hitfna->cmsearch-out cms % :par cmpar :eval eval)
             (ensure-vec hit-fnas))))
 
 
 (defn cms&hitfile->cmsearch-out
-  [cms hitfile & {upstream :upstream :or {upstream 500}}]
+  [cms hitfile & {upstream :upstream downstream :downstream
+                  :or {upstream 500 downstream 25}}]
   (let [hit-fna (fs/replace-type hitfile ".hitfna")
-        utrs-filter #(utrs-filter % :upstream upstream)]
+        utrs-filter #(utrs-filter % :upstream upstream :downstream downstream)]
     (-> hitfile
         hitfile->basic-entries
         utrs-filter

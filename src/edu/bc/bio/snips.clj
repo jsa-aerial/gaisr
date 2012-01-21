@@ -2,6 +2,118 @@
 (in-ns 'edu.bc.bio.gaisr.pipeline)
 
 
+;;; Sto to ALN stuff
+;;; NOTE: This is in edu.bc.bio.gaisr.post-db-csv NAMESPACE
+;;;
+;;; Create them
+(let [base "/data2/Bio/Training/MoStos"
+      dirs (fs/directory-files base "")
+      pos-stos (map #(fs/directory-files % "pos.sto") dirs)
+      neg-stos (map #(fs/directory-files % "neg.sto") dirs)
+      dir-stos (map #(concat %1 %2) pos-stos neg-stos)]
+  (doseq [dstos dir-stos]
+    (doseq [ds dstos]
+      (when (not (fs/empty? (fs/replace-type ds ".fna")))
+        (sto->aln ds (fs/replace-type ds ".aln"))))))
+
+;;; Count them all up
+(let [base "/data2/Bio/Training/MoStos"
+      dirs (fs/directory-files base "")
+      pos-alns (flatten (map #(fs/directory-files % "pos.aln") dirs))
+      neg-alns (flatten (map #(fs/directory-files % "neg.aln") dirs))]
+  [(count (concat pos-alns neg-alns)) (count pos-alns) (count neg-alns)])
+==> [145 61 84]
+
+;;; Grab a couple +'s and -'s to look at
+(let [base "/data2/Bio/Training/MoStos"
+      dirs (fs/directory-files base "")
+      pos-alns (flatten (map #(fs/directory-files % "pos.aln") dirs))
+      neg-alns (flatten (map #(fs/directory-files % "neg.aln") dirs))]
+  [(take 2 pos-alns) (take 2 neg-alns)])
+
+;;; Split up for xvalidation (counting the pos and negs in partitions)
+(let [folds 5
+      base "/data2/Bio/Training/MoStos"
+      dirs (fs/directory-files base "")
+      pos-alns (flatten (map #(fs/directory-files % "pos.aln") dirs))
+      neg-alns (flatten (map #(fs/directory-files % "neg.aln") dirs))
+      both (concat pos-alns neg-alns)
+      size (int (/ (count both) folds))
+      sets (partition size size [] (shuffle both))
+      sets (map (fn[x]
+                  (let [[p n] (seq/separate #(re-find #"pos" %) x)]
+                    [(count p) (count n)])) sets)]
+  (prn :*** size sets)
+  (doseq [r (seq/rotations sets)]
+    (prn (first r) (rest r))))
+
+(def folds
+     (let [folds 5
+           base "/data2/Bio/Training/MoStos"
+           dirs (fs/directory-files base "")
+           pos-alns (flatten (map #(fs/directory-files % "pos.aln") dirs))
+           neg-alns (flatten (map #(fs/directory-files % "neg.aln") dirs))
+           both (concat pos-alns neg-alns)
+           size (int (/ (count both) folds))
+           sets (partition size size [] (shuffle both))
+           sets2 (map (fn[x]
+                        (let [[p n] (seq/separate #(re-find #"pos" %) x)]
+                          [(count p) (count n)])) sets)]
+       (prn :*** size)
+       (map #(do [(first %) (rest %)])
+            (seq/rotations sets))))
+
+
+(catch-all
+ (let [resp (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
+                  (concat ["-n" "/home/jsa/TMP/km.dat"]
+                          (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                        (seq/separate #(re-find #"pos" %) (flatten (second (first folds))))))))
+       tra (runx "/usr/local/libsvm/svm-train" "-t" "4" "-b" "1" "/home/jsa/TMP/km.dat" "/home/jsa/TMP/km.model")
+       predx (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
+                   (concat ["-n" "/home/jsa/TMP/x.dat"]
+                           (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                         (seq/separate #(re-find #"pos" %) (flatten (second (first folds))))))
+                           ["--test"]
+                           (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                         (seq/separate #(re-find #"pos" %) (map #(fs/replace-type % ".fna") (ffirst folds)))))))
+       preds (runx "/usr/local/libsvm/svm-predict" "-b" "1" "/home/jsa/TMP/x.dat" "/home/jsa/TMP/km.model" "/home/jsa/TMP/x.output")]
+   preds))
+
+
+(catch-all
+ (let [resp (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel" (concat ["-n" "/home/jsa/TMP/km.dat"] (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s)) (seq/separate #(re-find #"pos" %) (ffirst folds))))))
+       tra (runx "/usr/local/libsvm/svm-train" "-t" "4" "-b" "1" "/home/jsa/TMP/km.dat" "/home/jsa/TMP/km.model")
+       predx (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel" (concat ["-n" "/home/jsa/TMP/x.dat"] (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s)) (seq/separate #(re-find #"pos" %) (ffirst folds)))) ["--test" "+1" "/data2/Bio/Training/MoStos/ECS4/ECS4_071211.sto.proteobacteria-genus-pos.fna" "-1" "/data2/Bio/Training/MoStos/ECS4/ECS4_071211.sto.firmicutes-genus-neg.fna"]))
+       preds (runx "/usr/local/libsvm/svm-predict" "-b" "1" "/home/jsa/TMP/x.dat" "/home/jsa/TMP/km.model" "/home/jsa/TMP/x.output")]
+   preds))
+
+
+
+
+
+
+;;; New metag1 cmsearches...
+(def metag1-fasta-files
+     (sort (fs/directory-files "/data2/Bio/MetaG1/FastaFiles" ".fa")))
+
+(def new-metag1-cms
+     (map #(first (fs/directory-files
+                   (fs/join "/data2/Bio/MetaG1/MoStos" %) ".cm"))
+          (str/split #" " "RF00050 RF00059 RF00168 RF00504")))
+
+(cms&hitfnas->cmsearch-out
+ new-metag1-cms metag1-fasta-files
+ :cmpar 4 :eval 1.0)
+
+
+
+;;; insert an origin line for stos without them...
+;;;
+(map #(join-sto-fasta-file
+       % % :origin "#=GF AU Infernal 1.0.2")
+     (sort (fs/directory-files "/data2/Bio/RFAM" ".sto")))
+
 
 (let [base "/data2/Bio/Training/MoStos"
       RFAM  "/data2/Bio/RFAM"

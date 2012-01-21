@@ -423,14 +423,24 @@
 
   (let [f-or-d (if (coll? csv-or-csv-dir)
                  (map fs/fullpath csv-or-csv-dir)
-                 (fs/fullpath csv-or-csv-dir))]
+                 (fs/fullpath csv-or-csv-dir))
+	reducer (fn [csvs]
+		  (reduce
+		   (fn[om f]
+		     (reduce
+		      (fn[m l]
+			(let [k (ffirst (csv/parse-csv l))]
+			  (assoc m k l)))
+		      om
+		      (drop 1 (io/read-lines f))))
+		   {} csvs))]
     (cond
      (coll? f-or-d)
      (let [tmp-file (fs/tempfile "catcsvs-" ".csv")]
        (io/with-out-writer tmp-file
          (println +cmsearch-csv-header+)
-         (doseq [f (filter pred f-or-d)]
-           (doseq [l (drop 1 (io/read-lines f))]
+	 (let [unique-line-map (reducer (filter pred f-or-d))]
+           (doseq [l (vals unique-line-map)]
              (println l))))
        tmp-file)
 
@@ -452,10 +462,10 @@
              (let [csvs (keep #(when (and (re-find #"cmsearch.csv$" %)
                                           (pred %))
                                  (fs/join d %))
-                              (fs/listdir d))]
-               (doseq [f csvs]
-                 (doseq [l (drop 1 (io/read-lines f))]
-                   (println l)))))))
+                              (fs/listdir d))
+		   unique-line-map (reducer csvs)]
+	       (doseq [l (vals unique-line-map)]
+		 (println l))))))
        tmp-file))))
 
 

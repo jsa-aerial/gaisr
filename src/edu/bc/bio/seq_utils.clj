@@ -74,6 +74,7 @@
                  (.startsWith % "#=GC RF"))))
    (io/read-lines (fs/fullpath stofilespec))))
 
+
 (defn join-sto-fasta-lines [infilespec origin]
   (let [[seqcons-lines gc-lines] (sto-GC-and-seq-lines infilespec)
         gc-lines (if (not= origin "")
@@ -83,9 +84,21 @@
                           #(-> % second first)
                           (vec (reduce
                                 (fn [m l]
-                                  (let [[nm sq] (if (.startsWith l "#")
-                                                  (str/split #"\s{2,}+" l)
-                                                  (str/split #"\s+" l))
+                                  (let [[nm sq]
+                                        (cond
+                                         ;;splits the line apart and
+                                         ;;hopefully creates vector
+                                         ;;["#GC SS_cons" structure]
+                                         (.startsWith l "#=GC SS_cons")
+                                         [(str/join " " (butlast (str/split #"\s+" l)))
+                                          (last (str/split #"\s+" l))]
+
+                                         (.startsWith l "#")
+                                         (str/split #"\s{2,}+" l)
+
+                                         :else
+                                         (str/split #"\s+" l))
+
                                         prev (get m nm [(gen-uid) ""])]
                                     (assoc m  nm [(first prev)
                                                   (str (second prev) sq)])))
@@ -129,6 +142,27 @@
       (doseq [sl seq-lines]
         (let [[nm [id sq]] sl]
           (cl-format true "~A~40T~A~%" nm sq))))))
+
+
+;;; Convert STO format to ALN format (ClustalW format).  This is
+;;; needed by some processors which cannot take a Stockholm alignment
+;;; format but need an "equivalent" in ClustalW ALigNment format.
+;;;
+(defn sto->aln
+  "Convert a stockhom format alignment file into its ClustalW
+   equivalent ALN format.  STOIN is the filespec for the stockholm
+   format file and ALNOUT is the filespec for the resulting
+   conversion (it is overwritten if it already exists!)"
+
+  [stoin alnout]
+  (let [seq-lines (filter #(not (or (= "//" %) (re-find #"^#" %)))
+                          (first (sto-GC-and-seq-lines stoin)))
+        seq-lines (map #(str/replace-re #"\." "-" %) seq-lines)]
+    (io/with-out-writer (fs/fullpath alnout)
+      (println "CLUSTAL W (1.83) multiple sequence alignment\n")
+      (doseq [sl seq-lines]
+        (println sl)))
+    alnout))
 
 
 

@@ -68,6 +68,8 @@
          :only [wrap-stacktrace]]
         [ring.handler.dump
          :only [handle-dump]]
+        [ring.middleware.etag
+         :only [wrap-etag]]
         compojure.core
         lamina.core
         aleph.http)
@@ -149,24 +151,33 @@
 
 
 
-(def *req* (atom ""))
-(def *req-body* (atom ""))
+(defn wrap-cache-control [handler]
+  (fn [request]
+    (let [response (handler request)]
+      (assoc-in response
+                [:headers "Cache-Control"]
+                ["no-transform" "no-cache"]))))
+
+
+(def req-log (atom ""))
+(def req-body-log (atom ""))
+(def log-req? (atom false))
+(def log-resp? (atom false))
+
+(defn log-request [handler]
+  (fn [request]
+    (when @log-req?
+      (swap! req-log (fn[_ rq] rq) request)
+      (swap! req-body-log (fn[_ b] b) (:body request))
+      (log> "rootLogger" :info "REQ: ~S" request))
+    (handler request)))
 
 (defn log-response [handler]
   (fn [request]
     (let [response (handler request)]
-      (log> "rootLogger" :info "~A" response)
+      (when @log-resp?
+        (log> "rootLogger" :info "~A" response))
       response)))
-
-
-(defn log-request [handler]
-  (fn [request]
-    (swap! *req* (fn[_ rq] rq) request)
-    (swap! *req-body* (fn[_ b] b) (:body request))
-    (log> "rootLogger" :info "REQ: ~S" request)
-    (handler request)))
-
-
 
 
 ;;; The main app is a pipeline of middleware wrappers to main site
@@ -175,13 +186,15 @@
 ;;;
 (def www-gaisr-ring
      (-> (handler/site main-routes)
-         ;;log-request
+         log-request
          ;;wrap-stacktrace
          wrap-cookies
          wrap-status
          wrap-file-info
          wrap-content-type
-         ;;log-response
+         wrap-cache-control
+         wrap-etag
+         log-response
          ))
 
 
@@ -211,7 +224,7 @@
 
 (defn start-gaisr-server [& {port :port :or {port 8080}}]
   (swap! stop-server-closure
-         (fn[_] (start-http-server gaisr-main {:port 8080}))))
+         (fn[_] (start-http-server gaisr-main {:port port}))))
 
 ;;;(stop-gaisr-server)
-
+;;;(start-gaisr-server)

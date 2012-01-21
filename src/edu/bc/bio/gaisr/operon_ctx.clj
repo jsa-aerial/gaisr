@@ -242,11 +242,11 @@
 
 (defn get-region
   ([species strand hit-start]
-     (get-region species strand hit-start 250))
+     (get-region species strand hit-start 250 25))
 
-  ([species strand hit-start take-upstream]
+  ([species strand hit-start take-upstream take-downstream]
      (let [upstream (* strand take-upstream)
-           downstream (* strand 25)]
+           downstream (* strand take-downstream)]
        (or (find-loc (get (species-hash species) strand)
                      hit-start strand upstream downstream)
            ;;return range where start must be at least 1
@@ -258,14 +258,15 @@
 ;;; Simple sanity check test.
 (defn sanity-check
   ([] (sanity-check "NC_010695"))
-  ([species]
+  ([species] (sanity-check species 25))
+  ([species downstream]
      (let [locs [[1 700 500] [1 1750 250] [1 960 25]
                  [1 8750 250] [1 1500 250]
                  ;; Minus strands
                  [-1 6950 100] [-1 6200 500] [-1 8000 250]
                  [-1 6800 250] [-1 8600 250]]]
        (map (fn [[a b c]]
-              (let [result (get-region species a b c)]
+              (let [result (get-region species a b c downstream)]
                 (prn "test result" species [a b c] result)
                 [[a b c] :=> result]))
             locs))))

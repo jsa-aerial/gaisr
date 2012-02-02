@@ -136,7 +136,8 @@
 
   [in-filespec out-filespec
    & {origin :origin :or {origin ""}}]
-  (let [[gc-lines seq-lines cons-lines] (join-sto-fasta-lines in-filespec origin)]
+  (let [[gc-lines seq-lines cons-lines] (join-sto-fasta-lines
+                                         in-filespec origin)]
     (io/with-out-writer (fs/fullpath out-filespec)
       (doseq [gcl gc-lines] (println gcl))
       (doseq [sl seq-lines]

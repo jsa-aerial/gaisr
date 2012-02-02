@@ -290,10 +290,6 @@
 ;;; ----- Count various frequencies of characteristics of output (from csvs)
 
 
-(defn dodir [dir filterf actionf & args]
-  (let [files (filterf dir)]
-    (map #(apply actionf % args) files)))
-
 (defn freq [csv-dir cnt-fn & args]
   (let [files (sort (fs/directory-files csv-dir ".cmsearch.csv"))
         names (map #(second (str/split #"\." (re-find #"sto\..*\.cmsearch" %)))
@@ -337,12 +333,12 @@
   point values denoting a range.  It defaults to 1.0.
 
   Hits ->
-    Positives {h | (> (evalue h) ev-cutoff), h in Hits}
+    Positives {h | (< (evalue h) ev-cutoff), h in Hits}
     Negatives {h | (<= ev-cutoff (evalue h)), h in Hits}
 
   Hits, ev-cutoff = [s e]->
     Positives {h | (< (evalue h) s), h in Hits}
-    Negatives {h | (<= s (evalue h) e), h in Hits}"
+    Negatives {h | (< e (evalue h)), h in Hits}"
 
   [cmsearch-out-csv & {ev-cutoff :ev-cutoff :or {ev-cutoff 1.0}}]
 
@@ -356,7 +352,7 @@
                                     (< (Float. (nth % epos)) evs))
                               rows)
         n1 (filter #(and (> (count %) 1) ; Bogus empty set check
-                         (<= (Float. (nth % epos)) eve))
+                         (< eve (Float. (nth % epos))))
                    n1)
         p1 (map #(do [(nth % nmpos) (nth % seqpos)]) p1)
         n1 (map #(do [(nth % nmpos) (nth % seqpos)]) n1)]
@@ -424,22 +420,22 @@
   (let [f-or-d (if (coll? csv-or-csv-dir)
                  (map fs/fullpath csv-or-csv-dir)
                  (fs/fullpath csv-or-csv-dir))
-	reducer (fn [csvs]
-		  (reduce
-		   (fn[om f]
-		     (reduce
-		      (fn[m l]
-			(let [k (ffirst (csv/parse-csv l))]
-			  (assoc m k l)))
-		      om
-		      (drop 1 (io/read-lines f))))
-		   {} csvs))]
+        reducer (fn [csvs]
+                  (reduce
+                   (fn[om f]
+                     (reduce
+                      (fn[m l]
+                        (let [k (ffirst (csv/parse-csv l))]
+                          (assoc m k l)))
+                      om
+                      (drop 1 (io/read-lines f))))
+                   {} csvs))]
     (cond
      (coll? f-or-d)
      (let [tmp-file (fs/tempfile "catcsvs-" ".csv")]
        (io/with-out-writer tmp-file
          (println +cmsearch-csv-header+)
-	 (let [unique-line-map (reducer (filter pred f-or-d))]
+         (let [unique-line-map (reducer (filter pred f-or-d))]
            (doseq [l (vals unique-line-map)]
              (println l))))
        tmp-file)
@@ -463,9 +459,9 @@
                                           (pred %))
                                  (fs/join d %))
                               (fs/listdir d))
-		   unique-line-map (reducer csvs)]
-	       (doseq [l (vals unique-line-map)]
-		 (println l))))))
+                   unique-line-map (reducer csvs)]
+               (doseq [l (vals unique-line-map)]
+                 (println l))))))
        tmp-file))))
 
 

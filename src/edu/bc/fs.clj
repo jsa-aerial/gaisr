@@ -212,6 +212,41 @@ if it is not or if the file cannot be deleted."
       (.transferFrom to-channel from-channel 0 (.size from-channel)))))
 
 
+(defn dodir
+  "Map ACTIONF over application of FILTERF to DIR.
+
+   FILTERF is a function that operates on a directory returning a
+   result set (typically a set of files).  ACTIONF is a function that
+   takes an element of the set and any ancillary supplied arguments
+   ARGS and returns an appropriate result.
+
+   Returns the seq of results of ACTIONF minus any nils"
+  [dir filterf actionf & args]
+  (let [files (filterf dir)]
+    (keep #(when-let [r (apply actionf % args)] r) files)))
+
+
+(defn cpfiles
+  "Copy a set of files from a set of dirs DIRDIR to an output dir OUTDIR.
+
+   FILE-TYPE is the type of files in each dir in DIRDIR that are
+   candidates to be copied.  REGEX is a regular expression to filter
+   the set of candidates
+
+   EX: (cpfiles \"/data2/Bio/Training/MoStos2\" \"/home/jsa/TMP/X\"
+                 #\"firm\" \".sto\")
+  "
+  [dirdir outdir regex file-type]
+  (flatten
+   (dodir dirdir
+          #(directory-files % "")
+          (fn[d]
+            (dodir d #(directory-files % file-type)
+                   #(when (re-find regex %)
+                      (let [to (join outdir (basename %))]
+                        (copy % to) to)))))))
+
+
 
 ; FIXME: Write this
 ; (defn copytree [from to] ...

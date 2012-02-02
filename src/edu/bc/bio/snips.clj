@@ -2,6 +2,23 @@
 (in-ns 'edu.bc.bio.gaisr.pipeline)
 
 
+(defn cpfiles [sto-dirdir outdir regex file-type]
+  (flatten
+   (dodir sto-dirdir
+          #(fs/directory-files % "")
+          (fn[d]
+            (dodir d #(fs/directory-files % file-type)
+                   #(when (re-find regex %)
+                      (let [to (fs/join outdir (fs/basename %))]
+                        (fs/copy % to) to)))))))
+
+
+(let [base "/data2/Bio/Training/MoStos2"
+      dirs (sort (filter fs/directory? (fs/directory-files base "")))]
+  (map #(gen-aligned-training-sets % :ev-cutoff [0.000001 0.001]) dirs))
+
+
+
 ;;; Sto to ALN stuff
 ;;; NOTE: This is in edu.bc.bio.gaisr.post-db-csv NAMESPACE
 ;;;
@@ -64,6 +81,50 @@
             (seq/rotations sets))))
 
 
+(def folds
+     (let [folds 10
+           base "/data2/Bio/Training/MoStos2"
+           dirs (fs/directory-files base "")
+           pos-alns (flatten (map #(fs/directory-files % "pos.aln") dirs))
+           neg-alns (flatten (map #(fs/directory-files % "neg.aln") dirs))
+           both (concat pos-alns neg-alns)
+           [both-firms both-proteo] (seq/separate #(re-find #"firm" %) both)
+           testset both
+           size (int (/ (count testset) folds))
+           sets (partition size size [] (shuffle testset))
+           sets2 (map (fn[x]
+                        (let [[p n] (seq/separate #(re-find #"pos" %) x)]
+                          [(count p) (count n)])) sets)]
+       (prn :*** size)
+       (map #(do [(first %) (rest %)])
+            (seq/rotations sets))))
+
+
+(time
+ (doseq [fold folds]
+   (prn (catch-all (let [resp (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
+                                    (concat ["-n" "/home/jsa/TMP/km.dat"]
+                                            (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                                          (seq/separate #(re-find #"pos" %) (flatten (second fold)))))))
+                         tra (runx "/usr/local/libsvm/svm-train" "-t" "4" "-b" "1" "/home/jsa/TMP/km.dat" "/home/jsa/TMP/km.model")
+                         predx (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
+                                     (concat ["-n" "/home/jsa/TMP/x.dat"]
+                                             (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                                           (seq/separate #(re-find #"pos" %) (flatten (second fold)))))
+                                             ["--test"]
+                                             (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                                           (seq/separate #(re-find #"pos" %) (map #(fs/replace-type % ".fna") (first fold)))))))
+                         preds (runx "/usr/local/libsvm/svm-predict" "-b" "1" "/home/jsa/TMP/x.dat" "/home/jsa/TMP/km.model" "/home/jsa/TMP/x.output")]
+                     preds)))))
+
+(def tst-90 (ffirst folds))
+(def tr-84 (second (nth folds 9)))
+
+
+
+
+;;; String BPLA kernel training and SVM prediction runs
+;;;
 (catch-all
  (let [resp (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
                   (concat ["-n" "/home/jsa/TMP/km.dat"]
@@ -88,6 +149,24 @@
        preds (runx "/usr/local/libsvm/svm-predict" "-b" "1" "/home/jsa/TMP/x.dat" "/home/jsa/TMP/km.model" "/home/jsa/TMP/x.output")]
    preds))
 
+
+;;; Full 5 fold validation run
+(time
+ (doseq [fold folds]
+   (prn (catch-all (let [resp (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
+                                    (concat ["-n" "/home/jsa/TMP/km.dat"]
+                                            (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                                          (seq/separate #(re-find #"pos" %) (flatten (second fold)))))))
+                         tra (runx "/usr/local/libsvm/svm-train" "-t" "4" "-b" "1" "/home/jsa/TMP/km.dat" "/home/jsa/TMP/km.model")
+                         predx (runx "/home/jsa/Clojure/mlab/AuxSoftWare/bpla_kernel-1.0/bpla_kernel/bpla_kernel"
+                                     (concat ["-n" "/home/jsa/TMP/x.dat"]
+                                             (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                                           (seq/separate #(re-find #"pos" %) (flatten (second fold)))))
+                                             ["--test"]
+                                             (flatten (map (fn[s] (map #(if (re-find #"pos" %) ["+1" %] ["-1" %]) s))
+                                                           (seq/separate #(re-find #"pos" %) (map #(fs/replace-type % ".fna") (first fold)))))))
+                         preds (runx "/usr/local/libsvm/svm-predict" "-b" "1" "/home/jsa/TMP/x.dat" "/home/jsa/TMP/km.model" "/home/jsa/TMP/x.output")]
+                     preds)))))
 
 
 
@@ -145,7 +224,7 @@
  "/data2/Bio/Training/MoStos/ECS4" :ev-value 0.00001)
 
 (def *dirs-needing-training-sets*
-     (let [base "/data2/Bio/Training/MoStos"
+     (let [base "/data2/Bio/Training/MoStos2"
            dirs (sort (filter fs/directory? (fs/directory-files base "")))
            names (map fs/basename dirs)]
        (filter (fn [d]

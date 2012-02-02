@@ -603,6 +603,33 @@
          :good :bad)))
    hit-parts))
 
+(defn remove-dups
+  "Hits are relative in cmsearch out (sto file).  The original hit
+   start/end are relative to the relative sequence in the hit
+   information and the hit-loc-map we create uses these coordinates to
+   attempt duplication removal, but these relative coordinates when
+   changed to absolute coordinates for the entire genome seq can be
+   identical.  We don't have absolute coordinates when building the
+   original map, but we do have them after CMSEARCH-HI-PARTS.  We
+   maybe could remove these duplicates earlier (and not make yet
+   another pass!), but this at least has the advantage of being
+   transparent.
+
+   hit-parts is a seq of vecs [nm os oe abs abe & tail], where os and
+   oe are the original relative hit start/end and abs and abe are the
+   computed absolute hit start/end.  Filter hit-parts so only one [nm
+   abs abe] identified (keyed) entry remains."
+  [hit-parts]
+
+  (second ; just return filtered seq, not the map used...
+   (reduce (fn [[m s] v]
+             (let [[nm os oe abs abe & tail] v
+                   k [nm abs abe]]
+               (if (not (m k))
+                 [(assoc m k true) (conj s v)]
+                 [m s])))
+           [{} []] hit-parts)))
+
 
 (defn cmsearch-out-csv [cmsearch-out]
   (let [csv-file (str/replace-re #"\.out$" ".csv" cmsearch-out)
@@ -610,7 +637,7 @@
         [sto-loc-map hit-map hit-seq-map] (cmsearch-group-hits cmsearch-out)
         hit-parts (map #(cmsearch-hit-parts % hit-seq-map) hit-map)
         groups (group-hit-parts sto-loc-map hit-parts)
-        good (map #(csv/csv-to-stg (map str %)) (:good groups))
+        good (map #(csv/csv-to-stg (map str %)) (remove-dups (:good groups)))
         dups (map #(csv/csv-to-stg (map str %)) (:bad groups))]
     (io/with-out-writer (io/output-stream csv-file)
       (println +cmsearch-csv-header+)

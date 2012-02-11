@@ -1,21 +1,31 @@
 
-(in-ns 'edu.bc.bio.gaisr.pipeline)
+(in-ns 'edu.bc.bio.gaisr.post-db-csv)
 
 
-(defn cpfiles [sto-dirdir outdir regex file-type]
-  (flatten
-   (dodir sto-dirdir
-          #(fs/directory-files % "")
-          (fn[d]
-            (dodir d #(fs/directory-files % file-type)
-                   #(when (re-find regex %)
-                      (let [to (fs/join outdir (fs/basename %))]
-                        (fs/copy % to) to)))))))
+(defn pval2
+  "Reads in a sto file and n = an integer. The sto file is used to
+   generate a Clustal W type file with the same file name with an .aln
+   extension instead of .sto.  Produces .aln and generates n random
+   shuffled alignments and then calcuates p value by taking the
+   fraction sampled alignment MI > true MI. returns a position-pair
+   and the pvalue"
+
+  [stoin n]
+  (let [aln (sto->aln stoin (str (subs stoin 0 (- (count stoin) 3)) "aln"))
+        p (profile (read-sto stoin))
+        mi (mutual_info p)
+        rand_mi (apply concat (pmap (fn [randa]
+                                      (map #(mutual_info (profile %)) randa))
+                                    (partition-all (/ n 4) (rand_aln aln n))))]
+    (for [k (keys mi)]
+      [k (double (/ (count
+                     (filter (fn [x]
+                               (let [sample-mi (get x k)]
+                                 (> sample-mi (get mi k))))
+                             rand_mi))
+                    n))])))
 
 
-(let [base "/data2/Bio/Training/MoStos2"
-      dirs (sort (filter fs/directory? (fs/directory-files base "")))]
-  (map #(gen-aligned-training-sets % :ev-cutoff [0.000001 0.001]) dirs))
 
 
 
@@ -23,7 +33,7 @@
 ;;; NOTE: This is in edu.bc.bio.gaisr.post-db-csv NAMESPACE
 ;;;
 ;;; Create them
-(let [base "/data2/Bio/Training/MoStos"
+(let [base "/data2/Bio/Training/MoStos2"
       dirs (fs/directory-files base "")
       pos-stos (map #(fs/directory-files % "pos.sto") dirs)
       neg-stos (map #(fs/directory-files % "neg.sto") dirs)

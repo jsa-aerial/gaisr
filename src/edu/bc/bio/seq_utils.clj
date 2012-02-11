@@ -149,21 +149,62 @@
 ;;; needed by some processors which cannot take a Stockholm alignment
 ;;; format but need an "equivalent" in ClustalW ALigNment format.
 ;;;
+;;; OK, (9-Feb-2012) some tools seem to need things blocked while
+;;; others don't work if they are blocked.  Worse, what counts as
+;;; valid Clustal/aln format or not is ill defined with multiple
+;;; definitions in the community (e.g., many claim 60 character seqs
+;;; per line but others say 50; some claim must be blocked, others say
+;;; unblocked is valid).  So, we have two variants.  One which blocks
+;;; and a main driver which calls blocked version if requested or just
+;;; does simple unblocked itself.
+;;;
+(defn sto->aln-blocked
+  "Convert a stockhom format alignment file into its ClustalW
+   equivalent BLOCKED ALN format. Blocking is done in 60 character
+   chunks.  STOIN is the filespec for the stockholm format file and
+   ALNOUT is the filespec for the resulting conversion (it is
+   overwritten if it already exists!)"
+
+  [stoin alnout]
+  (let [seq-lines (second (join-sto-fasta-lines stoin ""))
+        seq-lines (map (fn [[nm [uid sl]]]
+                         [nm [uid (partition-stg
+                                   60 (str/replace-re #"\." "-" sl))]])
+                       seq-lines)]
+    (io/with-out-writer alnout
+      (println "CLUSTAL W (1.83) multiple sequence alignment\n")
+      (loop [x seq-lines]
+        (let [[nm [uid sl]] (first x)]
+          (when (not-empty sl)
+            (do
+              (doseq [[nm [uid sl]] x]
+                  (cl-format true "~A~40T~A~%" nm (first sl)))
+              (println "")
+              (recur (map (fn [[nm [uid sl]]]
+                            [nm [uid (rest sl)]])
+                          x)))))))
+    alnout))
+
 (defn sto->aln
   "Convert a stockhom format alignment file into its ClustalW
    equivalent ALN format.  STOIN is the filespec for the stockholm
    format file and ALNOUT is the filespec for the resulting
-   conversion (it is overwritten if it already exists!)"
+   conversion (it is overwritten if it already exists!)
 
-  [stoin alnout]
-  (let [seq-lines (filter #(not (or (= "//" %) (re-find #"^#" %)))
-                          (first (sto-GC-and-seq-lines stoin)))
-        seq-lines (map #(str/replace-re #"\." "-" %) seq-lines)]
-    (io/with-out-writer (fs/fullpath alnout)
-      (println "CLUSTAL W (1.83) multiple sequence alignment\n")
-      (doseq [sl seq-lines]
-        (println sl)))
-    alnout))
+   BLOCKED is a boolean indicating whether the output should be
+   blocked (60 chars per chunk).  Default is unblocked."
+
+  [stoin alnout & {blocked :blocked :or {blocked false}}]
+  (if blocked
+    (sto->aln-blocked stoin alnout)
+    (let [seq-lines (filter #(not (or (= "//" %) (re-find #"^#" %)))
+                            (first (sto-GC-and-seq-lines stoin)))
+          seq-lines (map #(str/replace-re #"\." "-" %) seq-lines)]
+      (io/with-out-writer (fs/fullpath alnout)
+        (println "CLUSTAL W (1.83) multiple sequence alignment\n")
+        (doseq [sl seq-lines]
+          (println sl)))
+      alnout)))
 
 
 

@@ -31,9 +31,89 @@
 ;;; (compile 'edu.bc.utils)
 
 
-(defn div [l r]
-  (let [q (math/floor (/ l r))]
-    [q (rem l r)]))
+;;; -----------------------------------------------------------------
+;;; Various ancillary math/arithmetic stuff.
+
+(defn div
+  "Integer division.  Return [q r], such that floor(n / d) * q + r = q"
+  [n d]
+  (let [q (math/floor (/ n d))]
+    [q (rem n d)]))
+
+
+(defn logb
+  "Return the log to the base b _function_ of x"
+  [b]
+  (let [lnb (Math/log b)]
+    (fn[x] (/ (Math/log x) lnb))))
+
+(defn log
+  "Return the natural log of x"
+  [x]
+  (Math/log x))
+
+(def
+ ^{:doc
+   "Named version of (logb 2).  Important enough to have a named top
+    level function"
+   :arglists '([x])}
+ log2 (logb 2))
+
+(def
+ ^{:doc
+   "Named version of (logb 10).  Important enough to have a named top
+    level function"
+   :arglists '([x])}
+ log10 (logb 10))
+
+
+(defn n!
+  "For positive integer N, compute N factorial."
+  [n]
+  {:pre [(integer? n) (> n -1)]}
+  (if (= n 0)
+    1
+    (reduce #(* %1 %2) (range 1 (inc n)))))
+
+(defn n-k!
+  "For positive integers N and K, compute (n-k)!"
+  [n k]
+  {:pre [(integer? n) (integer? k) (> n -1) (<= k n)]}
+  (cond
+   (= n k) 1
+   (= k 1) (n! n)
+   :else
+   (reduce #(* %1 %2) (range n k -1))))
+
+
+(defn nCk
+  "For positive integers N and K, compute N choose K (binomial
+   coefficient)"
+  [n k]
+  (/ (n-k! n k) (n! k)))
+
+
+(defn shannon-entropy
+  "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
+   where i ranges over the unique elements of S and pi is the
+   probability of i in S: (freq i s)/(count s)"
+  [s]
+  (let [fs (frequencies s)
+        cnt (float (reduce (fn[x [k v]] (+ x v)) 0 fs))
+        H (reduce
+           (fn[H [c v]]
+             (let [p (float (/ v cnt))]
+               (float (+ H (float (* p (float (log2 p))))))))
+           (float 0.0) fs)]
+    (float (- H))))
+
+
+(defn sum
+  "Return the sum of the numbers in COLL.  If COLL is a map, return
+  the sum of the (presumed all numbers) in (vals coll)"
+  [coll]
+  (let [v (if (map? coll) (vals coll) coll)]
+    (apply + v)))
 
 
 (defn primes
@@ -79,6 +159,13 @@
         (recur (rest ps)
                (if pf (conj factors pf) factors))))))
 
+
+
+
+;;; -----------------------------------------------------------------
+;;; Miscellaneous changes/additions/"fixes" to various operations that
+;;; are either already in Clojure or in bits of contribs or probably
+;;; _will_ be in future (at which point these can be retired...)
 
 
 (defn merge-with*
@@ -172,20 +259,19 @@
 ;;; clojure.string, clojure.contrib.string or clojure.str-utils
 ;;;
 (defn string-less?
-  [l r]
   "Case insensitve string comparison.  Usable as a sort comparator"
+  [l r]
   (neg? (.compareToIgnoreCase l r)))
 
 (defn string-greater?
-  [l r]
   "Case insensitve string comparison.  Usable as a sort comparator"
+  [l r]
   (pos? (.compareToIgnoreCase l r)))
 
 (defn string-equal?
-  [l r]
   "Case insensitve string comparison.  Usable as a sort comparator"
+  [l r]
   (zero? (.compareToIgnoreCase l r)))
-
 
 
 (defn intstg?
@@ -194,6 +280,28 @@
   [s]
   (let [hit (re-find #"[0-9]+" s)]
     (and hit (= hit s))))
+
+
+(defn partition-stg
+  "Returns a sequence of strings of n chars each, at offsets step
+  apart. If step is not supplied, defaults to n, i.e. the partitions
+  do not overlap. If a pad collection (a string or other collection of
+  chars) is supplied, use its characters as necessary to complete last
+  partition upto n characters. In case there are not enough padding
+  chars, return a partition with less than n characters."
+  ([n stg]
+     (partition-stg n n stg))
+  ([n step stg]
+     (partition-stg n step "" stg))
+  ([n step pad stg]
+     (let [pad (if (string? pad) pad (str/join "" pad))
+           stg (str stg pad)]
+       (loop [s stg
+              sv []]
+         (if (= s "")
+           sv
+           (recur (str/drop step s)
+                  (conj sv (str/take n s))))))))
 
 
 

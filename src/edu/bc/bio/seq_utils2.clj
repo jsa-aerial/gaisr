@@ -45,8 +45,8 @@
   (:use [clojure.contrib.condition
          :only [raise handler-case *condition* print-stack-trace]]
         clojure.contrib.math
-	
-	edu.bc.utils
+
+        edu.bc.utils
         edu.bc.bio.seq-utils))
 
 
@@ -58,18 +58,13 @@
 
 
 
-(defn nt-cntn [n sequence]
-  (if (= 1 n)
-    (frequencies (seq sequence))
-    (loop [s (seq sequence)
-           res (transient {})]
-      (let [k (str/join "" (take n s))]
-        (if (>= (count s) n)
-          (recur (drop 1 s)
-                 (assoc! res k (inc (get res k 0))))
-          (persistent! res))))))
-
-
+(defn nt-cntn
+  "Frequencies of N-(nucleotides/amino-acides) of sequence SEQUENCE,
+   i.e., for N=2 and bases freq of dinucleotides.  Effectively a
+   rename of utils:freqn.
+   "
+  [n sequence]
+  (freqn n sequence))
 
 
 (def test-nts

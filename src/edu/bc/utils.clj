@@ -336,18 +336,108 @@
           s))))
 
 
-;;; Simple ngram comparison.  Metric is
-(defn letter-pairs [s n]
+
+;;; Various frequency counts, probabilities, similarity coefficients,
+;;; corresponding difference fns and ngram operations
+
+(defn letter-pairs [n s]
   (set (map #(apply str %) (partition n 1 s))))
 
-(defn word-letter-pairs [s n]
-  (reduce (fn[m s] (set/union m (letter-pairs s n))) #{} (str/split #" " s)))
+(defn word-letter-pairs [n s]
+  (reduce (fn[m s] (set/union m (letter-pairs n s))) #{} (str/split #" " s)))
 
-(defn ngram-compare [s1 s2 & {uc? :uc? n :n :or {n 2 uc? true}}]
-  (let [wlp1 (word-letter-pairs (if uc? (str/upper-case s1) s1) n)
-        wlp2 (word-letter-pairs (if uc? (str/upper-case s2) s2) n)]
-    (/ (* 2 (count (set/intersection wlp1 wlp2)))
-       (+ (count wlp1) (count wlp2)))))
+(defn freqn
+  "Frequencies of n-grams in collection COLL treated as a sequence
+   Ex: (freqn 2 \"acagtcaacctggagcctggt\")
+   =>
+   {\"aa\" 1, \"cc\" 2, \"gg\" 2, \"ac\" 2, \"ag\" 2, \"gt\" 2,
+   \"tc\" 1, \"ct\" 2, \"tg\" 2, \"ga\" 1, \"gc\" 1, \"ca\" 2}
+  "
+  [n coll]
+  (if (= 1 n)
+    (frequencies (seq coll))
+    (loop [s (seq coll)
+           res (transient {})]
+      (let [k (str/join "" (take n s))]
+        (if (>= (count s) n)
+          (recur (drop 1 s)
+                 (assoc! res k (inc (get res k 0))))
+          (persistent! res))))))
+
+(defn freq-sum [freq-map]
+  (sum (map (fn[[k v]] v) freq-map)))
+
+(defn freqs-probs [n coll]
+  (let [freqs (freqn n coll)
+        sz (sum (vals freqs))
+        probs (reduce (fn[m [k v]]
+                        (assoc m k (float (/ v sz))))
+                      {} freqs)]
+    [freqs probs sz]))
+
+
+(defn diff-fn
+  "Return the function that is 1 - F applied to its args: (1 - (apply f args)).
+
+   Ex: (let [dice-diff (diff-fn dice-coeff)
+             ...]
+         (dice-diff some-set1 some-set2))"
+  [f] (fn [& args] (- 1 (apply f args))))
+
+
+(defn dice-coeff [s1 s2]
+  (/ (* 2 (count (set/intersection s1 s2)))
+     (+ (count s1) (count s2))))
+
+(defn jaccard-index [s1 s2]
+  (/ (count (set/intersection s1 s2))
+     (count (set/union s1 s2))))
+
+(defn tversky-index
+  "Tversky index of two sets S1 and S2.  A generalized NON metric
+   similarity 'measure'.  Generalization is through the ALPHA and BETA
+   coefficients:
+
+   TI(S1,S2) = (/ |S1^S2| (+ |S1^S2| (* ALPHA |S1-S2|) (* BETA |S2-S1|)))
+
+   For example, with alpha=beta=1, TI is jaccard-index with
+                alpha=beta=1/2 TI is dice-coeff
+   "
+  [s1 s2 alpha beta]
+  (let [s1&s2 (count (set/intersection s1 s2))
+        s1-s2 (count (set/difference s1 s2))
+        s2-s1 (count (set/difference s2 s1))]
+    (/ s1&s2
+       (+ s1&s2 (* alpha s1-s2) (* beta s2-s1)))))
+
+
+(def
+ ^{:doc
+   "Named version of (diff-fn jaccard-index s1 s2).  This difference
+    function is a similarity that is a proper _distance_ metric (hence
+    usable in metric trees like bk-trees)."
+   :arglists '([s1 s2])}
+ jaccard-dist
+ (diff-fn jaccard-index))
+
+
+(defn freq-jaccard-index
+  ""
+  [s1 s2]
+  (let [freq-s1 (set s1)
+        freq-s2 (set s2)
+        c1 (freq-sum (set/intersection freq-s1 freq-s2))
+        c2 (freq-sum (set/union freq-s1 freq-s2))]
+    (/ c1 c2)))
+
+
+(defn ngram-compare
+  ""
+  [s1 s2 & {uc? :uc? n :n sfn :sfn ngfn :ngfn
+            :or {n 2 uc? false sfn dice-coeff ngfn word-letter-pairs}}]
+  (let [s1 (ngfn n (if uc? (str/upper-case s1) s1))
+        s2 (ngfn n (if uc? (str/upper-case s2) s2))]
+    (sfn s1 s2)))
 
 ;;;(float (ngram-compare "FRANCE" "french"))
 ;;;(float (ngram-compare "FRANCE" "REPUBLIC OF FRANCE"))

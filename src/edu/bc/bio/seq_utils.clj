@@ -129,22 +129,6 @@
           (cl-format true "~A~40T~A~%" nm sq))))))
 
 
-(defn join-sto-fasta-file
-  "Block/join unblocked sequence lines in a sto or fasta file.  For
-   sto files ORIGIN is a #=GF line indicating tool origin of file.
-   For example, '#=GF AU Infernal 1.0.2'.  Defaults to nothing."
-
-  [in-filespec out-filespec
-   & {origin :origin :or {origin ""}}]
-  (let [[gc-lines seq-lines cons-lines] (join-sto-fasta-lines
-                                         in-filespec origin)]
-    (io/with-out-writer (fs/fullpath out-filespec)
-      (doseq [gcl gc-lines] (println gcl))
-      (doseq [sl seq-lines]
-        (let [[nm [id sq]] sl]
-          (cl-format true "~A~40T~A~%" nm sq))))))
-
-
 ;;; Convert STO format to ALN format (ClustalW format).  This is
 ;;; needed by some processors which cannot take a Stockholm alignment
 ;;; format but need an "equivalent" in ClustalW ALigNment format.
@@ -197,7 +181,7 @@
   [stoin alnout & {blocked :blocked :or {blocked false}}]
   (if blocked
     (sto->aln-blocked stoin alnout)
-    (let [seq-lines (filter #(not (or (= "//" %) (re-find #"^#" %)))
+    (let [seq-lines (filter #(not (or (.startsWith % "//") (re-find #"^#" %)))
                             (first (sto-GC-and-seq-lines stoin)))
           seq-lines (map #(str/replace-re #"\." "-" %) seq-lines)]
       (io/with-out-writer (fs/fullpath alnout)
@@ -205,6 +189,50 @@
         (doseq [sl seq-lines]
           (println sl)))
       alnout)))
+
+
+(defn check-sto
+  "Checks a sto file to ensure that there are valid characters being
+   used in the sequences consensus structure line. Will print out
+   errors in the sto file by sequence number.  Input requires a sto
+   file"
+
+  [sto]
+  (let [valid-symbols #{"A" "C" "G" "U"
+                        "-" "." ":" "_"
+                        "a" "b" "B"
+                        "(" ")" "<" ">"}
+        [_ seq-lines cons-lines] (join-sto-fasta-lines sto "")
+        [_ [_ cl]] (first cons-lines)
+        ;;adds numbers to the sequences so that they
+        ;;can be identified
+        sl (partition 2
+                      (interleave (iterate inc 1)
+                                  (reduce (fn [v [_ [_ sq]]]
+                                            (conj v (.toUpperCase sq)))
+                                          [] seq-lines)))
+        ;;checks for valid symbols
+        check-char (fn [[n s]]
+                     [n (every? #(contains? valid-symbols %)
+                                (rest (str/split #"" s)))])
+        ;;checks to see if sequences have same
+        ;;length as consensus structure
+        check-len (fn [[n s]]
+                    [n (= (count s) (count cl))])]
+    (cond
+     (some #(false? (second %)) (map #(check-char %) sl))
+     (prn "sequence contains invalid character in: "
+          (remove #(second %) (map #(check-char %) sl)))
+
+     (some #(false? (second %)) (map #(check-len %) sl))
+     (prn "sequence contains invalid length compared to cons-line in: "
+          (remove #(second %) (map #(check-len %) sl)))
+
+     (false? (second (check-char [1 cl])))
+     (prn "consensus structure contains invalid character")
+
+     :else
+     (prn "sto is good"))))
 
 
 

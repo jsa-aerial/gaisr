@@ -50,16 +50,95 @@
         edu.bc.bio.seq-utils))
 
 
-(defn reverse-compliment [sq]
-  (let [m {\A \T \T \A \G \C \C \G}
-        utx #(if (= % \U) \T %)]
-    (str/join "" (reverse (map #(m (utx %)) sq)))))
+(defn reverse-compliment
+  "Reverse compliment of DNA/RNA sequence SQ. Return the sequence that
+   would pair with (reverse SQ).
+
+   Ex: (reverse-compliment \"AAGGAAUUCC\") => \"GGAAUUCCUU\"
+  "
+  [sq]
+  (let [ucp (first (str/codepoints "U"))
+        m (if (neg? (.indexOf sq ucp))
+            {\A \T \T \A \G \C \C \G}
+            {\A \U \U \A \G \C \C \G})]
+    (str/join "" (reverse (map m sq)))))
 
 
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; Sequence comparison and filtering. General comparison and filter
+;;; of sequence collections.  Specific comparison and filters for
+;;; Levenshtein global, ngram, hamming provided.
+
+(defn edist [[nq lq qseq] [nms ls sseq]]
+  (let [qlen (count qseq)
+        slen (count sseq)
+        %70-qlen (* 0.7 qlen)]
+    (if (<= slen %70-qlen)
+      [:keep [slen %70-qlen] 0.0 0 [nms ls sseq]]
+      (let [dist (levenshtein qseq sseq)
+            %ident (float (/ (math/abs (- dist qlen)) qlen))]
+        [(if (>= %ident 0.9) :toss :keep)
+         [slen %70-qlen] %ident dist [nms ls sseq]]))))
+
+(defn ngram-closeness [[nq lq qseq] [nms ls sseq]
+                       & {c :c n :n :or {c 0.85 n 4}}]
+  (let [qlen (count qseq)
+        slen (count sseq)
+        %70-qlen (* 0.7 qlen)]
+    (if (<= slen %70-qlen)
+      [:keep [slen %70-qlen] 0.0 0 [nms ls sseq]]
+      (let [%ident (float (ngram-compare qseq sseq :n n :uc? false))]
+        [(if (>= %ident c) :toss :keep)
+         [slen %70-qlen] %ident 0 [nms ls sseq]]))))
+
+
+(defn seq-same? [qseq test-set & {cmpfn :cmpfn :or {cmpfn edist}}]
+  (some #(= :toss (first (cmpfn qseq %)))
+        test-set))
+
+(defn pseq-same? [qseq test-set & {q :q cmpfn :cmpfn :or {q 10 cmpfn edist}}]
+  (loop [curset test-set
+         chunk (take q curset)]
+    (cond
+     (empty? chunk) false
+     (some #{:toss} (pmap #(first (cmpfn qseq %)) chunk)) true
+     :else (let [nextset (drop q curset)]
+             (recur nextset (take q nextset))))))
+
+
+(defn get-keeper-set [nlsq-tuples & {cmpfn :cmpfn :or {cmpfn edist}}]
+  (let [tuples (sort-by #(% 2) (fn[l r] (> (count l) (count r))) nlsq-tuples)]
+    (binding [seq-same? (if (< (count tuples) 100) seq-same? pseq-same?)]
+      (loop [keepers []
+             todo tuples]
+        (if (empty? todo)
+          keepers
+          (let [rep (first todo)]
+            (recur (if (not (seq-same? rep keepers :cmpfn cmpfn))
+                     (conj keepers rep)
+                     keepers)
+                   (rest todo))))))))
+
+
+
+
+
+
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; Sequence shuffling with nucleotide/aa frequency distributions
+;;; preserved.  Currently only provides support for dinucleotide
+;;; distributions.  Which is basically bogus, but the most typical use
+;;; case??
 
 
 (defn nt-cntn
-  "Frequencies of N-(nucleotides/amino-acides) of sequence SEQUENCE,
+  "Frequencies of N-(nucleotides/amino-acids) of sequence SEQUENCE,
    i.e., for N=2 and bases freq of dinucleotides.  Effectively a
    rename of utils:freqn.
    "

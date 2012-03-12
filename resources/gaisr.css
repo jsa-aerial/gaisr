@@ -1,10 +1,11 @@
 /* Basic element styles */
 
 body {
-  background-color: #E8E9FF; /* #CDD7FF;//#E5ECF9;//#CECECE; */
+  background-color: #EEEEEE; /* #CDD7FF;//#E5ECF9;//#CECECE; */
   color: #000;
   font: small Verdana, Arial, sans-serif;
 }
+
 
 
 h1 {
@@ -61,6 +62,61 @@ div.span-24 {float:left;margin-right: 5px;}
 --  Navigation menu bar styling.
 */
 
+
+ol#toc {
+    height: 2em;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+
+/* Left part of INactive tab */
+ol#toc li {
+    background: #bdf url(tabs.gif);
+    float: left;
+    margin: 0 3px 0 0;
+    padding-left: 10px;
+}
+
+/* Right part of INactive tab */
+ol#toc a {
+    background: url(tabs.gif) 100% 0;
+    color: #008;
+    display: block; /* float: left; */
+    outline: none;  /* remove link outline FF*/
+    line-height: 1.5em;
+    padding-right: 10px;
+    text-decoration: none;
+}
+
+
+/* Left part of active tab */
+ol#toc li.current {
+    background-color: #48f;
+    background-position: 0 -60px;
+}
+
+
+/* Right part of active tab */
+ol#toc li.current a {
+    background-position: 100% -60px;
+    color: #fff;
+    font-weight: bold;
+}
+
+
+/* Page Content */
+div.content {
+    border: #48f solid 3px;
+    clear: left;
+    padding: 1em;
+    background-color: #EEEEEE;
+}
+
+
+/* Old (still active) tabbing */
+
 #navigation {
     font-size: 90%;
     float: right;
@@ -80,14 +136,14 @@ div.span-24 {float:left;margin-right: 5px;}
 
 #navigation li:hover, #navigation li#selected {
     color: maroon;
-    background-color: #E8E9FF;
+    background-color: #EEEEEE;
 }
 
 .tab-active {
     padding: 0.4em 1.5em 0.4em 1.5em;
     color: maroon;
     font-weight: bold;
-    background-color: #E8E9FF;
+    background-color: #EEEEEE;
     text-decoration: none;
     border: none;
 }
@@ -107,7 +163,7 @@ div.span-24 {float:left;margin-right: 5px;}
 /* Chat/IM block */
 
 .im {
-  background-color: #E8E9FF;
+  background-color: #EEEEEE;
   height: 9em;
   overflow: auto;
   border: 1px solid #667;
@@ -188,7 +244,7 @@ div.span-24 {float:left;margin-right: 5px;}
 }
 
 #results {
-  background-color: #E8E9FF; /* #eee; */
+  background-color: #EEEEEE; /* #eee; */
   height: 37em;
   overflow: auto;
   border: 1px solid #FFF;
@@ -243,7 +299,7 @@ ul.accordion {
 
 ul.accordion li {
   clear: left;
-  background-color: #E8E9FF;
+  background-color: #EEEEEE;
 }
 
 ul.accordion h2 {
@@ -327,7 +383,7 @@ div.links li {
 /* Features window basics are like main body's */
 
 .features {
-  background-color: #E8E9FF; /* #CDD7FF;//#E5ECF9;//#CECECE; */
+  background-color: #EEEEEE; /* #CDD7FF;//#E5ECF9;//#CECECE; */
   color: #000;
   font: small Verdana, Arial, sans-serif;
   margin: 0;
@@ -336,12 +392,23 @@ div.links li {
 }
 
 #fresults {
-  background-color: #E8E9FF; /* #eee; */
+  background-color: #EEEEEE; /* #eee; */
   height: 51em;
   overflow: auto;
   border: 1px solid #FFF;
   border-width: 2px 0;
 }
+
+
+/* Controls slider look on charts */
+.slider {
+    margin-left: 10px;
+    width: 25px;
+    height: 6px;
+    font-size: 8px;
+    display: inline-block;
+}
+
 
 
 /* Locations */
@@ -406,7 +473,7 @@ div.nvs li {
 #genomeNamesDiv {
     border: 2px solid #667;
     display: center;
-}    
+}
 
 .scrib-box {
   display: inline;
@@ -454,7 +521,7 @@ div.nvs li {
 }
 
 .action {
-    background-color: #E8E9FF; /* #CDD7FF;//#E5ECF9;//#CECECE; */
+    background-color: #EEEEEE; /* #CDD7FF;//#E5ECF9;//#CECECE; */
     color: #000;
     font: small Verdana, Arial, sans-serif;
     margin: 0;
@@ -477,7 +544,7 @@ div.nvs li {
 }
 
 #selUL {
-    background-color: #E8E9FF; /* #eee; */
+    background-color: #EEEEEE; /* #eee; */
     height: 23em;
     width: 17em;
     overflow: auto;

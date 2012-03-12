@@ -238,8 +238,8 @@ var scriblInfo = {
     featHeight: 23,
     featTextSize: 12,
     featColors: {hit: "red",
-                 gene: "rgb(163, 127, 163)", // "rgb(123, 107, 143)"
-                 CDS: "rgb(233, 151, 63)",
+                 gene: "#998899", // "rgb(123, 107, 143)"
+                 CDS: "#bbbbdd",
                  misc_feature: "rgb(203, 95, 93)"},
 
     featNames: {hit: "loc", gene: "gene", CDS: "gene", misc_feature: "loc"},
@@ -294,6 +294,11 @@ function scriblLocusInfo (name, item, chart) {
             var start = loc.start;
             var len = loc.len;
             var strand = (loc.strand == 1) ? '+' : '-';
+
+            if (sftype == "hit") {
+                chart.scrollValues = [start - 2000, start + len + 2000];
+            }
+
             //console.log("loc.strand: " + loc.strand + ", strand: " + strand);
             locSeq.push(chart.addGene(start, len, strand));
 
@@ -327,12 +332,16 @@ function scriblFeatureTypes (name, info) {
     var chartInfo = info.chartInfos[name];
     var items = chartInfo.featureSet;
     var canvas = chartInfo.canvas;
-    var chart = new Scribl(canvas, w - 20);
 
-    if (chartInfo.chart) chartInfo.chart.tracks = []; // Clear old chart!
-    chartInfo.chart = chart;
+    if (!chartInfo.chart) {
+        chartInfo.chart = new Scribl(canvas, w - 20);
+    }
+
+    var chart = chartInfo.chart;
+    chartInfo.chart.tracks = []; // Clear old chart!
+    chart.scrollable = true;
     chart.tooltips.style = scriblInfo.tipStyle;
-    chart.trackSizes = scriblInfo.featHeight;
+    chart.laneSizes = scriblInfo.featHeight;
     chart.gene.text.size = scriblInfo.featTextSize;
     items.each(function (item) {
             scriblLocusInfo(name, item, chart);
@@ -487,11 +496,16 @@ function evalueCompare (l, r) {
 
 function scriblRequest (e) {
     console.log("scriblRequest: " + e);
-    var gbW = 940;
+    var gbW = 1000; //940;
     var gbH = 816;
     var scriblW = gbW - 40;
     var scriblH = [gbH / 3, 300].min();
     var entries = gatherChecked('.item-box').sort(evalueCompare);
+
+    if (entries.length == 0) {
+        alert("No items selected");
+        return undefined;
+    }
 
     scriblGBox(entries.slice(0,7).join(","), gbW, gbH);
     scriblInfo.chartInfos = {};
@@ -510,7 +524,6 @@ function scriblRequest (e) {
     console.log("COUNT: " + count);
 
     var scriblEntries = function () {
-        $('scriblCtrl').show();
         var ul = $('chartUL');
         nlfmap.each(function(nlf){
             // First set event watchers
@@ -529,9 +542,12 @@ function scriblRequest (e) {
             ul.appendChild(elt);
             var canvas = $(fname); // It's now a DOM element!
             scriblFeatures(fname, request, canvas);
+            $('scriblSpinner').hide();
             //$(fname+'fcount').show();
             });
     }
+    $('scriblCtrl').show();
+    $('scriblSpinner').show();
 
     // This is INSANE, but if we don't hack this into a timed request,
     // it doesn't work.  I think it has to do with some sort of timing
@@ -562,6 +578,12 @@ function genomeNamePage () {
 function scriblGenFasta() {
     var form = $('scriblForm');
     var entries = gatherChecked('.scrib-item-box');
+
+    if (entries.length == 0) {
+        alert("No hits selected!");
+        return undefined;
+    }
+
     var s = entries.map(function(e) {
             var name = e.slice(0, e.search("Scrib"));
             return name + " " + hitFeatures[name]["hitloc"] +
@@ -600,10 +622,18 @@ function scriblGenFasta() {
             parameters: form.serialize(),
             onSuccess: function (request) {
                 processLog(request);
-                alert("Generated:\n" + request.responseJSON);
+                $('scriblSpinner').hide();
+                var resp = request.responseJSON;
+                if (resp.error) {
+                    alert(resp.error);
+                    return undefined;
+                } else {
+                    alert("Generated:\n" + resp);
+                }
             }
         });
     }
+    $('scriblSpinner').show();
     setTimeout(launchAjax, 500);
 }
 

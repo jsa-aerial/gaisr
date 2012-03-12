@@ -66,10 +66,14 @@ DOMLoaded = undefined;
 
 // Pull in the rest of the client...
 //
-var filenames = ['JSLibs/prototype.js',
+var filenames = ['JSLibs/jquery.min.js',
+                 'JSLibs/jquery-ui.min.js',
+                 'JSLibs/dragscrollable.js',
+                 'JSLibs/prototype.js',
                  'JSLibs/scriptaculous.js',
                  'JSLibs/Scribl/Scribl.min.js',
                  'JSLibs/Scribl/Scribl.svg.js',
+                 'JSLibs/Scribl/Scribl.js',
                  'cookies.js',
                  'html-templates.js',
                  'entry-info.js',
@@ -86,14 +90,15 @@ function syncDOMLoad (ms) {
     if (DOMLoaded == undefined) {
         setTimeout(syncDOMLoad, ms);
     } else if (gaisrInit == false) {
-	//	if (gaisrWin != window) {
-	//    console.log("gaisrWin: " + gaisrWin + ", /= " + window);
-	//    gaisrWin = window;
-	//}
-	//console.log("Bef: gaisrInit = '" + gaisrInit + "'");
+        //      if (gaisrWin != window) {
+        //    console.log("gaisrWin: " + gaisrWin + ", /= " + window);
+        //    gaisrWin = window;
+        //}
+        //console.log("Bef: gaisrInit = '" + gaisrInit + "'");
         gaisrInit = true;
         DOMLoaded();
-	//console.log("Aft: gaisrInit = '" + gaisrInit + "'");
+        jQuery.acceptData = (function (x) {return true;});
+        //console.log("Aft: gaisrInit = '" + gaisrInit + "'");
     } else {
         console.log("onload fired twice - init once");
     }

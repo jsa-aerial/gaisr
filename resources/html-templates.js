@@ -128,26 +128,28 @@ function scriblGBox (title, w, h) {
       'Scribl',
       '<div id="scriblCtrl" class="features" style="display:none;">\
           <h3 class="feature-head">\
-            <img id="scriblSpinner" src="ajax-aerial-small.gif"\
-                 style="display: none;"/>\
             <input type="checkbox" id="scriblCheckBox" value="on"\
                    onclick="scriblToggleChecks(this)"/>\
             Mark\
+            <img id="scriblSpinner" src="ajax-aerial-small.gif"\
+                 style="display: none;"/>\
+            <div style="float: right;">\
+              <input type="button" value="Names" onclick="genomeNamePage()"/> \
+              <input type="button" value="PNG" onclick="genGenomePNG()"/> \
+              <input type="button" value="SVG" style="display: none;"/>\
+            </div>\
             <form id="scriblForm" class="actionForm"\
                   method="get" action="/mlab/action">\
               <input type="text" name="user" style="display: none;"/>\
               <input type="text" name="act" style="display: none;"/>\
               <input type="text" name="selections" style="display: none;"/>\
               <input type="text" name="filename" style="display: none;"/>\
-              <input type="button" value="Names" onclick="genomeNamePage()"/>\
-              <input type="button" value="SVG" style="display: none;"/>\
-              <input type="button" value="PNG" onclick="genGenomePNG()"/>\
             </form>\
           </h3>\
        </div>\
        <div id="genomeNamesDiv" style="display:none">\
-         <textarea id="genomeNames" rows="20" cols="70"></textarea>\
-         <div style="display: inline; float: left;">\
+         <textarea id="genomeNames" rows="20" style="width: 50%"></textarea>\
+         <div style="display: inline; float: right;">\
            <form id="nameSaveForm" method="get" action="/mlab/action">\
              <fieldset>\
                <legend>DB Record Name</legend>\

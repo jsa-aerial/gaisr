@@ -1,0 +1,37 @@
+43d42
+<       chart.uid = _uniqueId('chart'); // jsa 13-dec-2011
+607d605
+<       var swId = (this.scrolled) ? this.swId : _uniqueId('scroll-wrapper'); // jsa 13-dec-2011
+614c612
+<          sliderDiv.id = _uniqueId('scribl-zoom-slider'); // jsa 13-dec-2011
+---
+>          sliderDiv.id = 'scribl-zoom-slider';
+627c625,626
+<          canvasContainer.id = swId; // jsa 13-dec-2011
+---
+>          canvasContainer.id = 'scroll-wrapper';
+> 
+629d627
+<          this.swId = swId; // jsa 13-dec-2011 Save for slider closure use
+647c645
+<       var viewNtsPerPixel = viewNts / document.getElementById(swId).style.width.split('px')[0];
+---
+>       var viewNtsPerPixel = viewNts / document.getElementById('scroll-wrapper').style.width.split('px')[0];
+651a650
+>       schart = this;
+654d652
+<       var schart = this; // jsa 13-dec-2011: Make LOCAL so can close over it!!
+665c663
+<             var canvasContainer = document.getElementById(schart.swId); // jsa 13-dec-2011
+---
+>             var canvasContainer = document.getElementById('scroll-wrapper');
+673,674c671,672
+<             var min = schart.scale.min + (minPixel / schart.canvas.width) * totalNts; //jsa 14-dec ADD scale min
+<             var max = schart.scale.min + (maxPixel / schart.canvas.width) * totalNts; //jsa 14-dec ADD scale min
+---
+>             var min = minPixel / schart.canvas.width * totalNts;
+>             var max = maxPixel / schart.canvas.width * totalNts;
+684c682
+<       document.getElementById(swId).scrollLeft = startingPixel;
+---
+>       document.getElementById('scroll-wrapper').scrollLeft = startingPixel

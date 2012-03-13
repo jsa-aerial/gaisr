@@ -452,6 +452,18 @@
 ;;; (in the often case of only one, just take that).
 
 
+(defn get-generic-sto-locs [stofile-lazyseq]
+  (reduce (fn[m s-loc]
+            (let [[nm loc] (str/split #"/" s-loc)
+                  [nm v] (str/split #"\." nm)
+                  [s e] (map #(Integer. %) (str/split #"-" loc))
+                  x s
+                  s (if (< s e) s e)
+                  e (if (= s e) x e)]
+              (assoc m nm (conj (get m nm []) [s e]))))
+          {} (map #(first (str/split #" " %))
+                  (filter #(re-find #"^N(C|S|Z)" %) stofile-lazyseq))))
+
 (defn get-cmfinder-sto-locs [stofile-lazyseq]
   (reduce (fn [m s-loc]
             (let [[nm loc] (str/split #":" s-loc )
@@ -483,12 +495,14 @@
         file-fmt (cond
                   (re-find #"CMfinder" fmt-line) :cmfinder
                   (re-find #"Infernal" fmt-line) :infernal
+                  (re-find #"ORIGINAL_MOTIF" fmt-line) :generic
                   :else (raise :type :unknown-sto-fmt
                                :args [stofile fmt-line]))
         rem-file (drop 2 stofile-lazyseq)]
     (case file-fmt
           :cmfinder (get-cmfinder-sto-locs rem-file)
-          :infernal (get-infernal-sto-locs rem-file))))
+          :infernal (get-infernal-sto-locs rem-file)
+          :generic  (get-generic-sto-locs rem-file))))
 
 
 (defn get-cm-stofile [cmfile]

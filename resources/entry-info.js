@@ -387,7 +387,7 @@ function scriblFeatures (name, request, canvas) {
     chartInfo.scriblCkBoxMap = {gene: $(name+'gbx'),
                                 CDS: $(name+'cbx'),
                                 misc_feature: $(name+'mbx')};
-    $(name+'gbx').setValue(true);
+    $(name+'cbx').setValue(true);
     scriblFeatureTypes(name, scriblInfo);
     //console.log("***DONE");
 }

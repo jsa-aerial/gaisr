@@ -646,20 +646,22 @@
 
 
 (defn cmsearch-out-csv [cmsearch-out]
-  (let [csv-file (str/replace-re #"\.out$" ".csv" cmsearch-out)
-        dup-file (str/replace-re #"\.out$" ".dup.csv" cmsearch-out)
-        [sto-loc-map hit-map hit-seq-map] (cmsearch-group-hits cmsearch-out)
-        hit-parts (map #(cmsearch-hit-parts % hit-seq-map) hit-map)
-        groups (group-hit-parts sto-loc-map hit-parts)
-        good (map #(csv/csv-to-stg (map str %)) (remove-dups (:good groups)))
-        dups (map #(csv/csv-to-stg (map str %)) (:bad groups))]
-    (io/with-out-writer (io/output-stream csv-file)
-      (println +cmsearch-csv-header+)
-      (doseq [x good] (println x)))
-    (io/with-out-writer (io/output-stream dup-file)
-      (println +cmsearch-csv-header+)
-      (doseq [x dups] (println x)))
-    [good dups]))
+  (if (fs/empty? cmsearch-out)
+    [[] []]
+    (let [csv-file (str/replace-re #"\.out$" ".csv" cmsearch-out)
+          dup-file (str/replace-re #"\.out$" ".dup.csv" cmsearch-out)
+          [sto-loc-map hit-map hit-seq-map] (cmsearch-group-hits cmsearch-out)
+          hit-parts (map #(cmsearch-hit-parts % hit-seq-map) hit-map)
+          groups (group-hit-parts sto-loc-map hit-parts)
+          good (map #(csv/csv-to-stg (map str %)) (remove-dups (:good groups)))
+          dups (map #(csv/csv-to-stg (map str %)) (:bad groups))]
+      (io/with-out-writer (io/output-stream csv-file)
+        (println +cmsearch-csv-header+)
+        (doseq [x good] (println x)))
+      (io/with-out-writer (io/output-stream dup-file)
+        (println +cmsearch-csv-header+)
+        (doseq [x dups] (println x)))
+      [good dups])))
 
 
 (defn gen-cmsearch-csvs [cmsearch-out-dir]

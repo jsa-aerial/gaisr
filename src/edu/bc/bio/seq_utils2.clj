@@ -3,7 +3,7 @@
 ;;                           S E Q - U T I L S 2                            ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -40,6 +40,7 @@
             [clojure.contrib.seq :as seq]
             [clojure.zip :as zip]
             [clojure.contrib.io :as io]
+            [clojure.contrib.math :as math]
             [edu.bc.fs :as fs])
 
   (:use [clojure.contrib.condition
@@ -72,6 +73,8 @@
 ;;; of sequence collections.  Specific comparison and filters for
 ;;; Levenshtein global, ngram, hamming provided.
 
+(comment
+
 (defn edist [[nq lq qseq] [nms ls sseq]]
   (let [qlen (count qseq)
         slen (count sseq)
@@ -99,7 +102,8 @@
   (some #(= :toss (first (cmpfn qseq %)))
         test-set))
 
-(defn pseq-same? [qseq test-set & {q :q cmpfn :cmpfn :or {q 10 cmpfn edist}}]
+(defn pseq-same?
+  [qseq test-set & {q :q cmpfn :cmpfn :or {q 10 cmpfn edist}}]
   (loop [curset test-set
          chunk (take q curset)]
     (cond
@@ -121,10 +125,17 @@
                      (conj keepers rep)
                      keepers)
                    (rest todo))))))))
+)
 
 
 
 
+;;; ----------------------------------------------------------------------
+;;;
+;;; Scoring, target frequencies, relative entropy, scaling factors,
+;;; raw score substitution matrices, ...
+
+;;;(defn calc-
 
 
 

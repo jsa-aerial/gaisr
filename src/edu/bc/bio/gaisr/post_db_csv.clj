@@ -46,7 +46,6 @@
             [clojure.zip :as zip]
             [clojure.contrib.io :as io]
             [clojure.xml :as xml]
-            [clojure.java.shell :as sh]
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
@@ -306,11 +305,11 @@
                               (slurp (fs/fullpath cmsearch-csv)))))))
 
 (defn ev-freq-ss [dirdir ev-cutoff outss-filespec]
-  (let [ev-cnts
-        (dodir dirdir
-               #(butlast (drop 1 (sort (filter fs/directory?
-                                               (fs/directory-files % "")))))
-               #(do [(fs/basename %) (freq % ev-freq ev-cutoff)]))
+  (let [ev-cnts (fs/dodir
+                 dirdir
+                 #(butlast (drop 1 (sort (filter fs/directory?
+                                                 (fs/directory-files % "")))))
+                 #(do [(fs/basename %) (freq % ev-freq ev-cutoff)]))
         cols (csv/csv-to-stg (cons "Names" (map first ev-cnts)))
         rows (apply map vector (cons (map first (second (first ev-cnts)))
                                      (map #(map second (second %)) ev-cnts)))

@@ -154,6 +154,18 @@ if it is not or if the file cannot be deleted."
   [path]
   (.getParent (io/file path)))
 
+(defn ftype
+  "Return the file type suffix of PATH.  File type suffix is the last
+   substring element following a '.' in (basename PATH).  If no such
+   element is in the basename, returns empty string\"\"
+
+   Ex: (ftype \"/home/fred/Bio/test.sto\") ==> \"sto\"
+  "
+  [path]
+  (let [bn (basename path)
+        ft (last (str/split #"\." bn))]
+    (if (= ft bn) "" ft)))
+
 (defn replace-type
   "Replace the file extension type of FILESPEC to be EXT.  The type
    for FILESPEC is the last part dotted extension.  Formally, matches

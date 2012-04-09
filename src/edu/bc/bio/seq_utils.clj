@@ -215,6 +215,9 @@
         check-char (fn [[n s]]
                      [n (every? #(contains? valid-symbols %)
                                 (rest (str/split #"" s)))])
+        ;;check for common case of repeat named seqs
+        check-double-len (fn [[n s]]
+                           [n (>= (count s) (* 2 (count cl)))])
         ;;checks to see if sequences have same
         ;;length as consensus structure
         check-len (fn [[n s]]
@@ -223,6 +226,10 @@
      (some #(false? (second %)) (map #(check-char %) sl))
      (prn "sequence contains invalid character in: "
           (remove #(second %) (map #(check-char %) sl)))
+
+     (some #(true? (second %)) (map #(check-double-len %) sl))
+     (prn "sequence is repeated - two or more times with same name: "
+          (filter #(second %) (map #(check-double-len %) sl)))
 
      (some #(false? (second %)) (map #(check-len %) sl))
      (prn "sequence contains invalid length compared to cons-line in: "

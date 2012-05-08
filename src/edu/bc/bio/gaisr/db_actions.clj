@@ -552,9 +552,9 @@
   (let [fasta-file (fs/fullpath filespec)
         entfile (fs/replace-type fasta-file ".txt")
         entries (rand-insts-by-rank term rank :pred pred :cnt cnt)]
-    (edu.bc.bio.seq-utils/gen-entry-file
+    (edu.bc.bio.sequtils.files/gen-entry-file
      (map #(% :name) entries) entfile)
-    (edu.bc.bio.seq-utils/entry-file->fasta-file entfile)))
+    (edu.bc.bio.sequtils.files/entry-file->fasta-file entfile)))
 
 ;;;(time (rand-insts-by-rank-fasta-file "Proteobacteria" "genus" "/data2/Bio/Training/FastaFiles/proteobacteria-genus2.fna" :pred #(= (subs (% :name) 0 2) "NC")))
 

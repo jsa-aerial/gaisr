@@ -9,10 +9,8 @@
             [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
             [clojure.contrib.properties :as prop]
-            [clojure.xml :as xml]
             [edu.bc.fs :as fs])
 
   (:use [clojure.contrib.condition
@@ -33,6 +31,286 @@
 
 
 ;;; -----------------------------------------------------------------
+;;; Miscellaneous changes/additions/"fixes" to various operations that
+;;; are either already in Clojure or in bits of contribs or probably
+;;; _will_ be in future (at which point these can be retired...)
+
+
+(def ^{:private true} *uid* (atom (.getTime (Date.))))
+
+(defn gen-uid
+  "Generates a unique integer ID based on universal time."
+  []
+  (swap! *uid* inc))
+
+(defn gen-kwuid
+  "Generates a unique keyword id whose name is the str of gen-uid"
+  []
+  (keyword (str (gen-uid))))
+
+
+(defn sleep [msecs]
+  (Thread/sleep msecs))
+
+(defn str-date
+  ([] (str-date (Date.) "yyyy-MM-dd HH:mm:ss"))
+  ([fm] (str-date (Date.) fm))
+  ([d fm] (.format (SimpleDateFormat. fm) d)))
+
+
+;;; Extra predicates...
+(defn map-entry? [x]
+  (instance? clojure.lang.MapEntry x))
+
+
+(defn third [coll]
+  (nth coll 2))
+
+
+(defn drop-until
+  "Complement of drop-while"
+  [pred coll] (drop-while (complement pred) coll))
+
+(defn take-until
+  "Complement of take-while"
+  [pred coll] (take-while (complement pred) coll))
+
+
+(defn ensure-vec
+  "Return a vector representation for x.  If x is a vector just return
+   it, if it is a seqable return (vec x), if it is an \"atom\" return
+   [x]."
+  [x]
+  (cond
+   (vector? x) x
+   (seq? x) (vec x)
+   (map? x) (vec x)
+   true [x]))
+
+
+(defn in
+  "Return whether e is an element of coll."
+  [e coll]
+  (if (map? coll)
+    (find coll e)
+    (some #(= % e) coll)))
+
+
+(defn pos
+  "Returns a lazy seq of positions of X within COLL taken as a sequence"
+  [x coll]
+  (keep-indexed #(when (= x %2) %1) coll))
+
+(defn pos-any
+  "Returns a lazy seq of positions of any element of TEST-COLL within
+   COLL taken as a sequence"
+  [test-coll coll]
+  (keep-indexed #(when (in %2 test-coll) %1) coll))
+
+
+(defn merge-with*
+  "Merge-with needs to call user supplied F with the KEY as well!!!
+  Returns a map that consists of the rest of the maps conj-ed onto the
+  first.  If a key occurs in more than one map, the mapping(s) from
+  the latter (left-to-right) will be combined with the mapping in the
+  result by calling (f key val-in-result val-in-latter)."
+  {:added "1.jsa"} [f & maps]
+  (when (some identity maps)
+    (let [merge-entry (fn [m e]
+                        (let [k (key e) v (val e)]
+                          (if (contains? m k)
+                            (assoc m k (f k (get m k) v))
+                            (assoc m k v))))
+          merge2 (fn [m1 m2]
+                   (reduce merge-entry (or m1 {}) (seq m2)))]
+      (reduce merge2 maps))))
+
+
+(defn transpose
+  "Matrix transposition.  Well, effectively.  Can be used in some
+   other contexts, but does the same computation.  Takes colls a
+   collection of colletions, treats this as a matrix of (count colls)
+   rows, each row being a string or seqable data structure: M[rij],
+   where rij is the jth element of the ith row.  Returns M' = M[cji],
+   where cji is the ith element of the jth column of M.
+  "
+  ([colls]
+     {:pre [(coll? colls)
+            (every? #(or (coll? %) (string? %)) colls)]}
+     (if (empty? colls)
+       colls
+       (let [tm (apply map vector colls)]
+         (if (every? string? colls)
+           (map #(apply str %) tm)
+           tm))))
+
+  ([coll1 coll2 & colls]
+     (transpose (cons coll1 (cons coll2 colls)))))
+
+
+(defn- reduce-in-parallel
+  "Helper function for reducem.  When reducem determines that the
+   function application should proceed in parallel over the sequences,
+   it defers to this function to compute the resuls"
+  [f fr coll1 & colls]
+  (reduce
+   (fn[x y]
+     (if (= x :ignore) y (fr x y)))
+   :ignore (apply map f colls)))
+
+(defn reducem
+  "Multiple collection reduction.  FR is a function of two arguments -
+   the first is the result of the previous fold, and the second is the
+   current result of F applied to the arguments from the supplied
+   collections (treated as seqs).  Note, for the first application,
+   the result of F is returned without invoking FR.
+
+   By default, reduction proceeds on the results of F applied over the
+   _cross product_ of the collections.  If reduction should proceed
+   over collections in parallel, the first \"coll\" given should be
+   the special keyword :||.  If given, this causes F to be applied to
+   the elements of colls as stepped in parallel: f(coll1[i] coll2[i]
+   .. colln[i]), i in [0 .. (count smallest-given-coll)].
+  "
+  ([f fr coll]
+     (reduce
+      (fn[x y]
+        (if (= x :ignore)
+          (f y)
+          (fr x (f y))))
+      :ignore coll))
+
+  ([f fr coll1 & colls]
+     (let [colls (cons coll1 colls)]
+       (if (= coll1 :||)
+         (apply reduce-in-parallel f fr (rest colls))
+         ;;Else: We reduce X-product reductions by currying outer args
+         ;;into f.
+         (reduce
+          (fn[r xr]
+            (if (= :ignore r)
+              (apply reducem (fn[& args] (apply f xr args)) fr
+                     (rest colls))
+              (fr r (apply reducem (fn[& args] (apply f xr args)) fr
+                           (rest colls)))))
+          :ignore (first colls))))))
+
+
+(defn pxmap
+  "Constrained pmap.  Constrain pmap to at most par threads.  Effectively,
+   (pmap f (partition-all par colls).  Implicit doall on results to
+   force execution.  For multiple collection variants, chunks the
+   _transpose_ of the collection of collections.
+  "
+  ([f par coll]
+     (if (= par 1)
+       (map f coll)
+       (apply concat
+              (doall (pmap (fn[subset] (doall (map f subset)))
+                           (partition-all par coll))))))
+  ([f par coll1 coll2]
+     (if (= par 1)
+       (map f coll1 coll2)
+       (pxmap (fn[[x y]] (f x y)) par (transpose coll1 coll2))))
+  ([f par coll1 coll2 & colls]
+     (if (= par 1)
+       (apply map f coll1 coll2 colls)
+       (pxmap (fn[v] (apply f v)) par (apply transpose coll1 coll2 colls)))))
+
+
+(defn random-subset
+  "Create a \"random\" N element subset of the collection s treated as a set,
+   i.e., s with no duplicate elements.  If n <= 0, return #{}, the
+   empty set.  If (count (set s)) <= n, return (set s).  Otherwise,
+   pick N random elements from (set s) to form subset.
+  "
+  [s n]
+  (let [s (vec (set s))]
+    (cond
+     (<= n 0) #{}
+     (<= (count s) n) (set s)
+     :else
+     (loop [ss #{(rand-nth s)}]
+       (if (= (count ss) n)
+         ss
+         (recur (conj ss (rand-nth s))))))))
+
+
+(defn combins
+  "Return the set of all K element _combinations_ (not permutations)
+   formed from coll.  Coll does not need to be a set.  In particular,
+   repeated elements are legal.
+
+   Examples:
+   (combins 2 \"abcdef\")
+   => ([\\a \\b] [\\a \\c] [\\a \\d] [\\a \\e] [\\a \\f] [\\b \\c]
+       [\\b \\d] [\\b \\e] [\\b \\f] [\\c \\d] [\\c \\e] [\\c \\f]
+       [\\d \\e] [\\d \\f] [\\e \\f])
+
+   (map #(apply str %) (combins 2 \"AAGGGCGUGG\"))
+   => (\"AA\" \"AG\" \"AG\" \"AC\" \"AG\" \"AU\" \"AG\" \"AG\" \"AC\"
+       \"AG\" \"AU\" \"GG\" \"GC\" \"GG\" \"GU\" \"GC\" \"GG\" \"GU\"
+       \"CG\" \"CU\" \"GU\")
+  "
+  [k coll]
+  (lazy-seq (map vec (comb/combinations coll k))))
+
+(defn choose-k
+  "Synonym for combins"
+  [k coll]
+  (combins k coll))
+
+
+(defn coalesce-xy-yx
+  "Coaleseces elements of item-coll, which are or have common \"keys\",
+   according to the function f.  Two keys k1 and k2 are considered
+   common if (or (= k1 k2) (= (reverse k1) k2)) for reversible keys or
+   simply (= k1 k2) for non reversible keys.  Reversible keys are
+   vectors, seqs, or string types.
+
+   F is a function of two parameters [x v], where x is an element of
+   item-coll, and v is the current value associated with the key of x
+   or nil if no association yet exists.  F is expected to return the
+   current association for key of x based on x and v.  If x is a
+   mapentry, (key x) is used to determine the association.  If x is a
+   list or vector (first x) is used to determine the association.
+
+   Ex:
+   (freqn 1 (map #(apply str %) (combins 2 \"auauuagcgccg\")))
+   => {\"aa\" 3, \"cc\" 3, \"gg\" 3, \"uu\" 3, \"ac\" 9, \"cg\" 4,
+       \"ag\" 9, \"ua\" 4, \"uc\" 9, \"ug\" 9, \"au\" 5, \"gc\" 5}
+
+   (coalesce-xy-yx *1 (fn[x v] (if (not v) 0 (+ (val x) v))))
+   => {\"aa\" 3, \"cc\" 3, \"gg\" 3, \"uu\" 3, \"ac\" 9, \"cg\" 9,
+       \"ag\" 9, \"ua\" 9, \"uc\" 9, \"ug\" 9}
+  "
+  [item-coll f]
+  (let [rev (fn[x] (if (string? x) (str/reverse x) (reverse x)))
+        res (reduce (fn[m x]
+                      (let [k (cond
+                               (map-entry? x) (key x)
+                               (coll? x) (first x)
+                               :else x)
+                            keycoll? (or (vector? x) (string? x) (seq? x))
+                            [k v] (if (not keycoll?)
+                                    [k (get m k (f x nil))]
+                                    (if-let [v (get m k)]
+                                      [k v]
+                                      (let [rk (rev k)]
+                                        (if-let [v (get m rk)]
+                                          [rk v]
+                                          [k (f x nil)]))))]
+                        (assoc m k (f x v))))
+                    {} item-coll)]
+    (cond
+     (map? item-coll) res
+     (vector? item-coll) (vec res)
+     :else (seq res))))
+
+
+
+
+;;; -----------------------------------------------------------------
 ;;; Various ancillary math/arithmetic stuff.
 
 (defn div
@@ -40,6 +318,66 @@
   [n d]
   (let [q (math/floor (/ n d))]
     [q (rem n d)]))
+
+
+(def sum)
+
+(defn- sum-in-parallel
+  "Helper function for sum.  When sum determines that the function
+   application should proceed in parallel over the sequences, it
+   defers to this function to compute the results."
+  ([f coll1 coll2]
+     (sum (map f coll1 coll2)))
+  ([f coll1 coll2 & colls]
+     (let [colls (cons coll1 (cons coll2 colls))]
+       (sum (apply map f colls)))))
+
+(defn sum
+  "Return the sum of the numbers in COLL.  If COLL is a map, return
+   the sum of the (presumed all numbers) in (vals coll).  For function
+   F versions, return the sum x in COLL (f x) or sum x in COLL1, y in
+   COLL2 (f x y) or sum x1 in C1, x2 in C2, ... xn in Cn (f x1 ... xn).
+
+   By default, summation proceeds on the results of F applied over the
+   _cross product_ of the collections.  If summation should proceed
+   over the collections in parallel, the first \"coll\" given should
+   be the special keyword :||.  If given this causes F to be applied
+   to the elements of colls as stepped in parallel: f(coll1[i]
+   coll2[i] .. colln[i]), i in [0 .. (count smallest-given-coll)].
+
+   Examples:
+
+   (sum + [1 2 3] [1 2 3])
+   => 36 ; sum of all [1 2 3] X [1 2 3] pairwise sums
+   (sum + :|| [1 2 3] [1 2 3])
+   => 12 ; sum of [(+ 1 1) (+ 2 2) (+ 3 3)]
+
+   (sum (fn[x y] (* x (log2 y))) :|| [1 2 3] [1 2 3])
+   => 6.754887502163469
+  "
+  ([coll]
+     (let [vs (if (map? coll) (vals coll) coll)]
+       (apply + vs)))
+  ([f coll]
+     (reduce (fn [x i]
+               (+ x (f i)))
+             0 coll))
+  ([f coll1 coll2]
+     (reduce
+      (fn[r c1i]
+        (+ r (sum #(f c1i %1) coll2)))
+      0 coll1))
+  ([f coll1 coll2 & colls]
+     (let [colls (cons coll1 (cons coll2 colls))]
+       (if (= coll1 :||)
+         (apply sum-in-parallel f (rest colls))
+
+         ;; Else: We reduce X-product reductions by currying outer
+         ;; args into f
+         (reduce
+          (fn[r cxi]
+            (+ r (apply sum (fn[& args] (apply f cxi args)) (rest colls))))
+          0 (first colls))))))
 
 
 (defn logb
@@ -98,34 +436,10 @@
      (n! k)))
 
 
-(defn shannon-entropy
-  "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
-   where i ranges over the unique elements of S and pi is the
-   probability of i in S: (freq i s)/(count s)"
-  [s]
-  (let [fs (frequencies s)
-        cnt (float (reduce (fn[x [k v]] (+ x v)) 0 fs))
-        H (reduce
-           (fn[H [c v]]
-             (let [p (float (/ v cnt))]
-               (float (+ H (float (* p (float (log2 p))))))))
-           (float 0.0) fs)]
-    (float (- H))))
-
-
-
-
-(defn sum
-  "Return the sum of the numbers in COLL.  If COLL is a map, return
-  the sum of the (presumed all numbers) in (vals coll)"
-  [coll]
-  (let [v (if (map? coll) (vals coll) coll)]
-    (apply + v)))
-
-
 (defn primes
   "RHickey paste.lisp.org with some fixes by jsa. Returns a list of
-   all primes from 2 to n.  Wicked fast!" [n]
+   all primes from 2 to n.  Wicked fast!"
+  [n]
   (if (< n 2)
     ()
     (let [n (int n)]
@@ -151,116 +465,58 @@
                      result))))))))
 
 
-(defn prime-factors [num]
-  (loop [ps (primes (int (math/sqrt num)))
-         factors []]
-    (if (empty? ps)
-      factors
-      (let [pf (loop [n num
-                      cnt 0]
-                 (let [f (first ps)
-                       [q r] (div n f)]
-                   (if (not= 0 r)
-                     (when (> cnt 0) [f cnt])
+(def +prime-set+ (atom (primes 1000)))
+
+(defn prime-factors
+  "Return the prime factorization of num as a seq of pairs [p n],
+   where p is a prime and n is the number of times it is a factor.
+   Ex: (prime-factors 510) => [[2 1] [3 1] [5 1] [17 1]]
+  "
+  [num]
+  (if (< num 2)
+    num
+    (do
+      (when (> num (last @+prime-set+))
+        (swap! +prime-set+ (fn[_](primes (+ num (int (/ num 2)))))))
+      (loop [ps (take-until #(> % num) @+prime-set+)
+             factors []]
+        (if (empty? ps)
+          factors
+          (let [pf (loop [n num
+                          cnt 0]
+                     (let [f (first ps)
+                           [q r] (div n f)]
+                       (if (not= 0 r)
+                         (when (> cnt 0) [f cnt])
                      (recur q (inc cnt)))))]
-        (recur (rest ps)
-               (if pf (conj factors pf) factors))))))
+            (recur (rest ps)
+                   (if pf (conj factors pf) factors))))))))
 
 
 
 
 ;;; -----------------------------------------------------------------
-;;; Miscellaneous changes/additions/"fixes" to various operations that
-;;; are either already in Clojure or in bits of contribs or probably
-;;; _will_ be in future (at which point these can be retired...)
+;;; Simple vector stuff.  dot product, norm, distances, and such.  Is
+;;; all this stuff in Incanter??
 
 
-(defn drop-until [pred coll] (drop-while (complement pred) coll))
-(defn take-until [pred coll] (take-while (complement pred) coll))
+(defn dot [v1 v2]
+  (reduce #(+ %1 %2) 0 (map #(* %1 %2) v1 v2)))
 
+(defn norm [v]
+  (math/sqrt (dot v v)))
 
-(defn merge-with*
-  "Merge-with needs to call user supplied F with the KEY as well!!!
-  Returns a map that consists of the rest of the maps conj-ed onto the
-  first.  If a key occurs in more than one map, the mapping(s) from
-  the latter (left-to-right) will be combined with the mapping in the
-  result by calling (f key val-in-result val-in-latter)."
-  {:added "1.jsa"} [f & maps]
-  (when (some identity maps)
-    (let [merge-entry (fn [m e]
-                        (let [k (key e) v (val e)]
-                          (if (contains? m k)
-                            (assoc m k (f k (get m k) v))
-                            (assoc m k v))))
-          merge2 (fn [m1 m2]
-                   (reduce merge-entry (or m1 {}) (seq m2)))]
-      (reduce merge2 maps))))
+(defn vhat [v]
+  (let [n (norm v)] (vec (map #(/ % n) v))))
 
+(defn cos-vangle [v1 v2]
+  (dot (vhat v1) (vhat v2)))
 
-(defn ensure-vec [x]
-  (cond
-   (vector? x) x
-   (seq? x) (vec x)
-   (map? x) (vec x)
-   true [x]))
+(defn vangle-dist [v1 v2]
+  (math/abs (dec (cos-vangle v1 v2))))
 
-
-(defn in [e coll]
-  (if (map? coll)
-    (find coll e)
-    (some #(= % e) coll)))
-
-
-(defn pos
-  "Returns a lazy seq of positions of X within COLL taken as a sequence"
-  [x coll]
-  (keep-indexed #(when (= x %2) %1) coll))
-
-(defn pos-any
-  "Returns a lazy seq of positions of any element of TEST-COLL within
-   COLL taken as a sequence"
-  [test-coll coll]
-  (keep-indexed #(when (in %2 test-coll) %1) coll))
-
-
-(defn random-subset [s cnt]
-  (let [s (vec (set s))]
-    (cond
-     (<= cnt 0) #{}
-     (<= (count s) cnt) (set s)
-     :else
-     (loop [ss #{(rand-nth s)}]
-       (if (= (count ss) cnt)
-         ss
-         (recur (conj ss (rand-nth s))))))))
-
-(defn combins [k coll]
-  (lazy-seq (map vec (comb/combinations coll k))))
-
-(defn choose-k [k coll]
-  (combins k coll))
-
-
-
-
-
-(def ^{:private true} *uid* (atom (.getTime (Date.))))
-
-(defn gen-uid []
-  (swap! *uid* inc))
-
-(defn gen-kwuid []
-  (keyword (str (gen-uid))))
-
-
-
-(defn sleep [msecs]
-  (Thread/sleep msecs))
-
-(defn str-date
-  ([] (str-date (Date.) "yyyy-MM-dd HH:mm:ss"))
-  ([fm] (str-date (Date.) fm))
-  ([d fm] (.format (SimpleDateFormat. fm) d)))
+(defn vecdist [v1 v2]
+  (let [v (vec (map #(- %1 %2) v1 v2))] (dot v v)))
 
 
 
@@ -316,260 +572,6 @@
            sv
            (recur (str/drop step s)
                   (conj sv (str/take n s))))))))
-
-
-
-
-;;; Fixed cost Edit distance.
-;;;
-;;; (levenshtein "this" "")
-;;; (assert (= 0 (levenshtein "" "")))
-;;; (assert (= 3 (levenshtein "foo" "foobar")))
-;;; (assert (= 3 (levenshtein "kitten" "sitting")))
-;;; (assert (= 3 (levenshtein "Saturday" "Sunday")))
-;;; (assert (= 22 (levenshtein
-;;;   "TATATTTGGAGTTATACTATGTCTCTAAGCACTGAAGCAAA"
-;;;   "TATATATTTTGGAGATGCACAT"))
-;;;
-(defn- new-row [prev-row row-elem t]
-  (reduce
-   (fn [row [d-1 d e]]
-     (conj row (if (= row-elem e) d-1 (inc (min (peek row) d d-1)))))
-    [(inc (first prev-row))]
-    (map vector prev-row (next prev-row) t)))
-
-(defn levenshtein [s t]
-  (cond
-   (= s t "") 0
-   (= 0 (count s)) (count t)
-   (= 0 (count t)) (count s)
-   :else
-   (peek (reduce
-          (fn [prev-row s-elem] (new-row prev-row s-elem t))
-          (range (inc (count t)))
-          s))))
-
-
-
-
-;;; Various frequency counts, probabilities, similarity coefficients,
-;;; corresponding difference fns and ngram operations
-
-(defn letter-pairs [n s]
-  (set (map #(apply str %) (partition n 1 s))))
-
-(defn word-letter-pairs [n s]
-  (reduce (fn[m s] (set/union m (letter-pairs n s))) #{} (str/split #" " s)))
-
-(defn freqn
-  "Frequencies of n-grams in collection COLL treated as a sequence
-   Ex: (freqn 2 \"acagtcaacctggagcctggt\")
-   =>
-   {\"aa\" 1, \"cc\" 2, \"gg\" 2, \"ac\" 2, \"ag\" 2, \"gt\" 2,
-   \"tc\" 1, \"ct\" 2, \"tg\" 2, \"ga\" 1, \"gc\" 1, \"ca\" 2}
-  "
-  [n coll]
-  (if (= 1 n)
-    (frequencies (seq coll))
-    (loop [s (seq coll)
-           res (transient {})]
-      (let [k (str/join "" (take n s))]
-        (if (>= (count s) n)
-          (recur (drop 1 s)
-                 (assoc! res k (inc (get res k 0))))
-          (persistent! res))))))
-
-(defn freqs-probs [n coll]
-  (let [freqs (freqn n coll)
-        sz (sum (vals freqs))
-        probs (reduce (fn[m [k v]]
-                        (assoc m k (float (/ v sz))))
-                      {} freqs)]
-    [freqs probs sz]))
-
-
-(defn cc-freqn [n colls]
-  (reduce
-   (fn[m coll]
-     (merge-with #(+ %1 %2) m (freqn n coll)))
-   {} colls))
-
-(defn cc-freqs-probs [n colls]
-  (let [freqs (cc-freqn n colls)
-        sz (sum (vals freqs))
-        probs (reduce (fn[m [k v]]
-                        (assoc m k (float (/ v sz))))
-                      {} freqs)]
-    [freqs probs sz]))
-
-
-(defn alphabet [coll & {n :n :or {n 1}}]
-  (cond
-   (map? coll) (keys coll)
-   (set? coll) coll
-   :else
-   (keys (freqn n coll))))
-
-(defn combins-freqn [n coll]
-  (reduce (fn[m x] (assoc m x (inc (get m x 0))))
-          {} (combins n coll)))
-
-(defn choose-k-freqn [n coll] )
-
-
-
-
-(defn probs [n coll]
-  (second (freqs-probs n coll)))
-
-
-(defn log-odds [frq1 frq2]
-  (ln (/ frq1 frq2)))
-
-(defn lod-score [qij pi pj]
-  (ln (/ qij (* pi pj))))
-
-(defn raw-lod-score [qij pi pj & {scaling :scaling :or {scaling 1.0}}]
-  (if (= scaling 1.0)
-    (lod-score qij pi pj)
-    (int (/ (lod-score qij pi pj) scaling))))
-
-(defn bg-freq [n seqs] )
-
-(defn bg-freqs-probs [] )
-
-
-
-
-
-
-
-
-(defn diff-fn
-  "Return the function that is 1 - F applied to its args: (1 - (apply f args)).
-
-   Ex: (let [dice-diff (diff-fn dice-coeff)
-             ...]
-         (dice-diff some-set1 some-set2))"
-  [f] (fn [& args] (- 1 (apply f args))))
-
-
-(defn dice-coeff [s1 s2]
-  (/ (* 2 (count (set/intersection s1 s2)))
-     (+ (count s1) (count s2))))
-
-(defn jaccard-index [s1 s2]
-  (/ (count (set/intersection s1 s2))
-     (count (set/union s1 s2))))
-
-(defn tversky-index
-  "Tversky index of two sets S1 and S2.  A generalized NON metric
-   similarity 'measure'.  Generalization is through the ALPHA and BETA
-   coefficients:
-
-   TI(S1,S2) = (/ |S1^S2| (+ |S1^S2| (* ALPHA |S1-S2|) (* BETA |S2-S1|)))
-
-   For example, with alpha=beta=1,  TI is jaccard-index
-                with alpha=beta=1/2 TI is dice-coeff
-   "
-  [s1 s2 alpha beta]
-  (let [s1&s2 (count (set/intersection s1 s2))
-        s1-s2 (count (set/difference s1 s2))
-        s2-s1 (count (set/difference s2 s1))]
-    (/ s1&s2
-       (+ s1&s2 (* alpha s1-s2) (* beta s2-s1)))))
-
-
-(def
- ^{:doc
-   "Named version of (diff-fn jaccard-index s1 s2).  This difference
-    function is a similarity that is a proper _distance_ metric (hence
-    usable in metric trees like bk-trees)."
-   :arglists '([s1 s2])}
- jaccard-dist
- (diff-fn jaccard-index))
-
-
-(defn freq-jaccard-index
-  ""
-  [s1 s2]
-  (let [freq-s1 (set s1)
-        freq-s2 (set s2)
-        c1 (freq-sum (set/intersection freq-s1 freq-s2))
-        c2 (freq-sum (set/union freq-s1 freq-s2))]
-    (/ c1 c2)))
-
-
-(defn bi-tri-grams [s]
-  (let [bi-grams (set (keys (freqn 2 s)))
-        tri-grams (set (keys (freqn 3 s)))]
-    [(set/union bi-grams tri-grams)
-     [bi-grams tri-grams]]))
-
-(defn all-grams [s]
-  (let [all-gram-sets
-        (for [n (range 1 (count s))]
-          (-> (freqn n s) keys set))]
-    [(apply set/union all-gram-sets) all-gram-sets]))
-
-(defn ngram-compare
-  ""
-  [s1 s2 & {uc? :uc? n :n sfn :sfn ngfn :ngfn
-            :or {n 2 uc? false sfn dice-coeff ngfn word-letter-pairs}}]
-  (let [s1 (ngfn n (if uc? (str/upper-case s1) s1))
-        s2 (ngfn n (if uc? (str/upper-case s2) s2))]
-    (sfn s1 s2)))
-
-;;;(float (ngram-compare "FRANCE" "french"))
-;;;(float (ngram-compare "FRANCE" "REPUBLIC OF FRANCE"))
-;;;(float (ngram-compare "FRENCH REPUBLIC" "republic of france"))
-;;;(float (ngram-compare
-;;;        "TATATTTGGAGTTATACTATGTCTCTAAGCACTGAAGCAAA"
-;;;        "TATATATTTTGGAGATGCACAT"))
-
-
-
-
-;;; -----------------------------------------------------------------
-;;; Simple vector stuff.  dot product, norm, distances, and such.
-
-
-(defn dot [v1 v2]
-  (reduce #(+ %1 %2) 0 (map #(* %1 %2) v1 v2)))
-
-(defn norm [v]
-  (math/sqrt (dot v v)))
-
-(defn vhat [v]
-  (let [n (norm v)] (vec (map #(/ % n) v))))
-
-(defn cos-vangle [v1 v2]
-  (dot (vhat v1) (vhat v2)))
-
-(defn vangle-dist [v1 v2]
-  (math/abs (dec (cos-vangle v1 v2))))
-
-(defn vecdist [v1 v2]
-  (let [v (vec (map #(- %1 %2) v1 v2))] (dot v v)))
-
-
-(defn normed-codepoints [s]
-  (vec (map #(let [nc (- % 97)]
-               (cond
-                (>= nc 0) nc
-                (= % 32) 27
-                :else 28))
-            (str/codepoints s))))
-
-(defn ngram-vec [s & {n :n :or {n 2}}]
-  (let [ngrams (word-letter-pairs s n)
-        ngram-points (map (fn [[x y]]
-                            (int (+ (* x 27) y)))
-                          (map normed-codepoints ngrams))
-        v (int-array 784 0)]
-    (doseq [i ngram-points]
-      (aset v i 1))
-    v))
 
 
 

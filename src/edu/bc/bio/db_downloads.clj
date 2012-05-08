@@ -3,7 +3,7 @@
 ;;                          D B - D O W N L O A D S                         ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -48,8 +48,10 @@
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.net-utils
-        [edu.bc.log4clj :only [create-loggers log>]]
-        [edu.bc.bio.seq-utils :only [sto-GC-and-seq-lines join-sto-fasta-file]]
+        [edu.bc.bio.sequtils.files
+         :only [sto-GC-and-seq-lines join-sto-fasta-file]]
+        [edu.bc.log4clj
+         :only [create-loggers log>]]
 
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]

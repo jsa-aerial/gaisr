@@ -50,30 +50,80 @@
         ))
 
 
+(defn process-sto-files [m l]
+  (let [sto (str/trim l)]
+    (let [stos (conj (get m :cmbuilds []) sto)]
+      (assoc m :cmbuilds stos))))
+
+(defn process-cm-files [m l]
+  (let [sto (str/trim l)]
+    (let [stos (conj (get m :calibrates []) sto)]
+      (assoc m :calibrates stos))))
+
+(defn process-hit-files [m l]
+  (let [hfg (m :hitfile)
+        [cm hfs] (str/split #" *, *" l)
+        hitfile (or hfg hfs)]
+    (assert (not (and hfg hfs)))
+    (let [xref-map (get m :cmsearchs {})
+          hf-cms (get xref-map hitfile [])
+          hf-cms (conj hf-cms cm)]
+      (assoc m :cmsearchs (assoc xref-map hitfile hf-cms)))))
+
+
 (defn parse-config-file [filespec]
-  (let [lseq (filter #(not (or (= "" %) (re-find #"^#+" %)))
-		     (io/read-lines filespec))]
+  (let [lseq (filter #(not (or (= "" (str/trim %))
+                               (re-find #"^ *#+" %)))
+                     (io/read-lines filespec))
+        add-comment (fn [m l]
+                      (assoc m :comments
+                             (conj (get m :comments []) l)))
+        directive (fn [m d]
+                    (assoc m :directive d))
+        getf (fn[m k l]
+               (assoc m k (str/trim
+                           (second (str/split #": *" l)))))]
     (reduce
      (fn[m l]
        (condp #(re-find %1 %2) l
-	 #"^Hitfile-Dir *:"
-	 (assoc m :hitfile-dir (second (str/split #": *" l)))
-	 
-	 #"^CM-Dir *:"
-	 (assoc m :cmdir (second (str/split #": *" l)))
-	 
-	 #"^CM-Search +hitfile *:"
-	 (assoc m :hitfile (second (str/split #": *" l)))
-	 
-	 #"^CM-Search *:"
-	 (assoc m :hitfile nil)
+         #"^ *#+" ; NOTE: need to remove re-find from lseq filter
+         (add-comment m l)
 
-	 (let [hitfile (m :hitfile)
-	       [cm hf] (str/split #" *, *" l)
-	       the-hitfile (or hitfile hf)]
-	   (assert (not (and hitfile hf)))
-	   (let [cms-map (get m :cmsearchs {})
-		 cm-hfs (get cms-map cm [])
-		 cm-hfs (conj cm-hfs the-hitfile)]
-	     (assoc m :cmsearchs (assoc cms-map cm cm-hfs))))))
+         #"^Hitfile-Dir *:"
+         (getf m :hitfile-dir l)
+
+         #"^CM-Dir *:"
+         (getf m :cmdir l)
+
+         #"^STO-Dir *:"
+         (getf m :stodir l)
+
+         #"^CM-Build[ :]*"
+         (directive (assoc m :cmbuild (m :cmdir)) :cmbuild)
+
+         #"^CM-Calibrate[ :]*"
+         (directive (assoc m :cmcalibrate (m :cmdir)) :calibrate)
+
+         #"^CM-Search +hitfile *:"
+         (directive
+          (assoc m :hitfile (second (str/split #": *" l)))
+          :cmsearch)
+
+         #"^CM-Search *:"
+         (directive (assoc m :hitfile nil) :cmsearch)
+
+         #"^Gen-CSVs[ :]*"
+         (directive
+          (assoc m :gen-csvs
+                 (get (getf m :csvdir l)
+                      :csvdir
+                      (m :cmdir)))
+          :gen-csvs)
+
+         (case (m :directive)
+               :cmbuild (process-sto-files m l)
+               :calibrate (process-cm-files m l)
+               :cmsearch (process-hit-files m l)
+               :gen-csvs m)))
      {} lseq)))
+

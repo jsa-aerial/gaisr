@@ -3,7 +3,7 @@
 ;;                         P O S T - D B - C S V                            ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -51,7 +51,10 @@
   (:use edu.bc.utils
         [edu.bc.log4clj
          :only [create-loggers log>]]
-        edu.bc.bio.seq-utils
+	
+        edu.bc.bio.sequtils.files
+	edu.bc.bio.sequtils.tools
+	
         [edu.bc.bio.gaisr.db-actions
          :only [+start-delta+ base-info-query hit-features-query]]
 

@@ -3,7 +3,7 @@
 ;;                               A C T I O N S                              ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -50,7 +50,7 @@
   (:use clojure.contrib.math
         edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
-        edu.bc.bio.seq-utils
+        edu.bc.bio.sequtils.files
 
         [edu.bc.bio.gaisr.db-actions
          :only [seq-query feature-query names->tax]]

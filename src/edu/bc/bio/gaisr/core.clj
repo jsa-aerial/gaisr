@@ -3,7 +3,7 @@
 ;;                                  C O R E                                 ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -37,13 +37,16 @@
   (:require
 
    clojure.string
-   
+
    edu.bc.utils
+   edu.bc.utils.probs-stats
    edu.bc.job-utils
    edu.bc.net-utils
 
    edu.bc.bio.seq-utils
-   edu.bc.bio.seq-utils2
+   edu.bc.bio.sequtils.files
+   edu.bc.bio.sequtils.tools
+   edu.bc.bio.sequtils.info-theory
    edu.bc.bio.canned-jobs
    edu.bc.bio.db-downloads
 

@@ -3,7 +3,7 @@
 ;;                           C A N N E D - J O B S                          ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -44,8 +44,10 @@
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
+	edu.bc.bio.sequtils.files
+	edu.bc.bio.sequtils.tools
+
         [edu.bc.log4clj :only [create-loggers log>]]
-        [edu.bc.bio.seq-utils :as sequ]
         [clojure.contrib.condition
          :only [raise handler-case *condition*
                 print-stack-trace stack-trace-info]]

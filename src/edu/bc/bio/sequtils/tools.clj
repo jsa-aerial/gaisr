@@ -31,9 +31,10 @@
 
 (ns edu.bc.bio.sequtils.tools
 
-  "Intended to include/contain various utilities for operating with and on
-   sequence data.  Originally this was all about working with (NCBI) Blast+,
-   CMFINDER (and associated utils) and Infernal tools"
+  "Intended to include/contain various utilities for operating with
+   and on sequence data.  Originally this was all about working
+   with (NCBI) Blast+, CMFINDER (and associated utils) and Infernal
+   tools, but now may branch out to many others."
 
   (:require [clojure.contrib.string :as str]
             [clojure.contrib.str-utils :as stru]

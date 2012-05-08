@@ -31,9 +31,8 @@
 
 (ns edu.bc.bio.sequtils.files
 
-  "Intended to include/contain various utilities for operating with and on
-   sequence data.  Originally this was all about working with (NCBI) Blast+,
-   CMFINDER (and associated utils) and Infernal tools"
+  "Various bio sequence file format readers, writers, verifiers, and
+   manipulators."
 
   (:require [clojure.contrib.string :as str]
             [clojure.contrib.str-utils :as stru]

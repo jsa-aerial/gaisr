@@ -78,6 +78,17 @@
   [seqs pgap]
   (filter #(< (gap-percent %) pgap) seqs))
 
+(defn degap-seqs
+  "Remove gap characters from a sequence or set of sequences.  These
+   would be from an alignment set.  It is not clear how / where useful
+   this is/would be as it destroys the alignment spacing.  Other than
+   a single sequence situation, use degap-tuples instead!!
+  "
+  [seqs]
+  (if (coll? seqs)
+    (map #(str/replace-re #"[-.]+" "" %) seqs)
+    (str/replace-re #"[-.]+" "" seqs)))
+
 (defn gaps?
   "Return whether K, a char, string, or coll, contains a \"gap
    character\", i.e., a . or -.
@@ -100,15 +111,23 @@
             (if (gaps? k) m (assoc m k v)))
           {} freq-map))
 
-(defn degap-seqs
-  "Remove gap characters from a sequence or set of sequences.  These
-   would be from an alignment set.  It is not clear how / where useful
-   this is/would be as it destroys the alignment spacing
+(defn degap-tuples
+  "Remove gap characters from a tuple of sequences.  Typically this is
+   a pair of sequences (as for example arising 1from (combins 2
+   some-seq-set)).  The degaping works for gaps in any (through all)
+   of the elements and preserves the correct bases and their order in
+   cases where gaps line up with non gaps.
+
+   EX:
+
+   (degap-tuples
+     [\"CAAAUAAAAUAUAAUUUUAUAAUAAUAAGAAUAUAUAAAAAAUAUUAUAUAAAAGAAA\"
+      \"GGGAGGGGGGGGGGG-GGGGG-GGAGGGGGGG--GGGG-GGGGGAGG-GGGG-GGGG-\"])
+  => (\"CAAAUAAAAUAUAAUUUAUAUAAUAAGAAUAUAAAAAUAUUAAUAAAGAA\"
+      \"GGGAGGGGGGGGGGGGGGGGGGAGGGGGGGGGGGGGGGGAGGGGGGGGGG\")
   "
-  [seqs]
-  (if (coll? seqs)
-    (map #(str/replace-re #"[-.]+" "" %) seqs)
-    (str/replace-re #"[-.]+" "" seqs)))
+  [tuple-of-sqs]
+  (transpose (filter #(not (gaps? %)) (transpose tuple-of-sqs))))
 
 
 
@@ -280,6 +299,12 @@
 
 
 (defn- adjust-seqs-info
+  "Helper function.  Filters and transforms SQS according to switches
+   COLS, NORM, and PGAP.  If cols transpose the matrix represented by
+   SQS.  If norm, normalize elements of sqs by means of norm-elements.
+   In all cases filter out sqs with gap content greater than pgap (a
+   percentage value that defaults to 0.25)
+  "
   [sqs cols norm pgap]
   (cond
    (and cols norm) (-> sqs transpose (filter-pgap pgap) norm-elements)
@@ -287,9 +312,19 @@
    norm (-> sqs (filter-pgap pgap) norm-elements)
    :else (filter-pgap sqs pgap)))
 
-(defn- account-for-symmetry [triples]
+(defn- account-for-symmetry
+  "Helper function for aln-conditional-mutual-information.  Transform
+   content (triples of xy base keys and associated \"residual\" column
+   bases so that all xy yx keys are treated as multiple counts of xy.
+   That is, treat keys as symmetrically equal.  This occurs _before_
+   freq counts, so achieve this effect by literally duplicating
+   elements in the resulting collection.
+  "
+  [triples]
   (let [x (coalesce-xy-yx triples
+                          ;; just add copies of existing one
                           (fn [x v] (if (not v) () (cons (second x) v))))]
+    ;; Now flatten the result - note not amenable to flatten fn!
     (reduce (fn[c [x vs]]
               (reduce (fn[c v]
                         (conj c [x v]))
@@ -297,12 +332,19 @@
             [] x)))
 
 (defn aln-conditional-mutual-information
-  ""
-  [seqset & {par :par nogaps :nogaps pgap :pgap cols :cols norm :norm
+  "Mutual information of all 2 column pairs in an alignment
+   conditioned by the residual - unordered - bases of the remaining
+   columns.  Let colpairs be (combins 2 (transpose aln)).  For any
+   pair of columns [X Y] in colpairs, let Z be colpairs - {X Y}.
+   Compute I(X;Y|Z), the mutual information for X&Y given
+  "
+  [seqset & {par :par nogaps :nogaps pgap :pgap cols :cols
+  norm :norm
              :or {par 1 nogaps true pgap 0.25 cols true norm true}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [aln (if (coll? seqset) seqset (read-aln-seqs seqset))
         aln (adjust-seqs-info aln cols norm pgap)
+        cnt (count aln)
         aln-map (reduce (fn[m s] (assoc m s true)) {} aln)
         seq-pairs (combins 2 aln)
 
@@ -322,31 +364,38 @@
         triples (pxmap account-for-symmetry par triples)
 
         xyz-joint-probs (map #(probs 1 %) triples)
-        z-probs (map (fn[tpl] (probs 1 (map second tpl)))
-                     triples)
+        HXYZ (map entropy xyz-joint-probs)
+
+        z-probs (map (fn[tpl] (probs 1 (map second tpl))) triples)
+        HZ (map entropy z-probs)
+
         xz-joint-probs (pxmap (fn[tpl]
                                 (probs 1 (map (fn[[xy z]]
                                                 [(first xy) z])
                                               tpl)))
                               par
                               triples)
+        HXZ (map entropy xz-joint-probs)
         yz-joint-probs (pxmap (fn[tpl]
                                 (probs 1 (map (fn[[xy z]]
                                                 [(second xy) z])
                                               tpl)))
                               par
                               triples)
-        Ixy|z (pxmap  (fn[xyz-jps z-ps xz-jps yz-jps]
-                        (sum (fn[xyz-jp zp xz-jp yz-jp]
-                               (* xyz-jp (log2 (/ (* xyz-jp zp)
-                                                  (* xz-jp yz-jp)))))
-                             :|| xyz-jps z-ps xz-jps yz-jps))
-                      par
-                      (map vals xyz-joint-probs)
-                      (map vals z-probs)
-                      (map vals xz-joint-probs)
-                      (map vals yz-joint-probs))]
-    [Ixy|z xyz-joint-probs xz-joint-probs yz-joint-probs z-probs]))
+        HYZ (map entropy yz-joint-probs)
+
+        Ixy|z (pxmap (fn[Hxz Hyz Hxyz Hz]
+                       (let [Ixy|z (+ Hxz Hyz (- Hxyz) (- Hz))]
+                         (cond
+                          (>= Ixy|z 0.0) Ixy|z
+                          (< (abs Ixy|z) 1.0E-10) 0.0
+                          :else
+                          (raise
+                           :type :negIxy|z
+                           :Ixy|z Ixy|z :Hxz Hxz :Hyz Hyz :Hxyz Hxyz :Hz Hz))))
+                     par
+                     HXZ HYZ HXYZ HZ)]
+    [Ixy|z (combins 2 (range cnt))]))
 
 
 (defn aln-mutual-information
@@ -361,10 +410,7 @@
         entropy (fn[probs] (- (sum #(* % (log2 %)) (vals probs))))
         aln (if (coll? seqset) seqset (read-aln-seqs seqset))
         aln (adjust-seqs-info aln cols norm pgap)
-
-        seq-entropy-map (into {} (map #(do [% (shannon-entropy
-                                               (if nogaps (degap-seqs %) %))])
-                                      aln))
+        cnt (count aln)
 
         seq-pairs (combins 2 aln)
         pair-freqs (map #(combin-count-reduction % true)
@@ -373,12 +419,20 @@
 
         joint-probs (map probs pair-freqs)
         joint-entropy (map entropy joint-probs)
-        mutual-info (map (fn[Hxy [x y]]
-                           (let [Hx (seq-entropy-map x)
-                                 Hy (seq-entropy-map y)]
-                             (+ Hx Hy (- Hxy))))
-                         joint-entropy seq-pairs)]
-    [mutual-info joint-entropy joint-probs pair-freqs]))
+        mutual-info (pxmap (fn[Hxy sp]
+                             (let [[x y] (degap-tuples sp)
+                                   Hx (shannon-entropy x)
+                                   Hy (shannon-entropy y)
+                                   Ixy (+ Hx Hy (- Hxy))]
+                               (cond
+                                (>= Ixy 0.0) Ixy
+                                (< (abs Ixy) 1.0E-10) 0.0
+                                :else
+                                (raise
+                                 :type :negIxy :Ixy Ixy :Hxy Hxy :pair sp))))
+                           par
+                           joint-entropy seq-pairs)]
+    [mutual-info joint-entropy seq-pairs (combins 2 (range cnt))]))
 
 
 (defn variation-information

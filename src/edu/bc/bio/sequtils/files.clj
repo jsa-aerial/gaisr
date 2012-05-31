@@ -44,13 +44,54 @@
             [edu.bc.fs :as fs])
   (:use clojure.contrib.math
         edu.bc.utils
-	edu.bc.utils.probs-stats
+        edu.bc.utils.probs-stats
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]
         [clojure.contrib.pprint
          :only (cl-format compile-format)]
         ))
 
+
+
+(def +IUPAC+
+     ^{:doc "These are the codes for \"bases\" used in alignments"}
+     {\A "Adenine"
+      \C "Cytosine"
+      \G "Guanine"
+      \T "Thymine"
+      \U "Uracil"
+      \R "AG"
+      \Y "CUT"
+      \S "GC"
+      \W "AUT"
+      \K "GUT"
+      \M "AC"
+      \B "CGUT"
+      \D "AGUT"
+      \H "ACUT"
+      \V "ACG"
+      \N "any"
+      \. "gap"
+      \- "gap"})
+
+(def +NONSTD-RNA+
+     ^{:doc "These are the codes for all non standard \"bases\" used
+             in alignments"}
+
+     {\T "Thymine"
+      \R "AG"
+      \Y "CUT"
+      \S "GC"
+      \W "AUT"
+      \K "GUT"
+      \M "AC"
+      \B "CGUT"
+      \D "AGUT"
+      \H "ACUT"
+      \V "ACG"
+      \N "any"
+      \. "gap"
+      \- "gap"})
 
 
 
@@ -391,15 +432,16 @@
   "
   [filespec]
   (let [type (fs/ftype filespec)
-        sqs (drop-until #(re-find #"^(>N|N)" %)
-                        (str/split-lines (slurp filespec)))
+        sqs (str/split-lines (slurp filespec))
+        sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
+        sqs (drop-until #(re-find #"^(>[A-Z]|[A-Z])" %) sqs)
         sqs (case type
               "aln"
               (map #(str/replace-re #"^N[CZ_0-9]+ +" "" %) sqs)
 
               "sto"
-              (map #(str/replace-re #"^N[CZ_0-9]+ +" "" %)
-                   (take-while #(re-find #"^N" %) sqs))
+              (map #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+) +" "" %)
+                   (take-while #(re-find #"^[A-Z]" %) sqs))
 
               "gma" (raise :type :NYI :info "GMA format not yet implemented")
 
@@ -464,3 +506,23 @@
         (map #(map transpose %) sqs)
         (map transpose sqs))
       sqs)))
+
+
+(defn map-aln-seqs
+  ""
+  ([f cols filespec]
+     (f (read-aln-seqs filespec :cols cols)))
+  ([f cols filespec & filespecs]
+     (map f (map #(read-aln-seqs % :cols cols) filespecs))))
+
+(defn reduce-aln-seqs
+  ""
+  [f fr cols filespecs]
+  (reduce fr (apply map-aln-seqs f cols filespecs)))
+
+
+(defn do-aln-seq-dir
+  ""
+  [f dir & {:keys [cols dirdir ftypes]
+            :or {dirdir false cols false ftypes ["sto"]}}]
+  )

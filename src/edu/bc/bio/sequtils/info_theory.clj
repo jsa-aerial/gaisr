@@ -65,58 +65,87 @@
 
 
 (defn gap-percent
-  "Return the percentage of seq (typically an aligned variant of a
-   genome sequence) that is comprised of gap characters.  See gaps?."
-   [seq]
-  (let [[_ ps] (freqs-probs 1 seq)
-        gp (+ (get ps \- 0) (get ps \. 0))]
-    gp))
+  "Return the percentage of sq (typically an aligned variant of a
+   genome sequence) that is comprised of gap characters.  For the
+   single parameter case, gaps are take as \\. and \\-.  For the
+   gap-chars case, gap characters are the elements (characters) in
+   gap-chars (a seqable collection)."
+   ([sq]
+      (let [[_ ps] (freqs-probs 1 sq)
+            gp (+ (get ps \- 0) (get ps \. 0))]
+        gp))
+   ([sq gap-chars]
+      (let [[_ ps] (freqs-probs 1 sq)
+            gp (sum (filter #(get ps % 0) gap-chars))]
+        gp)))
 
 (defn filter-pgap
-  "Filter the sequence set seqs, by returning only those that have less
-   than a pgap percentage of gap characters."
-  [seqs pgap]
-  (filter #(< (gap-percent %) pgap) seqs))
+  "Filter the sequence set seqs, by returning only those that have
+   less than a pgap percentage of gap characters. Gap chars are either
+   the defaults \\. \\- or those in gap-chars (a seqable collection)."
+  ([seqs pgap]
+     (filter #(< (gap-percent %) pgap) seqs))
+  ([seqs pgap gap-chars]
+     (filter #(< (gap-percent % gap-chars) pgap) seqs)))
 
 (defn degap-seqs
   "Remove gap characters from a sequence or set of sequences.  These
    would be from an alignment set.  It is not clear how / where useful
    this is/would be as it destroys the alignment spacing.  Other than
    a single sequence situation, use degap-tuples instead!!
+
+   Gap chars are either the defaults \\. \\- or those in gap-chars (a
+   seqable collection).
   "
-  [seqs]
-  (if (coll? seqs)
-    (map #(str/replace-re #"[-.]+" "" %) seqs)
-    (str/replace-re #"[-.]+" "" seqs)))
+  ([seqs]
+     (if (coll? seqs)
+       (map #(str/replace-re #"[-.]+" "" %) seqs)
+       (str/replace-re #"[-.]+" "" seqs)))
+  ([seqs gap-chars]
+     (if (coll? seqs)
+       (map (fn[sq] (apply str (filter (fn[c] #(not (in c gap-chars))) sq)))
+            seqs)
+       (apply str (filter (fn[c] #(not (in c gap-chars))) seqs)))))
 
 (defn gaps?
   "Return whether K, a char, string, or coll, contains a \"gap
-   character\", i.e., a . or -.
-
-   Note: bug: may need a more complete set of what these are or
-   perhaps pass the set in with a default of [. -].
+   character\".  For the single parameter case gap chars are taken as,
+   a \\. or \\-.  For the gap-chars case gap characters are the
+   elements (characters) in gap-chars (a seqable collection).
   "
-  [k]
-  (or
-   (and (char? k) (in k [\. \-]))
-   (and (string? k) (re-find #"(\.|-)" k))
-   (and (coll? k) (or (in \- k) (in \. k)))))
+  ([k]
+     (or
+      (and (char? k) (in k [\. \-]))
+      (and (string? k) (re-find #"(\.|-)" k))
+      (and (coll? k) (or (in \- k) (in \. k)))))
+  ([k gap-chars]
+     (or
+      (and (char? k) (in k gap-chars))
+      (and (string? k) (some #(in % gap-chars) k))
+      (and (coll? k) (some #(in % gap-chars) k)))))
 
 (defn degap-freqs
   "Take a frequency map, and remove all elements whose keys contain
-   gap characters ('-', '.')
+   gap characters.  Gap chars are either the defaults \\. \\- or those
+   in gap-chars (a seqable collection).
   "
-  [freq-map]
-  (reduce (fn[m [k v]]
-            (if (gaps? k) m (assoc m k v)))
-          {} freq-map))
+  ([freq-map]
+     (reduce (fn[m [k v]]
+               (if (gaps? k) m (assoc m k v)))
+             {} freq-map))
+  ([freq-map gap-chars]
+     (reduce (fn[m [k v]]
+               (if (gaps? k gap-chars) m (assoc m k v)))
+             {} freq-map)))
+
 
 (defn degap-tuples
   "Remove gap characters from a tuple of sequences.  Typically this is
    a pair of sequences (as for example arising 1from (combins 2
    some-seq-set)).  The degaping works for gaps in any (through all)
    of the elements and preserves the correct bases and their order in
-   cases where gaps line up with non gaps.
+   cases where gaps line up with non gaps.  Gap chars are either the
+   defaults \\. \\- or those in gap-chars (a seqable collection).
 
    EX:
 
@@ -126,28 +155,40 @@
   => (\"CAAAUAAAAUAUAAUUUAUAUAAUAAGAAUAUAAAAAUAUUAAUAAAGAA\"
       \"GGGAGGGGGGGGGGGGGGGGGGAGGGGGGGGGGGGGGGGAGGGGGGGGGG\")
   "
-  [tuple-of-sqs]
-  (transpose (filter #(not (gaps? %)) (transpose tuple-of-sqs))))
+  ([tuple-of-sqs]
+     (transpose (filter #(not (gaps? %)) (transpose tuple-of-sqs))))
+  ([tuple-of-sqs gap-chars]
+     (transpose (filter #(not (gaps? % gap-chars)) (transpose tuple-of-sqs)))))
 
 
 
 
-(defn seqs-shannon-entropy
-  "Returns the Shannon entropy of the set of sequences in SEQSET, a
-   collection of sequences or a string denoting a legal format
-   sequence file (see read-seqs).  Returns a pair [ses total-ses],
-   where
-
-   ses is (map shannon-entropy seqset) and total-ses is the total over
-   all of seqset.
+(defn- _adjust-one
+  "Helper for (seqs|aln)-freqs-probs.  Basically degaps and
+   recalculates freqs and probs of the passed in freqs fs and probs
+   ps.
   "
-  [seqset]
-  {:pre [(gaisr-seq-set? seqset)]}
-  (let [ses (if (coll? seqset)
-              (map shannon-entropy seqset)
-              (map shannon-entropy (read-seqs seqset)))]
-    [ses (/ (sum ses) (count ses))]))
+  [[fs ps cnt] nogaps]
+  (let [degap (if (or (string?  nogaps) (coll? nogaps))
+                #(degap-freqs % nogaps)
+                degap-freqs)
+        reprob (fn[sz fs]
+                 (reduce (fn[m [k v]] (assoc m k (double (/ v sz))))
+                         {} fs))]
+    (let [fs (degap fs)
+          sz (sum fs)
+          ps (reprob sz fs)]
+      [fs ps sz])))
 
+(defn- _str-em
+  "Helper function for (seqs|aln)-freqs-probs.  Stringify the keys in
+   the frequency and probability maps.
+  "
+  [[fs ps cnt]]
+  (let [rfn #(reduce (fn[m [k v]]
+                       (assoc m (apply str (ensure-vec k)) v))
+                     {} %)]
+    [(rfn fs) (rfn ps) cnt]))
 
 (defn seqs-freqs-probs
   "Return sequence frequencies and probabilities over the set of
@@ -162,7 +203,7 @@
 
    Return [ccfsps allfs allps tcount], where
 
-   ccfs&ps is a seq of triples [fs ps cnt], for each C in colls,
+   ccfs&ps is a seq of triples [fs ps cnt], for each C in seqset,
    allfs is the map of freqs over all Cs,
    allps is the map of probs over all Cs and
    tcount is the total items over coll.
@@ -171,25 +212,21 @@
    produced by fsps-fn, ensures that all returned maps use (apply str
    k) for all keys.
   "
-  [n seqset &
-   {fsps-fn :fsps-fn nogaps :nogaps par :par
-    :or {fsps-fn cc-freqs-probs nogaps true par 1}}]
+  [n seqset & {:keys [fsps-fn nogaps norm par]
+               :or {fsps-fn cc-freqs-probs nogaps true norm true par 1}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [seqset (if (coll? seqset) seqset (read-seqs seqset))
-        rfn #(reduce (fn[m [k v]] (assoc m (apply str (ensure-vec k)) v)) {} %)
-        str-em (fn[[fs ps cnt]] [(rfn fs) (rfn ps) cnt])
+        seqset (if norm (norm-elements seqset) seqset)
 
-        [ccfsps tfs tps tcnt] (if (= par 1) ; Accomodate fsps-fns w/o par arg!
-                                (fsps-fn n seqset)
-                                (fsps-fn n seqset :par par))
-
-        ccfsps (pxmap str-em par ccfsps)]
-    [ccfsps (rfn tfs) (rfn tps) tcnt]))
-
-
-(defn bg-freqs-probs "NOT YET IMPLEMENTED" [] :NYI)
-
-
+        [ccfsps fs ps cnt] (if (= par 1) ; Accomodate fsps-fns w/o par arg!
+                             (fsps-fn n seqset)
+                             (fsps-fn n seqset :par par))
+        ccfsps (pxmap _str-em par ccfsps)]
+    (if (not nogaps)
+      [ccfsps fs ps cnt]
+      (let [ccfsps (pxmap #(_adjust-one % nogaps) par ccfsps)
+            [fs ps cnt] (_str-em (_adjust-one [fs ps cnt] nogaps))]
+        [ccfsps fs ps cnt]))))
 
 
 (defn aln-freqs-probs
@@ -222,37 +259,47 @@
    allps is the map of probs obtained by reducing over all Ci-ps maps
    tcount is the total item (obtained n-tuples) count.
   "
-  [n seqset & {fsps-fn :fsps-fn par :par nogaps :nogaps norm :norm pgap :pgap
-               :or {fsps-fn cc-combins-freqs-probs par 1
-                    nogaps true norm true pgap 0.70}}]
+  [n seqset & {:keys [fsps-fn cols nogaps norm pgap par]
+               :or {fsps-fn cc-combins-freqs-probs
+                    cols false nogaps true norm true pgap 0.70 par 1}}]
 
   {:pre [(gaisr-seq-set? seqset)]}
 
-  (let [aln (if (coll? seqset)
-              (transpose seqset)
-              (read-aln-seqs seqset :cols true))
-        alnx (filter-pgap aln pgap)
-        alny (if norm (norm-elements alnx) alnx)
+  (let [aln (cond
+             (and (coll? seqset) cols) (transpose seqset)
+             (coll? seqset) seqset
+             :else
+             (read-aln-seqs seqset :cols cols))
+        aln (if (= pgap 1.0) aln (filter-pgap aln pgap))
 
-        [colsfsps fs ps cnt :as all]
-        (seqs-freqs-probs n alny :fsps-fn fsps-fn :par par)
+        [colsfsps fs ps cnt]
+        (seqs-freqs-probs n aln :fsps-fn fsps-fn
+                          :nogaps nogaps :norm norm :par par)]
+    [colsfsps fs ps cnt]))
 
-        degap degap-freqs
-        reprob (fn[sz fs]
-                 (reduce (fn[m [k v]] (assoc m k (double (/ v sz))))
-                         {} fs))
-        adjust-one (fn[[fs ps cnt]]
-                     (let [fs (degap fs)
-                           sz (sum fs)
-                           ps (reprob sz fs)]
-                       [fs ps sz]))]
-    (if (not nogaps)
-      all
-      (let [colsfsps (pxmap adjust-one par colsfsps)
-            fs (degap fs)
-            sz (sum fs)
-            ps (reprob sz fs)]
-        [colsfsps fs ps sz]))))
+
+(defn bg-freqs-probs "NOT YET IMPLEMENTED"
+  ([n filespec & {:keys [nogaps par] :or {nogaps false par 1}}]
+     (seqs-freqs-probs n filespec :nogaps nogaps :par par)))
+
+
+
+
+(defn seqs-shannon-entropy
+  "Returns the Shannon entropy of the set of sequences in SEQSET, a
+   collection of sequences or a string denoting a legal format
+   sequence file (see read-seqs).  Returns a pair [ses total-ses],
+   where
+
+   ses is (map shannon-entropy seqset) and total-ses is the total over
+   all of seqset.
+  "
+  [seqset]
+  {:pre [(gaisr-seq-set? seqset)]}
+  (let [ses (if (coll? seqset)
+              (map shannon-entropy seqset)
+              (map shannon-entropy (read-seqs seqset)))]
+    [ses (/ (sum ses) (count ses))]))
 
 
 (defn aln-entropy
@@ -310,6 +357,7 @@
    (and cols norm) (-> sqs transpose (filter-pgap pgap) norm-elements)
    cols (-> sqs transpose (filter-pgap pgap) norm-elements)
    norm (-> sqs (filter-pgap pgap) norm-elements)
+   (= pgap 1.0) sqs
    :else (filter-pgap sqs pgap)))
 
 (defn- account-for-symmetry
@@ -338,9 +386,9 @@
    pair of columns [X Y] in colpairs, let Z be colpairs - {X Y}.
    Compute I(X;Y|Z), the mutual information for X&Y given
   "
-  [seqset & {par :par nogaps :nogaps pgap :pgap cols :cols
-  norm :norm
-             :or {par 1 nogaps true pgap 0.25 cols true norm true}}]
+  [seqset & {par :par nogaps :nogaps pgap :pgap
+             cols :cols norm :norm sym? :sym?
+             :or {par 1 nogaps true pgap 0.25 cols true norm true sym? false}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [aln (if (coll? seqset) seqset (read-aln-seqs seqset))
         aln (adjust-seqs-info aln cols norm pgap)
@@ -361,7 +409,7 @@
         triples (if nogaps
                   (pxmap #(filter (fn[[xy _]] (not (gaps? xy))) %) par triples)
                   triples)
-        triples (pxmap account-for-symmetry par triples)
+        triples (if sym? (pxmap account-for-symmetry par triples) triples)
 
         xyz-joint-probs (map #(probs 1 %) triples)
         HXYZ (map entropy xyz-joint-probs)
@@ -400,29 +448,36 @@
 
 (defn aln-mutual-information
   ""
-  [seqset & {par :par nogaps :nogaps norm :norm pgap :pgap cols :cols
-             :or {par 1 nogaps true norm true pgap 0.25 cols false}}]
+  [seqset & {:keys [par nogaps pgap cols norm sym?]
+             :or {par 1 nogaps true pgap 0.25 cols false norm true sym? false}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [probs (fn[fs]
                 (let [sz (sum fs)]
                   (reduce (fn[m [k v]] (assoc m k (double (/ v sz))))
                           {} fs)))
-        entropy (fn[probs] (- (sum #(* % (log2 %)) (vals probs))))
+        entropy (fn[probs] (- (sum #(* % (ln %)) (vals probs))))
         aln (if (coll? seqset) seqset (read-aln-seqs seqset))
-        aln (adjust-seqs-info aln cols norm pgap)
+        aln (adjust-seqs-info aln cols norm 1.0)
         cnt (count aln)
 
-        seq-pairs (combins 2 aln)
-        pair-freqs (map #(combin-count-reduction % true)
+        seq-pairs&indices (filter (fn[[sp ip]]
+                                    (= (count (filter-pgap sp pgap)) 2))
+                                  (partition-all
+                                   2 (interleave (combins 2 aln)
+                                                 (combins 2 (range cnt)))))
+        seq-pairs (map first seq-pairs&indices)
+        indices   (map second seq-pairs&indices)
+
+        pair-freqs (map #(combin-count-reduction % sym?)
                         (map transpose seq-pairs))
         pair-freqs (if nogaps (map degap-freqs pair-freqs) pair-freqs)
 
         joint-probs (map probs pair-freqs)
         joint-entropy (map entropy joint-probs)
         mutual-info (pxmap (fn[Hxy sp]
-                             (let [[x y] (degap-tuples sp)
-                                   Hx (shannon-entropy x)
-                                   Hy (shannon-entropy y)
+                             (let [[x y] (if nogaps (degap-tuples sp) sp)
+                                   Hx (shannon-entropy x :logfn ln)
+                                   Hy (shannon-entropy y :logfn ln)
                                    Ixy (+ Hx Hy (- Hxy))]
                                (cond
                                 (>= Ixy 0.0) Ixy
@@ -432,7 +487,7 @@
                                  :type :negIxy :Ixy Ixy :Hxy Hxy :pair sp))))
                            par
                            joint-entropy seq-pairs)]
-    [mutual-info joint-entropy seq-pairs (combins 2 (range cnt))]))
+    [mutual-info joint-entropy seq-pairs indices]))
 
 
 (defn variation-information

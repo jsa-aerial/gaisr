@@ -280,7 +280,7 @@
   "Given a set of collections c1, c2, c3, .. cn, and combinator, a
    function of n variables which generates joint occurances from {ci},
    returns the joint probability distribution.  If sym? is true
-   coalesce reversable element occurances where (= e (reverse e)).
+   coalesce reversable element occurances.
 
    Ex: (apply joint-probability
               transpose true (take 2 (seq/rotations \"GGCGGAAGACCGCCUCGA\")))
@@ -331,22 +331,76 @@
 
 
 (defn cond-probability
-  [combinator sym? occurs? coll1 coll2]
-  (let [PXY (joint-probability combinator sym? coll1 coll2)
-        PY  (probs 1 coll2)]
-    (reducem
-     (fn[[pkx pvx] [pkxy pvxy]]
-       #_(prn :f pkx pvx pkxy pvxy)
-       (if (occurs? pkx pkxy)
-         {pkx {pkxy  (/ pvxy pvx)}}
-         {}))
-     (fn[m subm]
-       #_(prn :FR m subm)
-       (merge-with into m subm))
-     PY PXY)))
+  "Given collections coll1 and coll2, and combinator, a function of 2
+   variables which generates joint occurances from coll2 & coll2,
+   returns the conditional probability distributions for coll1
+   conditioned on elements of coll2.  If sym? is true coalesce
+   reversable element occurances during joint occurance
+   computation.
+
+   Alternatively, in the distribution version, PXY is a joint
+   distribution in map form, and PY is a distribution in map form.
+   That is, in this variant, the distributions are explicitly
+   provided.
+
+   OCCURS? is a function of two variables, pkx and pkxy, where pkx is
+   a key derived from coll2/PY and pkxy is a key derived from the
+   combinator map of coll1 with coll2 or a key in PXY.  It returns
+   whether pkx occurs in pkxy.
+
+   cond-probability returns a map of maps, where each inner map is a
+   distribution of coll1 given ei in coll2:
+
+   {{ei {P(COLL1)|ei}} ei in COLL2.
+
+   Use pXY|y to obtain any given distribution, where y = some ei.
+
+   Examples:
+
+   (cond-probability
+     transpose false #(= %1 (.charAt %2 1)) \"defdeef\" \"abcaabb\")
+   => {\\a {\"ea\" 0.3333333333333333, \"da\" 0.6666666666666666},
+       \\b {\"fb\" 0.3333333333333333, \"eb\" 0.6666666666666666},
+       \\c {\"fc\" 0.9999999999999997}}
+
+   (cond-probability
+     transpose false #(= %1 (.charAt %2 1)) \"abcaabb\" \"defdeef\")
+   => {\\d {\"ad\" 1.0},
+       \\e {\"ae\" 0.3333333333333333, \"be\" 0.6666666666666666},
+       \\f {\"bf\" 0.5, \"cf\" 0.5}}
+  "
+  ([PXY PY occurs?]
+     (reducem
+      (fn[[pkx pvx] [pkxy pvxy]]
+        #_(prn :f pkx pvx pkxy pvxy)
+        (if (occurs? pkx pkxy)
+          {pkx {pkxy  (/ pvxy pvx)}}
+          {}))
+      (fn[m subm]
+        #_(prn :FR m subm)
+        (merge-with into m subm))
+      PY PXY))
+  ([combinator sym? occurs? coll1 coll2]
+     (let [PXY (joint-probability combinator sym? coll1 coll2)
+           PY  (probs 1 coll2)]
+       (cond-probability PXY PY occurs?))))
+
 
 (defn pXY|y
-  ""
+  "Given a total conditional distribution XY (see cond-probability),
+   return the distribution of XY with respect to y.  XY should be a
+   map of maps of the form returned from cond-probability.  Typically,
+   this would be used in conjunction with cond-probability, but need
+   not be as long as the form of the map of maps is the same, where
+   each inner map is the joint distribution conditioned on an element.
+
+   Ex:
+
+   (pXY|y (cond-probability transpose false #(= %1 (.charAt %2 1))
+                            \"defdeef\" \"abcaabb\")
+          \\a)
+  => {\"ea\" 0.3333333333333333, \"da\" 0.6666666666666666}
+  "
   [XY y] (XY y))
 
 
@@ -461,7 +515,7 @@
 
 (defn entropy [dist & {logfn :logfn :or {logfn log2}}]
   (let [dist (if (map? dist) (vals dist) dist)]
-    (- (sum #(* % (logfn %)) dist))))
+    (- (sum #(if (= 0.0 %) 0.0 (* % (logfn %))) dist))))
 
 (defn shannon-entropy
   "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
@@ -499,13 +553,22 @@
   (apply joint-entropy args))
 
 
-(defn conditional-entropy
-  ""
-  [combinator sym? finder collx colly]
-  (let [PXY (joint-probability combinator sym? collx colly)
-        PY (probs 1 colly)]
-    (combin-count-reduction (combinator collx colly) sym?)
-  )
+(defn cond-entropy
+  "Given a "
+  ([PXY PY]
+     (- (entropy PXY) (entropy PY)))
+  ([combinator sym? coll1 coll2]
+     (- (entropy (joint-probability combinator sym? coll1 coll2))
+	(entropy (probs 1 coll2))))
+  ([combinator sym? coll1 coll2 & colls]
+     ;; Apply chain rule...
+     (- (entropy (apply joint-probability combinator sym? coll1 coll2 colls))
+	(apply cond-entropy combinator coll2 colls))))
+
+(defn HX|Y
+  "Synonym for cond-entropy"
+  [& args]
+  (apply cond-entropy args))
 
 
 (defn combin-joint-entropy

@@ -485,7 +485,7 @@
     (map (fn [seqf stof]
            (if (fs/empty? seqf)
              (do (io/with-out-writer stof
-                   (println (str "GEN-ALIGNED-POS-NEG-SETS: SeqFile '"
+                   (println (str "# GEN-ALIGNED-POS-NEG-SETS: SeqFile '"
                                  seqf "' is empty!")))
                  stof)
              (cmalign cm seqf stof)))

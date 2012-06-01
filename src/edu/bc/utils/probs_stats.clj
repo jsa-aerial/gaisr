@@ -119,9 +119,13 @@
   (freqs&probs n coll freqn))
 
 (defn probs
-  "Probabilities of items generated from n and coll by freqn"
-  [n coll]
-  (second (freqs-probs n coll)))
+  "Probabilities for items from coll takne n at a time or as
+   determined by the frequency dist map freq-dist-map."
+  ([n coll]
+     (second (freqs-probs n coll)))
+  ([freq-dist-map]
+     (second (freqs&probs 0 freq-dist-map (fn[n coll] coll)))))
+
 
 (defn alphabet2
   "Return the alphabet for coll.  If coll is a map, return it's keys.
@@ -559,11 +563,11 @@
      (- (entropy PXY) (entropy PY)))
   ([combinator sym? coll1 coll2]
      (- (entropy (joint-probability combinator sym? coll1 coll2))
-	(entropy (probs 1 coll2))))
+        (entropy (probs 1 coll2))))
   ([combinator sym? coll1 coll2 & colls]
      ;; Apply chain rule...
      (- (entropy (apply joint-probability combinator sym? coll1 coll2 colls))
-	(apply cond-entropy combinator coll2 colls))))
+        (apply cond-entropy combinator coll2 colls))))
 
 (defn HX|Y
   "Synonym for cond-entropy"

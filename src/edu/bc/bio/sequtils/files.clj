@@ -489,7 +489,7 @@
     (seqs-from-dirn-file1 ... seqs-from-dirn-filel))
   "
   [dir & {dirdir :dirdir cols :cols ftypes :ftypes
-          :or {dirdir false cols false ftypes ["aln"]}}]
+          :or {dirdir false cols false ftypes ["sto"]}}]
   (let [one-dir (fn[dir]
                   (filter #(> (count %) 1)
                           (fs/dodir
@@ -511,14 +511,16 @@
 (defn map-aln-seqs
   ""
   ([f cols filespec]
-     (f (read-aln-seqs filespec :cols cols)))
+     (list (f (read-aln-seqs filespec :cols cols))))
   ([f cols filespec & filespecs]
      (map f (map #(read-aln-seqs % :cols cols) filespecs))))
 
 (defn reduce-aln-seqs
   ""
-  [f fr cols filespecs]
-  (reduce fr (apply map-aln-seqs f cols filespecs)))
+  ([f fr cols filespecs]
+     (reduce fr (apply map-aln-seqs f cols filespecs)))
+  ([f fr v cols filespecs]
+     (reduce fr v (apply map-aln-seqs f cols filespecs))))
 
 
 (defn do-aln-seq-dir

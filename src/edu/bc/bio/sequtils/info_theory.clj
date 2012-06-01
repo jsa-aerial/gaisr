@@ -221,11 +221,12 @@
         [ccfsps fs ps cnt] (if (= par 1) ; Accomodate fsps-fns w/o par arg!
                              (fsps-fn n seqset)
                              (fsps-fn n seqset :par par))
+        [fs ps cnt] (_str-em [fs ps cnt])
         ccfsps (pxmap _str-em par ccfsps)]
     (if (not nogaps)
       [ccfsps fs ps cnt]
       (let [ccfsps (pxmap #(_adjust-one % nogaps) par ccfsps)
-            [fs ps cnt] (_str-em (_adjust-one [fs ps cnt] nogaps))]
+            [fs ps cnt] (_adjust-one [fs ps cnt] nogaps)]
         [ccfsps fs ps cnt]))))
 
 
@@ -278,9 +279,63 @@
     [colsfsps fs ps cnt]))
 
 
-(defn bg-freqs-probs "NOT YET IMPLEMENTED"
-  ([n filespec & {:keys [nogaps par] :or {nogaps false par 1}}]
-     (seqs-freqs-probs n filespec :nogaps nogaps :par par)))
+(defn bg-freqs
+  "Perform a bacground frequency distribution calculation over the
+   sequences in FILESPECS (a coll of legal format sequence files or a
+   directory of such or if dirdir is true, a directory of directories
+   of such, see read-seqs).  FTYPES gives the file types in the cases
+   where filespecs is a dir or dirdir.
+
+   By default, the distributions are performed with a sliding window
+   of N length.  So, on DNA/RNA sequences 1 gives base probabilities,
+   2 gives a dinucleotide distribution, etc.  To change this supply a
+   different freq&prob calculation function for fsps-fn.  For more
+   information see seqs-freqs-probs description.
+
+   If cols is true, computation is over the columns of the sequences.
+   If nogaps is true, removes default gap characters from calculation.
+   If nogaps is a coll (for example, (keys +NONSTD-RNA+)), removes all
+   those characters from calculation.  If norm is true, normalize
+   characters to upper case.
+  "
+  [n filespecs & {:keys [fsps-fn ftypes dirdir cols nogaps norm par]
+                  :or {fsps-fn cc-freqs-probs ftypes [".sto"] dirdir false
+                       cols false nogaps false norm true par 1}}]
+  (let [isdir (and (not (coll? filespecs))
+                   (fs/directory? filespecs))
+        filespecs (cond
+                   (and isdir (not dirdir))
+                   (apply concat
+                          (map #(fs/directory-files filespecs %) ftypes))
+                   dirdir filespecs ; keep as original dirdir filespec
+                   isdir (fs/directory-files filespecs ftypes)
+                   :else filespecs)
+        f (fn[sqs]
+            (second (seqs-freqs-probs
+                     n sqs :fsps-fn fsps-fn
+                     :nogaps nogaps :norm norm :par par)))]
+    (cond
+     (and isdir dirdir)
+     (reduce (fn[M m] (merge-with + M m))
+             (map #(bg-freqs n % :fsps-fn fsps-fn
+                             :ftypes ftypes :cols cols
+                             :nogaps nogaps :norm norm :par par)
+                  (fs/directory-files filespecs "")))
+     (seq filespecs)
+     (reduce-aln-seqs f (fn[M m] (merge-with + M m)) cols filespecs)
+     :else nil)))
+
+(defn bg-freqs-probs
+  "Like bg-freqs, but with the additional final computation of
+   probability distribution for the frequency distribution
+  "
+  [n filespecs & {:keys [fsps-fn ftypes dirdir cols nogaps norm par]
+                  :or {fsps-fn cc-freqs-probs ftypes [".sto"] dirdir false
+                       cols false nogaps false norm true par 1}}]
+  (let [fqs (bg-freqs n filespecs
+                      :fsps-fn fsps-fn :ftypes ftypes :dirdir dirdir
+                      :cols cols :nogaps nogaps :norm norm :par par)]
+    [fqs (probs fqs)]))
 
 
 

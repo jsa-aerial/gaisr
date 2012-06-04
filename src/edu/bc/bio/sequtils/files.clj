@@ -523,8 +523,16 @@
      (reduce fr v (apply map-aln-seqs f cols filespecs))))
 
 
-(defn do-aln-seq-dir
+(defn map-seqs
+  ([f filespec]
+     (list (f (read-seqs filespec))))
+  ([f filespec & filespecs]
+     (map f (map #(read-seqs %) filespecs))))
+
+(defn reduce-seqs
   ""
-  [f dir & {:keys [cols dirdir ftypes]
-            :or {dirdir false cols false ftypes ["sto"]}}]
-  )
+  ([f fr filespecs]
+     (reduce fr (apply map-seqs f filespecs)))
+  ([f fr v cols filespecs]
+     (reduce fr v (apply map-seqs f filespecs))))
+

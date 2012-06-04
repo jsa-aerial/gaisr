@@ -310,6 +310,7 @@
                    dirdir filespecs ; keep as original dirdir filespec
                    isdir (fs/directory-files filespecs ftypes)
                    :else filespecs)
+        merger (fn[M m] (merge-with + M m))
         f (fn[sqs]
             (second (seqs-freqs-probs
                      n sqs :fsps-fn fsps-fn
@@ -321,8 +322,12 @@
                              :ftypes ftypes :cols cols
                              :nogaps nogaps :norm norm :par par)
                   (fs/directory-files filespecs "")))
+
      (seq filespecs)
-     (reduce-aln-seqs f (fn[M m] (merge-with + M m)) cols filespecs)
+     (if cols
+       (reduce-aln-seqs f merger cols filespecs)
+       (reduce-seqs f merger filespecs))
+
      :else nil)))
 
 (defn bg-freqs-probs
@@ -434,6 +439,19 @@
                       c vs))
             [] x)))
 
+(defn- seq-pairs&indices
+  "Helper function for *mutual-information computations."
+  [aln pgap par]
+  (let [cnt (count aln)
+        seqs&indices (partition-all 2 (interleave aln (range cnt)))
+        seqs&indices (pxmap (fn[[s i]]
+                              (when (seq (filter-pgap [s] pgap)) [s i]))
+                            par seqs&indices)
+        seqs&indices (filter #(not (empty? %)) seqs&indices) ; remove nulls
+        seq-pairs&indices (map (fn[x] (transpose x)) (combins 2 seqs&indices))]
+    [(map first seq-pairs&indices) (map second seq-pairs&indices)]))
+
+
 (defn aln-conditional-mutual-information
   "Mutual information of all 2 column pairs in an alignment
    conditioned by the residual - unordered - bases of the remaining
@@ -446,10 +464,9 @@
              :or {par 1 nogaps true pgap 0.25 cols true norm true sym? false}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [aln (if (coll? seqset) seqset (read-aln-seqs seqset))
-        aln (adjust-seqs-info aln cols norm pgap)
-        cnt (count aln)
-        aln-map (reduce (fn[m s] (assoc m s true)) {} aln)
-        seq-pairs (combins 2 aln)
+        aln (adjust-seqs-info aln cols norm 1.0)
+        [seq-pairs indices] (seq-pairs&indices aln pgap par)
+        aln-map (reduce (fn[m [s1 s2]] (assoc m s1 true s2 true)) {} seq-pairs)
 
         triples (pxmap (fn[[x y]]
                          (partition-all
@@ -498,7 +515,7 @@
                            :Ixy|z Ixy|z :Hxz Hxz :Hyz Hyz :Hxyz Hxyz :Hz Hz))))
                      par
                      HXZ HYZ HXYZ HZ)]
-    [Ixy|z (combins 2 (range cnt))]))
+    [Ixy|z seq-pairs indices]))
 
 
 (defn aln-mutual-information
@@ -513,18 +530,11 @@
         entropy (fn[probs] (- (sum #(* % (ln %)) (vals probs))))
         aln (if (coll? seqset) seqset (read-aln-seqs seqset))
         aln (adjust-seqs-info aln cols norm 1.0)
-        cnt (count aln)
 
-        seq-pairs&indices (filter (fn[[sp ip]]
-                                    (= (count (filter-pgap sp pgap)) 2))
-                                  (partition-all
-                                   2 (interleave (combins 2 aln)
-                                                 (combins 2 (range cnt)))))
-        seq-pairs (map first seq-pairs&indices)
-        indices   (map second seq-pairs&indices)
+        [seq-pairs indices] (seq-pairs&indices aln pgap par)
 
-        pair-freqs (map #(combin-count-reduction % sym?)
-                        (map transpose seq-pairs))
+        pair-freqs (pxmap #(combin-count-reduction % sym?) par
+                          (map transpose seq-pairs))
         pair-freqs (if nogaps (map degap-freqs pair-freqs) pair-freqs)
 
         joint-probs (map probs pair-freqs)
@@ -542,7 +552,7 @@
                                  :type :negIxy :Ixy Ixy :Hxy Hxy :pair sp))))
                            par
                            joint-entropy seq-pairs)]
-    [mutual-info joint-entropy seq-pairs indices]))
+    [mutual-info joint-entropy seq-pairs pair-freqs indices]))
 
 
 (defn variation-information

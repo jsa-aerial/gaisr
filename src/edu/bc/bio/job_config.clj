@@ -49,6 +49,15 @@
          :only (cl-format compile-format)]
         ))
 
+;;; Near term extensions:
+;;;
+;;;  1. Regexs for file denoting.  So, instead of listing all cms to
+;;;     run against a hitfna, for example, you could give *.cm for a
+;;;     CM-Search directive.  Extend other action directives (cmbuild,
+;;;     etc.) similarly.
+;;;
+;;;
+
 
 (defn process-sto-files [m l]
   (let [sto (str/trim l)]

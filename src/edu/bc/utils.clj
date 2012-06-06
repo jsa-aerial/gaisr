@@ -541,9 +541,11 @@
   "For positive integers N and K, compute N choose K (binomial
    coefficient): n!/((n-k)!k!)"
   [n k]
-  {:pre [(integer? n) (integer? k) (> n -1) (<= 0 k n)]}
-  (/ (reduce * (range n (- n k) -1))
-     (n! k)))
+  {:pre [(integer? n) (integer? k) (> n -1) (<= 0 k)]}
+  (if (< n k)
+    0
+    (/ (reduce * (range n (- n k) -1))
+       (n! k))))
 
 
 (defn primes

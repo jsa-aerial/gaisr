@@ -126,7 +126,7 @@
 
         :else
         (let [fname (args :filename)
-              xform #(subs % 0 (. % indexOf ":"))
+              xform #(subs % 0 (.indexOf % ":"))
               save-filespec (fs/fullpath (str dir fname ".txt"))
               entry-filespec (fs/fullpath (str dir fname ".ent"))
               fasta-filespec (-> (str/split #"\$\$" selections)

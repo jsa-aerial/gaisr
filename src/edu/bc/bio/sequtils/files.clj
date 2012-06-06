@@ -291,8 +291,12 @@
 ;;; BLAST+.  For BLAST proper support, see sequtils.tools
 
 (def default-binary-db
-     (or (getenv "MLAB_DEFAULT_BINARY_DB")
+     (or (getenv "GAISR_DEFAULT_BINARY_DB")
          "/data2/BioData/BlastDBs/other_genomic"))
+
+(def default-genome-fasta-dir
+     (or (getenv "GAISR_DEFAULT_GENOME_DIR")
+         "/data2/BioData/GenomeSeqs"))
 
 
 (defn gen-entry-file [entries file]
@@ -309,6 +313,30 @@
                  :else (raise :type :unknown-entries :entries entries))]
     (let [e (first (ensure-vec entries))]
       (re-find #"[0-9]+\-[0-9]+" e))))
+
+
+
+
+(defn gen-name-seq
+  ""
+  [entry & {:keys [basedir strand delta]
+            :or {basedir default-genome-fasta-dir strand 1 delta 0}}]
+  {:pre [(>= delta 0) (in strand [-1 1])]}
+  (let [[n r] (str/split #"\/" entry)
+        n (re-find #"NC_[0-9]+" n)
+        [s e] (map #(Integer. %) (str/split #"-" r))
+        [s e] (if (< s e) [s e] [e s])
+        [s e] (if (> delta 0) [(- s delta) (+ e delta)] [s e])
+        fname (fs/join basedir (str n ".fna"))]
+    [entry (->> (io/read-lines fname) second
+                (str/drop (dec s)) (str/take (- (inc e) s)))]))
+
+(defn gen-name-seq-pairs
+  ""
+  [entries & {:keys [basedir strand delta]
+              :or {basedir default-genome-fasta-dir strand 1 delta 0}}]
+  (map #(gen-name-seq % :basedir basedir :strand strand :delta delta)
+       entries))
 
 
 
@@ -403,6 +431,22 @@
   (if (coll? selections)
     (nms-sqs->fasta-file selections)
     (fs/fullpath selections)))
+
+
+(defn gen-nc-genome-fnas
+  "One shot genome sequence fnas generator.  Typically used once per
+   data update.  Needs to be generalized to be able to use Genbank fna
+   archives.  Currently assumes one fna AND ONLY NC_* genomes.
+  "
+  [full-nc-genomes-filespec]
+  (let [dir (fs/dirname full-nc-genomes-filespec)
+        fna-pairs (partition-all 2 (io/read-lines full-nc-genomes-filespec))]
+    (doseq [[gi genome] fna-pairs]
+      (let [fname (fs/join dir (str (re-find #"NC_[0-9]+" gi) ".fna"))]
+        (io/with-out-writer fname
+          (println gi)
+          (println genome))))))
+
 
 
 

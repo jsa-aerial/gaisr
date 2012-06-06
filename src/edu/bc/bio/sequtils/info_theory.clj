@@ -432,7 +432,7 @@
   (let [x (coalesce-xy-yx triples
                           ;; just add copies of existing one
                           (fn [x v] (if (not v) () (cons (second x) v))))]
-    ;; Now flatten the result - note not amenable to flatten fn!
+    ;; Now flatten the result - note not amenable to std flatten fn!
     (reduce (fn[c [x vs]]
               (reduce (fn[c v]
                         (conj c [x v]))
@@ -440,7 +440,10 @@
             [] x)))
 
 (defn- seq-pairs&indices
-  "Helper function for *mutual-information computations."
+  "Helper function for *mutual-information computations.  Removes all
+   seqs with more than pgap percentage of gaps and from the resulting
+   set, creates the sets of seq pairs and corresponding indices.
+  "
   [aln pgap par]
   (let [cnt (count aln)
         seqs&indices (partition-all 2 (interleave aln (range cnt)))
@@ -461,7 +464,7 @@
   "
   [seqset & {par :par nogaps :nogaps pgap :pgap
              cols :cols norm :norm sym? :sym?
-             :or {par 1 nogaps true pgap 0.25 cols true norm true sym? false}}]
+             :or {par 1 nogaps true pgap 0.25 cols true norm true sym? true}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [aln (if (coll? seqset) seqset (read-aln-seqs seqset))
         aln (adjust-seqs-info aln cols norm 1.0)
@@ -521,7 +524,7 @@
 (defn aln-mutual-information
   ""
   [seqset & {:keys [par nogaps pgap cols norm sym?]
-             :or {par 1 nogaps true pgap 0.25 cols false norm true sym? false}}]
+             :or {par 1 nogaps true pgap 0.25 cols false norm true sym? true}}]
   {:pre [(gaisr-seq-set? seqset)]}
   (let [probs (fn[fs]
                 (let [sz (sum fs)]
@@ -555,8 +558,31 @@
     [mutual-info joint-entropy seq-pairs pair-freqs indices]))
 
 
-(defn variation-information
-  [[seqx seqy] & {nogaps :nogaps :or {nogaps true}}]
+(defn seq-pairs-bpfreqs
+  [seq-pairs & {:keys [nogaps sym? par] :or {nogaps true sym? true par 4}}]
+  (pxmap (fn[p]
+           (let [fm (combin-count-reduction (transpose p) sym?)]
+             (if nogaps (degap-freqs fm) fm)))
+         par seq-pairs))
+
+(defn bp-stats [bp-freq-map]
+  (let [sz (sum bp-freq-map)
+        au (get bp-freq-map "AU" 0)
+        ua (get bp-freq-map "UA" 0)
+        AU (+ au ua)
+        gc (get bp-freq-map "GC" 0)
+        cg (get bp-freq-map "CG" 0)
+        GC (+ gc cg)
+        bps (+ AU GC)]
+    [{:BP bps :AU AU :GC GC :au au :ua ua :gc gc :cg cg}
+     {:BP (double (/ bps sz))
+      :AU (double (/ AU sz))
+      :GC (double (/ GC sz))}
+     sz]))
+
+
+(defn seq-vi
+  [seqx seqy & {nogaps :nogaps :or {nogaps true}}]
   (let [seqs [seqx seqy]
         [[Ixy] [Hxy]] (aln-mutual-information seqs :pgap 1.0 :nogaps nogaps)]
     (cond

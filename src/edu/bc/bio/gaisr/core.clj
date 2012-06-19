@@ -47,6 +47,7 @@
    edu.bc.bio.sequtils.files
    edu.bc.bio.sequtils.tools
    edu.bc.bio.sequtils.info-theory
+   edu.bc.bio.sequtils.dists
    edu.bc.bio.canned-jobs
    edu.bc.bio.db-downloads
 

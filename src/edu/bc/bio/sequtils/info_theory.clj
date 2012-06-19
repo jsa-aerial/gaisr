@@ -47,6 +47,7 @@
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
+        edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]
@@ -293,14 +294,15 @@
    information see seqs-freqs-probs description.
 
    If cols is true, computation is over the columns of the sequences.
+   if sym? is true, treat reversable keys as equal.
    If nogaps is true, removes default gap characters from calculation.
    If nogaps is a coll (for example, (keys +NONSTD-RNA+)), removes all
    those characters from calculation.  If norm is true, normalize
    characters to upper case.
   "
-  [n filespecs & {:keys [fsps-fn ftypes dirdir cols nogaps norm par]
+  [n filespecs & {:keys [fsps-fn ftypes dirdir cols sym? nogaps norm par]
                   :or {fsps-fn cc-freqs-probs ftypes [".sto"] dirdir false
-                       cols false nogaps false norm true par 1}}]
+                       cols false sym? false mnogaps false norm true par 1}}]
   (let [isdir (and (not (coll? filespecs))
                    (fs/directory? filespecs))
         filespecs (cond
@@ -308,38 +310,40 @@
                    (apply concat
                           (map #(fs/directory-files filespecs %) ftypes))
                    dirdir filespecs ; keep as original dirdir filespec
-                   isdir (fs/directory-files filespecs ftypes)
                    :else filespecs)
         merger (fn[M m] (merge-with + M m))
         f (fn[sqs]
             (second (seqs-freqs-probs
                      n sqs :fsps-fn fsps-fn
-                     :nogaps nogaps :norm norm :par par)))]
-    (cond
-     (and isdir dirdir)
-     (reduce (fn[M m] (merge-with + M m))
-             (map #(bg-freqs n % :fsps-fn fsps-fn
-                             :ftypes ftypes :cols cols
-                             :nogaps nogaps :norm norm :par par)
-                  (fs/directory-files filespecs "")))
+                     :nogaps nogaps :norm norm :par par)))
+        fs (cond
+            (and isdir dirdir)
+            (reduce (fn[M m] (merge-with + M m))
+                    (map #(bg-freqs n % :fsps-fn fsps-fn
+                                    :ftypes ftypes :cols cols
+                                    :nogaps nogaps :norm norm :par par)
+                         (fs/directory-files filespecs "")))
 
-     (seq filespecs)
-     (if cols
-       (reduce-aln-seqs f merger cols filespecs)
-       (reduce-seqs f merger filespecs))
+            (seq filespecs)
+            (if cols
+              (reduce-aln-seqs f merger cols filespecs)
+              (reduce-seqs f merger filespecs))
 
-     :else nil)))
+            :else nil)]
+    (if sym?
+      (coalesce-xy-yx fs (fn [x v] (if (not v) 0 (+ (val x) v))))
+      fs)))
 
 (defn bg-freqs-probs
   "Like bg-freqs, but with the additional final computation of
    probability distribution for the frequency distribution
   "
-  [n filespecs & {:keys [fsps-fn ftypes dirdir cols nogaps norm par]
+  [n filespecs & {:keys [fsps-fn ftypes dirdir cols sym? nogaps norm par]
                   :or {fsps-fn cc-freqs-probs ftypes [".sto"] dirdir false
-                       cols false nogaps false norm true par 1}}]
+                       cols false sym? false nogaps false norm true par 1}}]
   (let [fqs (bg-freqs n filespecs
                       :fsps-fn fsps-fn :ftypes ftypes :dirdir dirdir
-                      :cols cols :nogaps nogaps :norm norm :par par)]
+                      :cols cols :sym? sym? :nogaps nogaps :norm norm :par par)]
     [fqs (probs fqs)]))
 
 

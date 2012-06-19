@@ -45,54 +45,12 @@
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
+        [edu.bc.bio.seq-utils :only [reverse-compliment]]
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]
         [clojure.contrib.pprint
          :only (cl-format compile-format)]
         ))
-
-
-
-(def +IUPAC+
-     ^{:doc "These are the codes for \"bases\" used in alignments"}
-     {\A "Adenine"
-      \C "Cytosine"
-      \G "Guanine"
-      \T "Thymine"
-      \U "Uracil"
-      \R "AG"
-      \Y "CUT"
-      \S "GC"
-      \W "AUT"
-      \K "GUT"
-      \M "AC"
-      \B "CGUT"
-      \D "AGUT"
-      \H "ACUT"
-      \V "ACG"
-      \N "any"
-      \. "gap"
-      \- "gap"})
-
-(def +NONSTD-RNA+
-     ^{:doc "These are the codes for all non standard \"bases\" used
-             in alignments"}
-
-     {\T "Thymine"
-      \R "AG"
-      \Y "CUT"
-      \S "GC"
-      \W "AUT"
-      \K "GUT"
-      \M "AC"
-      \B "CGUT"
-      \D "AGUT"
-      \H "ACUT"
-      \V "ACG"
-      \N "any"
-      \. "gap"
-      \- "gap"})
-
 
 
 ;;; ----------------------------------------------------------------------
@@ -130,7 +88,8 @@
                                          ;;hopefully creates vector
                                          ;;["#GC SS_cons" structure]
                                          (.startsWith l "#=GC SS_cons")
-                                         [(str/join " " (butlast (str/split #"\s+" l)))
+                                         [(str/join " " (butlast (str/split
+                                                                  #"\s+" l)))
                                           (last (str/split #"\s+" l))]
 
                                          (.startsWith l "#")
@@ -322,14 +281,16 @@
   [entry & {:keys [basedir strand delta]
             :or {basedir default-genome-fasta-dir strand 1 delta 0}}]
   {:pre [(>= delta 0) (in strand [-1 1])]}
-  (let [[n r] (str/split #"\/" entry)
+  (let [[n r] (str/split #"(\/| )" entry)
         n (re-find #"NC_[0-9]+" n)
         [s e] (map #(Integer. %) (str/split #"-" r))
         [s e] (if (< s e) [s e] [e s])
         [s e] (if (> delta 0) [(- s delta) (+ e delta)] [s e])
-        fname (fs/join basedir (str n ".fna"))]
-    [entry (->> (io/read-lines fname) second
-                (str/drop (dec s)) (str/take (- (inc e) s)))]))
+        fname (fs/join basedir (str n ".fna"))
+        sq (->> (io/read-lines fname) second
+                (str/drop (dec s)) (str/take (- (inc e) s)))
+        sq (if (= strand -1) (reverse-compliment sq) sq)]
+    [entry sq]))
 
 (defn gen-name-seq-pairs
   ""
@@ -478,7 +439,7 @@
   (let [type (fs/ftype filespec)
         sqs (str/split-lines (slurp filespec))
         sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
-        sqs (drop-until #(re-find #"^(>[A-Z]|[A-Z])" %) sqs)
+        sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
         sqs (case type
               "aln"
               (map #(str/replace-re #"^N[CZ_0-9]+ +" "" %) sqs)
@@ -556,27 +517,35 @@
   ""
   ([f cols filespec]
      (list (f (read-aln-seqs filespec :cols cols))))
-  ([f cols filespec & filespecs]
-     (map f (map #(read-aln-seqs % :cols cols) filespecs))))
+  ([f par cols filespec & filespecs]
+     (pxmap f par (map #(read-aln-seqs % :cols cols)
+                       (cons filespec filespecs)))))
 
 (defn reduce-aln-seqs
   ""
   ([f fr cols filespecs]
-     (reduce fr (apply map-aln-seqs f cols filespecs)))
+     (let [par (if (and (coll? filespecs) (> (count filespecs) 4)) 4 1)]
+       (reduce fr (apply map-aln-seqs f par cols filespecs))))
   ([f fr v cols filespecs]
-     (reduce fr v (apply map-aln-seqs f cols filespecs))))
+     (let [par (if (and (coll? filespecs) (> (count filespecs) 4)) 4 1)]
+       (reduce fr v (apply map-aln-seqs f par cols filespecs)))))
 
 
 (defn map-seqs
   ([f filespec]
      (list (f (read-seqs filespec))))
-  ([f filespec & filespecs]
-     (map f (map #(read-seqs %) filespecs))))
+  ([f par filespec & filespecs]
+     ;;(prn :par par :filespec filespec :filespecs filespecs)
+     (pxmap f par (map #(read-seqs %)
+                       (cons filespec filespecs)))))
 
 (defn reduce-seqs
   ""
   ([f fr filespecs]
-     (reduce fr (apply map-seqs f filespecs)))
-  ([f fr v cols filespecs]
-     (reduce fr v (apply map-seqs f filespecs))))
+     (let [par (if (and (coll? filespecs) (> (count filespecs) 4)) 4 1)]
+       (reduce fr (apply map-seqs f par filespecs))))
+  ([f fr v filespecs]
+     (let [par (if (and (coll? filespecs) (> (count filespecs) 4)) 4 1)]
+       (reduce fr v (apply map-seqs f par filespecs)))))
+
 

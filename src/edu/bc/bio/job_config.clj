@@ -56,7 +56,8 @@
 ;;;     CM-Search directive.  Extend other action directives (cmbuild,
 ;;;     etc.) similarly.
 ;;;
-;;;
+;;;  2. Include options for action directives.  In particular, EV for
+;;;  CM-Search and RW (rewrite
 
 
 (defn process-sto-files [m l]

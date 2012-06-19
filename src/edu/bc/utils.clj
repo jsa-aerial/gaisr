@@ -510,14 +510,14 @@
  ^{:doc
    "Named version of (logb 2).  Important enough to have a named top
     level function"
-   :arglists '([x])}
+   :arglists '[x]}
  log2 (logb 2))
 
 (def
  ^{:doc
    "Named version of (logb 10).  Important enough to have a named top
     level function"
-   :arglists '([x])}
+   :arglists '[x]}
  log10 (logb 10))
 
 

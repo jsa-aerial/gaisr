@@ -94,7 +94,7 @@
            res (transient {})]
       (let [k (str/join "" (take n s))]
         (if (>= (count s) n)
-          (recur (drop 1 s)
+          (recur (rest s)
                  (assoc! res k (inc (get res k 0))))
           (persistent! res))))))
 
@@ -206,7 +206,15 @@
   (cc-freqs&probs n colls #(freqs&probs %1 %2 freqn) :par par))
 
 
-(defn combin-count-reduction [item-coll sym]
+(defn combin-count-reduction
+  "Performs (freqn 1 item-coll), giving result M.  If sym is true,
+   coalesces items in M whose keys are reversible by retaining one key
+   with the sum of the values of previouis two.  See coalesce-xy-yx
+   for complete description.  This was originally a one off
+   specifically for coalescing combination sets (see combins), hence
+   the (now bogus) name.
+  "
+  [item-coll sym]
   (let [fm (freqn 1 item-coll)]
     (if sym
       (coalesce-xy-yx fm (fn[x v] (if (not v) 0 (+ (val x) v))))
@@ -336,7 +344,7 @@
 
 (defn cond-probability
   "Given collections coll1 and coll2, and combinator, a function of 2
-   variables which generates joint occurances from coll2 & coll2,
+   variables which generates joint occurances from coll1 & coll2,
    returns the conditional probability distributions for coll1
    conditioned on elements of coll2.  If sym? is true coalesce
    reversable element occurances during joint occurance
@@ -344,8 +352,8 @@
 
    Alternatively, in the distribution version, PXY is a joint
    distribution in map form, and PY is a distribution in map form.
-   That is, in this variant, the distributions are explicitly
-   provided.
+   That is, in this variant, the probability distributions are
+   explicitly provided.
 
    OCCURS? is a function of two variables, pkx and pkxy, where pkx is
    a key derived from coll2/PY and pkxy is a key derived from the
@@ -450,9 +458,7 @@
    So, if the result of (poisson-pdf 1.0) is bound to pspdf,
    then (pspdf 3) would be the probability of getting 3 hits.  A
    distribution of pspdf can then be generated via some technique
-   like:
-
-   (map pspdf (range 1 (inc 100))).
+   like: (map pspdf (range 1 (inc 100))).
   "
   [mu]
   (fn[k] {:pre [(integer? k)]}
@@ -465,6 +471,28 @@
   (for [k (range N)] ; effectively k-1
     [k (/ (* (math/expt mu k) (math/expt Math/E (- mu)))
           (n! k))]))
+
+(defn poisson-cdf
+  "Return the Poisson cumulative probability _function_ corresponding
+   to mu, the mean or expected value of a random variable X over some
+   time/space interval.  In the Poisson case, the mean is also the
+   variance of X.
+
+   The resulting function returned, call it pscdf, is a function of
+   two parameters: lower limit l, and upper limit u, both >= 0.  l and
+   u-1 are the minimum and maximum number of occurances, i.e., the
+   interval is the half open [0, u) interval.
+
+   Ex: If 2 bugs/week are introduced on average in statware, what is
+   probability there will be less than 5 bugs introduced next month.
+   So, mu = 2/week * 4 week = 8, l = 0 and u = 5:
+
+   ((poisson-cdf 8) 0 5) => 0.0996 or about 10% chance.  Of course,
+   those dudes aren't using Clojure! :)
+  "
+  [mu]
+  (fn[l u] {:pre [(integer? l) (integer? u) (>= u l 0)]}
+    (sum (map (poisson-pdf mu) (range l u)))))
 
 (defn poisson-sample
   "Generate a \"random\" sample from a Poisson distribution
@@ -517,9 +545,18 @@
 
 
 
-(defn entropy [dist & {logfn :logfn :or {logfn log2}}]
+(defn entropy
+  "Entropy calculation for the probability distribution dist.  While
+   public, this is mostly useful as a local helper function.
+  "
+  [dist & {logfn :logfn :or {logfn log2}}]
   (let [dist (if (map? dist) (vals dist) dist)]
-    (- (sum #(if (= 0.0 %) 0.0 (* % (logfn %))) dist))))
+    (- (sum (fn[v]
+              (let [v (double v)]
+                (if (= 0.0 v)
+                  0.0
+                  (double (* v (logfn v))))))
+            dist))))
 
 (defn shannon-entropy
   "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
@@ -558,7 +595,21 @@
 
 
 (defn cond-entropy
-  "Given a "
+  "Given the joint probability distribution PXY and the distribution
+   PY, return the conditional entropy of X given Y = H(X,Y) - H(Y).
+
+   Alternatively, given a set of collections c1, c2, c3, .. cn, and
+   combinator, a function of n variables which generates joint
+   occurances from {ci}, returns the multivariate conditional entropy
+   induced from the joint probability distributions.  If sym? is true
+   coalesce reversable element occurances in these distributions.
+
+   For the case of i > 2, uses the recursive chain rule for
+   conditional entropy (bottoming out in the two collection case):
+
+   H(X1,..Xn-1|Xn) = (sum H(Xi|Xn,X1..Xi-1) (range 1 (inc n)))
+
+  "
   ([PXY PY]
      (- (entropy PXY) (entropy PY)))
   ([combinator sym? coll1 coll2]
@@ -567,7 +618,7 @@
   ([combinator sym? coll1 coll2 & colls]
      ;; Apply chain rule...
      (- (entropy (apply joint-probability combinator sym? coll1 coll2 colls))
-        (apply cond-entropy combinator coll2 colls))))
+        (apply cond-entropy combinator sym? coll2 colls))))
 
 (defn HX|Y
   "Synonym for cond-entropy"
@@ -602,9 +653,9 @@
 
 
 (defn relative-entropy
-  "Take two distributions (presumably over the same space) and compute
-   the expectation of their log ratio: Let px be the PMF of pdist1 and
-   py be the PMF pdist2, return
+  "Take two distributions (that must be over the same space) and
+   compute the expectation of their log ratio: Let px be the PMF of
+   pdist1 and py be the PMF pdist2, return
 
    (sum (fn[px py] (* px (log2 (/ px py)))) xs ys)
 
@@ -612,31 +663,36 @@
    implicitly the pmfs), as provided by freqs-probs, probs,
    cc-freqs-probs, combins-freqs-probs, cc-combins-freqs-probs,
    et. al.  Or any map where the values are the probabilities of the
-   occurance of the keys over some sample space.
+   occurance of the keys over some sample space.  Any summation term
+   where (or (= px 0) (= py )), is taken as 0.0.
 
-   NOTE: maps must have same keys!  And they will be sorted in order
-   to ensure the summations occur on correct [x y] pairs!!  If this is
-   violated it is likely you will get a :negRE exception, and if not,
-   even more likely your results will be BOGUS.
+   NOTE: maps should have same keys! If this is violated it is likely
+   you will get a :negRE exception or worse, bogus results.  However,
+   as long as the maps reflect distributions _over the same sample
+   space_, they do not need to be a complete sampling (a key/value for
+   all sample space items) - missing keys will be included as 0.0
+   values.
 
    Also known as Kullback-Leibler Divergence (KLD)
 
    KLD >= 0.0 in all cases.
   "
   [pdist1 pdist2]
-  (let [xs (sort pdist1)
-        ys (sort pdist2)
-        KLD (sum (fn[pi qi]
-                   (let [[_ pi] pi
-                         [_ qi] qi]
-                     (* pi (log2 (/ pi qi)))))
-                 :|| xs ys)]
+  ;; Actually, we try to 'normalize' maps to same sample space.
+  (let [Omega (set/union (set (keys pdist1)) (set (keys pdist2)))
+        KLD (sum (fn[k]
+                   (let [pi (get pdist1 k 0.0)
+                         qi (get pdist2 k 0.0)]
+                     (if (or (= pi 0.0) (= qi 0.0))
+                       (double 0.0)
+                       (* pi (log2 (/ pi qi))))))
+                 Omega)]
     (cond
      (>= KLD 0.0) KLD
      (< (math/abs KLD) 1.0E-10) 0.0
      :else
      (raise
-      :type :negRE :KLD KLD :Xs xs :Ys ys))))
+      :type :negRE :KLD KLD :P pdist1 :Q pdist2))))
 
 
 (defn KLD "Synonym for relative-entropy"[x y] (relative-entropy x y))
@@ -767,6 +823,9 @@
    collectively.  If sym? is true, treat elements with reverses as
    equal.
 
+   NOTE: the \"degenerate\" case of only two colls, is simply mutual
+   information.
+
    Let C be (combinator coll1 coll2 .. colln)  Computes
 
    sum (* px1..xn (log2 (/ px1..xn (* px1 px2 .. pxn)))) x1s x2s .. xns =
@@ -794,7 +853,19 @@
 
 
 (defn interaction-information
-  ""
+  "One of two forms of multivariate mutual information provided here.
+   The other is \"total correlation\".  Interaction information
+   computes
+
+   Information content \"measure\" is based on the distributions
+   arising out of the frequencies over coll1 .. colln _individually_,
+   and jointly over the result of combinator applied to coll1 .. colln
+   collectively.  If sym? is true, treat elements with reverses as
+   equal.
+
+   Let C be (combinator coll1 coll2 .. colln)  Computes
+
+  "
   ([combinator sym? collx colly collz]
      (let [Ixy|z (IXY|Z combinator sym? collx colly collz)
            Ixy   (IXY combinator sym? collx colly)]
@@ -808,6 +879,18 @@
                 (* (math/expt -1.0 (- tcnt sscnt))
                    (apply joint-entropy combinator sym? ss nil))))
             ssets))))
+
+
+(defn jensen-shannon
+  "Computes Jensen-Shannon Divergence of the two distributions Pdist
+  and Qdist.  Pdist and Qdist _must_ be over the same sample space!"
+  [Pdist Qdist]
+  (let [Omega (set/union (set (keys Pdist)) (set (keys Qdist)))
+        M (reduce (fn[M k]
+                    (assoc M k (/ (+ (get Pdist k 0.0) (get Qdist k 0.0)) 2.0)))
+                  {}
+                  Omega)]
+    (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2.0)))
 
 
 

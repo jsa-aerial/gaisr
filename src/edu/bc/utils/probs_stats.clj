@@ -545,6 +545,20 @@
 
 
 
+(defn pdsum
+  ""
+  [f pdf1 pdf2 & pdfs]
+  (let [parallel (= pdf1 :||)
+        pdfs (cons pdf2 pdfs)
+        pdfs (if parallel pdfs (cons pdf1 pdfs))
+        Omega (apply set/union (map #(set (keys %)) pdfs))]
+    (apply sum (fn[k]
+                  (let [pdf-vals (map #(get % k (double 0.0)) pdfs)]
+                    (apply f pdf-vals)))
+           pdfs)))
+
+
+
 (defn entropy
   "Entropy calculation for the probability distribution dist.  While
    public, this is mostly useful as a local helper function.
@@ -784,7 +798,7 @@
         PYZ   (vals (joint-probability combinator sym? colly collz))
         HYZ   (entropy PYZ)
 
-        PZ    (vals (probs 1 collz))
+        PZ    (probs 1 collz)
         HZ    (entropy PZ)
 
         IXY|Z (+ HXZ HYZ (- HXYZ) (- HZ))]
@@ -851,46 +865,193 @@
          :type :negTC
          :TC TC :Hxs Hxs :HX1-XN HX1-Xn)))))
 
+(defn TCI
+  "Synonym for total-correlation information"
+  [combinator sym? coll1 coll2 & colls]
+  (apply total-correlation combinator sym? coll1 coll2 colls))
+
 
 (defn interaction-information
   "One of two forms of multivariate mutual information provided here.
    The other is \"total correlation\".  Interaction information
-   computes
+   computes the amount of information bound up in a set of variables,
+   beyond that present in _any subset_ of those variables. Well, that
+   seems to be the most widely held view, but there are disputes. This
+   can either indicate inhibition/redundancy or facilitation/synergy
+   between the variables.  It helps to look at the 3 variable case, as
+   it at least lends itself to venn diagrams.
 
-   Information content \"measure\" is based on the distributions
-   arising out of the frequencies over coll1 .. colln _individually_,
-   and jointly over the result of combinator applied to coll1 .. colln
-   collectively.  If sym? is true, treat elements with reverses as
-   equal.
+   II(X,Y,Z) = I(X,Y|Z) - I(X,Y)
 
-   Let C be (combinator coll1 coll2 .. colln)  Computes
+   II measures the influence of Z on the information connection
+   between X and Y.  Since I(X,Y|Z) < I(X,Y) is possible, II can be
+   negative, as well as 0 and positive.  For example if Z completely
+   determines the information content between X & Y, then I(X,Y|Z)
+   would be 0 (as overlap contributed by X & Y alone is totally
+   redundant), while for X & Y independent of Z, I(X,Y) could still be
+   > 0.  A _negative_ interaction indicates Z inhibits (accounts for,
+   causes to be irrelevant/redundant) the connection between X & Y.  A
+   _positive_ interaction indicates Z promotes, is synergistic with,
+   or enhances the connection.  The case of 0 is obvious...
 
+   If we use the typical info theory venn diagrams, then II is
+   represented as the area in all the circles. It is possible (and
+   typically so done) to draw the Hxi (xi in {X,Y,Z}) circles so that
+   all 3 have an overlap.  In this case the information between any
+   two (the mutual information...) is partially accounted for by the
+   third.  The extra overlap accounts for the negative value
+   \"correction\" of II in this case.
+
+   However, it is also possible to draw the circles so that any two
+   overlap but all three have null intersect.  In this case, the third
+   variable provides an extra connection between the other two (beyond
+   their MI), something like a \"mediator\".  This extra connection
+   accounts for the positive value \"facillitation\" of II in this
+   case.
+
+   It should be reasonably clear at this point that negative II is the
+   much more intuitive/typical case, and that positive cases are
+   surprising and possibly more interesting and informative (so to
+   speak...).  A positive example, would be the case of two mutually
+   exclusive causes for a common effect (third variable).  In such a
+   case, knowing any two completely determines the other.
+
+   All of this can be bumped up to N variables via typical chain rule
+   recurrance.
+
+   In this implementation, the information content \"measure\" is
+   based on the distributions arising out of the frequencies over
+   coll1 .. colln _individually_, and jointly over the result of
+   combinator applied collectively to all subsets of coll1 .. colln.
+   If sym? is true, treat elements with reverses as equal.
+
+   For collections coll1..colln and variadic combinator over any
+   subset of collections, Computes:
+
+   (sum (fn[ss] (* (expt -1 (- n |ss|))
+                   (HXY combinator sym? ss)))
+        (subsets all-colls))
+
+   |ss| = cardinality/count of subset ss.  ss is a subset of
+   coll1..colln.  If sym? is true, treat reversable combined items as
+   equal (see HYX/joint-entropy).
+
+   For n=3, this reduces to (- (IXY|Z combinator sym? collx colly collz)
+                               (IXY combinator sym? collx colly))
+
+   Ex:
+
+   (interaction-information transpose false
+     \"AAAGGGUUUUAAUAUUAAAAUUU\"
+     \"AAAGGGUGGGAAUAUUCCCAUUU\"
+     \"AAAGGGUGGGAAUAUUCCCAUUU\")
+   => -1.1673250256261127
+
+   Ex:
+
+   (interaction-information transpose false
+     \"AAAGGGUUUUAAUAUUAAAAUUU\"
+     \"AAAGGGUGGGAAUAUUCCCAUUU\"
+     (reverse-compliment \"AAAGGGUGGGAAUAUUCCCAUUU\"))
+   => -0.282614135781623
+
+   Ex: Shows synergy (positive value)
+
+   (let [X1 [0 1] ; 7 independent binary vars
+         X2 [0 1]
+         X3 [0 1]
+         X4 [0 1]
+         X5 [0 1]
+         X6 [0 1]
+         X7 [0 1]
+         X8 [0 1]
+         Y1 [X1 X2 X3 X4 X5 X6 X7]
+         Y2          [X4 X5 X6 X7]
+         Y3             [X5 X6 X7]
+         Y4                   [X7]
+         bitval #(loop [bits (reverse %) n 0 v 0]
+                   (if (empty? bits)
+                     v
+                     (recur (rest bits)
+                            (inc n)
+                            (+ v (* (first bits) (expt 2 n))))))
+         rfn #(map bitval (apply reducem (fn[& args] [args]) concat %))
+         ;; Turn to (partially redundant) value sets - each Yi is the set
+         ;; of all numbers for all (count Yi) bit patterns.  So, Y1, Y2,
+         ;; and Y3 share all values of 3 bits, while the group with Y4
+         ;; added shares just all 1 bit patterns
+         Y1 (rfn Y1)
+         Y2 (rfn Y2)
+         Y3 (rfn Y3)
+         Y4 (rfn Y4)]
+     [(interaction-information concat false Y1 Y2 Y3)
+      (interaction-information concat false Y1 Y2 Y3 Y4)
+      (interaction-information concat false Y1 Y2 Y4)
+      (interaction-information concat false Y2 Y3 Y4)])
+  => [-3.056592722891465   ; Intuitive, since 3 way sharing
+       1.0803297840536592] ; Unintuitive, since 1 way sharing induces synergy!?
   "
-  ([combinator sym? collx colly collz]
-     (let [Ixy|z (IXY|Z combinator sym? collx colly collz)
-           Ixy   (IXY combinator sym? collx colly)]
-       (- Ixy|z Ixy)))
+  #_([combinator sym? collx colly collz]
+       (let [Ixy|z (IXY|Z combinator sym? collx colly collz)
+             Ixy   (IXY combinator sym? collx colly)]
+         (- Ixy|z Ixy)))
   ([combinator sym? collx colly collz & colls]
      (let [colls (->> colls (cons collz) (cons colly) (cons collx))
-           ssets (subsets colls)
+           ssets (remove empty? (subsets colls))
            tcnt (count colls)]
-       (sum (fn[ss]
-              (let [sscnt (count ss)]
-                (* (math/expt -1.0 (- tcnt sscnt))
-                   (apply joint-entropy combinator sym? ss nil))))
-            ssets))))
+       (- (sum (fn[ss]
+                 (let [sscnt (count ss)]
+                   (* (math/expt -1.0 (- tcnt sscnt))
+                      (apply joint-entropy combinator sym? ss))))
+               ssets)))))
 
+(defn II
+  "Synonym for interaction-information"
+  [combinator sym? collx colly collz & colls]
+  (apply interaction-information combinator sym? collx colly collz colls))
+
+
+(defn lambda-divergence
+  "Computes a symmetrized KLD variant based on a probability
+   parameter, typically notated lambda, in [0..1] for each
+   distribution:
+
+   (+ (* lambda (DX||Y Pdist M)) (* (- 1 lambda) (DX||Y Qdist M)))
+
+   Where M = (+ (* lambda Pdist) (* (- 1 lambda) Qdist))
+           = (sum (fn[pi qi] (+ (* lambda pi) (* (- 1 lambda) qi))) Pdist Qdist)
+
+   For lambda = 1/2, this reduces to M = 1/2 (sum (fn[pi qi] (+ pi qi))) and
+
+   (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2) = jensen shannon
+  "
+  [lambda Pdist Qdist]
+  (let [Omega (set/union (set (keys Pdist)) (set (keys Qdist)))
+        M (reduce (fn[M k]
+                    (assoc M k (+ (* lambda (get Pdist k 0.0))
+                                  (* (- 1 lambda) (get Qdist k 0.0)))))
+                  {}
+                  Omega)]
+    (+ (* lambda (DX||Y Pdist M)) (* (- 1 lambda) (DX||Y Qdist M)))))
+
+(defn DLX||Y
+  "Synonym for lambda divergence"
+  [l Pdist Qdist]
+  (lambda-divergence l Pdist Qdist))
 
 (defn jensen-shannon
   "Computes Jensen-Shannon Divergence of the two distributions Pdist
   and Qdist.  Pdist and Qdist _must_ be over the same sample space!"
   [Pdist Qdist]
-  (let [Omega (set/union (set (keys Pdist)) (set (keys Qdist)))
-        M (reduce (fn[M k]
-                    (assoc M k (/ (+ (get Pdist k 0.0) (get Qdist k 0.0)) 2.0)))
-                  {}
-                  Omega)]
-    (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2.0)))
+  #_(let [Omega (set/union (set (keys Pdist)) (set (keys Qdist)))
+          M (reduce (fn[M k]
+                      (assoc M k (/ (+ (get Pdist k 0.0)
+                                       (get Qdist k 0.0))
+                                    2.0)))
+                    {}
+                    Omega)]
+      (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2.0))
+  (lambda-divergence 0.5 Pdist Qdist))
 
 
 

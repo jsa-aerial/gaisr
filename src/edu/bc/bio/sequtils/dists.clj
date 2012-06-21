@@ -49,6 +49,7 @@
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
+        edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         edu.bc.bio.sequtils.info-theory
         [clojure.contrib.condition
@@ -200,7 +201,7 @@
 
 
 ;;; (bg-freqs-probs 1 "/data2/Bio/RFAM" :ftypes [".sto"] :norm true :par 2)
-(def +bg-freqs-probs-all-rfam*
+(def +bg-freqs-probs-all-rfam+
      (let [fs { "." 634856, "A" 157097, "G" 154623, "C" 130024, "U" 128626,
                 "N" 7, "Y" 1, "S" 1}]
        [fs (probs fs)]))
@@ -298,6 +299,4 @@
                      [nm [fs ps]]))
                  (sort (fs/directory-files "/data2/Bio/RFAM" ".sto")))))))
 
-(jensen-shannon
- (second ((bg-freqs-probs-rfam-by-family 2 :cols true) "RF00050"))
- (second +bg-freqs-probs-all-rfam-cols+))
+

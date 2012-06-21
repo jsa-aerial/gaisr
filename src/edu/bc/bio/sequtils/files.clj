@@ -450,7 +450,7 @@
 
               "gma" (raise :type :NYI :info "GMA format not yet implemented")
 
-              "fna"
+              ("fna" "fa")
               (map second (partition 2 sqs)))]
     sqs))
 

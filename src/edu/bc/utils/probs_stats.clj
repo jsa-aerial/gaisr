@@ -840,7 +840,9 @@
    NOTE: the \"degenerate\" case of only two colls, is simply mutual
    information.
 
-   Let C be (combinator coll1 coll2 .. colln)  Computes
+   Let C be (combinator coll1 coll2 .. colln), so xi1..xin in C is an
+   element in the joint sample space, and xi in colli is an element in
+   a \"marginal\" space . Computes
 
    sum (* px1..xn (log2 (/ px1..xn (* px1 px2 .. pxn)))) x1s x2s .. xns =
 
@@ -849,6 +851,19 @@
    (<= 0.0
        TC(X1,..,Xn)
        (min|i (sum Hx1 .. Hxi Hxi+2 .. Hxn, i = 0..n-1, Hx0=Hxn+1=0)))
+
+   Ex:
+
+   (shannon-entropy \"AAAUUUGGGGCCCUUUAAA\")
+   => 1.9440097497163569
+
+   (total-correlation \"AAAUUUGGGGCCCUUUAAA\" \"AAAUUUGGGGCCCUUUAAA\")
+   => 1.9440097497163569 ; not surprising
+
+   (total-correlation
+     \"AAAUUUGGGGCCCUUUAAA\" \"AAAUUUGGGGCCCUUUAAA\"
+     \"AAAUUUGGGGCCCUUUAAA\" \"AAAUUUGGGGCCCUUUAAA\")
+   => 5.832029249149071 ; possibly surprising if not noting tripled redundancy
   "
   ([combinator sym? coll1 coll2]
      (mutual-information combinator sym? coll1 coll2))
@@ -1038,6 +1053,7 @@
   "Synonym for lambda divergence"
   [l Pdist Qdist]
   (lambda-divergence l Pdist Qdist))
+
 
 (defn jensen-shannon
   "Computes Jensen-Shannon Divergence of the two distributions Pdist

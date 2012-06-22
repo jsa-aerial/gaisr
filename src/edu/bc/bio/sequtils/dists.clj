@@ -299,4 +299,4 @@
                      [nm [fs ps]]))
                  (sort (fs/directory-files "/data2/Bio/RFAM" ".sto")))))))
 
-
+;;;(bg-freqs-probs-rfam-by-family 2 :cols true :fsps-fn cc-combins-freqs-probs)

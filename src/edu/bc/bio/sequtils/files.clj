@@ -190,6 +190,19 @@
       alnout)))
 
 
+(declare read-seqs)
+(defn sto->fna
+  "Convert a sto file into a fasta file.  Split seq lines into names
+   and seq data and interleave these.  Seq data has all gap characters
+   removed."
+  [stoin fnaout]
+  (io/with-out-writer fnaout
+    (doseq [[nm seqdata] (read-seqs stoin :info :both)]
+      (println (str ">" nm))
+      (println (str/replace-re #"[-.]+" "" seqdata))))
+  fnaout)
+
+
 (defn check-sto
   "Checks a sto file to ensure that there are valid characters being
    used in the sequences consensus structure line. Will print out
@@ -258,6 +271,30 @@
          "/data2/BioData/GenomeSeqs"))
 
 
+(defn entry-parts
+  "ENTRY is a string \"name/range/strand\", where name is a genome
+   name, range is of the form start-end and strand is 1 or -1.  At
+   least name must be supplied.  DELTA is an integer, which will be
+   subtracted from start and added to end.
+
+   Returns a triple [name [start end] strand]
+  "
+  [entry & {:keys [delta] :or {delta 0}}]
+  (let [[name range] (str/split #"( |/)+" 2 entry)
+        name (re-find #"NC_[0-9]+" name)
+        [range strand] (if range (str/split #"/" range) [nil nil])
+        [s e st] (if (not range)
+                   [0 Long/MAX_VALUE "1"]
+                   (let [[s e] (map #(Integer. %) (str/split #"-" range))
+                         strand (if strand strand (if (> s e) "-1" "1"))
+                         [s e] (if (< s e) [s e] [e s])
+                         [s e] (if (not= delta 0)
+                                 [(- s delta) (+ e delta)]
+                                 [s e])]
+                     [s e strand]))]
+    [name [s e] st]))
+
+
 (defn gen-entry-file [entries file]
   (io/with-out-writer (io/file-str file)
     (doseq [e entries]
@@ -277,27 +314,74 @@
 
 
 (defn gen-name-seq
-  ""
-  [entry & {:keys [basedir strand delta]
-            :or {basedir default-genome-fasta-dir strand 1 delta 0}}]
-  {:pre [(>= delta 0) (in strand [-1 1])]}
-  (let [[n r] (str/split #"(\/| )" entry)
-        n (re-find #"NC_[0-9]+" n)
-        [s e] (map #(Integer. %) (str/split #"-" r))
+  "Generate a pair [entry genome-seq], from ENTRY as possibly modified
+   by DELTA and RNA.  ENTRY is a string \"name/range/strand\", where
+
+   name is the genome NC name (and we only currently support NCs),
+
+   range is of the form start-end, where start and end are integers (1
+   based...) for the start and end coordinates of name's sequence to
+   return.  NOTE: start < end, as reverse compliment information comes
+   from strand.
+
+   strand is either -1 for reverse compliment or 1 for standard 5'->3'
+
+   DELTA is an integer, which will be subtracted from start and added
+   to end.  So, if positive you tak on delta extra bases to both ends,
+   while if negative, you chop delta bases from both ends.  Default is
+   0.
+
+   If RNA is true, change Ts to Us, otherwise return unmodified
+   sequence.
+
+   BASEDIR is the location of the NC fasta files.  Generally, this
+   should always be the default location.
+  "
+  [entry & {:keys [basedir delta rna]
+            :or {basedir default-genome-fasta-dir delta 0 rna true}}]
+  (let [[name range] (str/split #"( |/)+" 2 entry)
+        name (re-find #"NC_[0-9]+" name)
+        [range strand] (str/split #"/" range)
+        [s e] (map #(Integer. %) (str/split #"-" range))
         [s e] (if (< s e) [s e] [e s])
-        [s e] (if (> delta 0) [(- s delta) (+ e delta)] [s e])
-        fname (fs/join basedir (str n ".fna"))
+        [s e] (if (not= delta 0) [(- s delta) (+ e delta)] [s e])
+        entry (str name "/" s "-" e "/" strand)
+        fname (fs/join basedir (str name ".fna"))
         sq (->> (io/read-lines fname) second
                 (str/drop (dec s)) (str/take (- (inc e) s)))
-        sq (if (= strand -1) (reverse-compliment sq) sq)]
+        sq (if (= strand "-1") (reverse-compliment sq) sq)
+        sq (if rna (str/replace-re #"T" "U" sq) sq)]
     [entry sq]))
 
+
+;;; (fs/dodir
+;;;  "/home/kaila/Bio/Work/S15work/062612"
+;;;  #(fs/directory-files % ".ent")
+;;;  gen-name-seq-pairs)
+;;;
 (defn gen-name-seq-pairs
-  ""
-  [entries & {:keys [basedir strand delta]
-              :or {basedir default-genome-fasta-dir strand 1 delta 0}}]
-  (map #(gen-name-seq % :basedir basedir :strand strand :delta delta)
-       entries))
+  "Generate a sequence of pairs [name genome-seq] from the given
+   collection denoted by entries, which is either a collection or a
+   string denoting an entry filespec (either hand made or via
+   gen-entry-file or similar).
+
+   See gen-name-seq for details.  Basically this is (map gen-name-seq
+   entries) with some options.  In particular, entries may lack a
+   strand component (again see gen-name-seq for format details), and
+   STRAND here would be used to indicate all entries are to have this
+   strand.  If entries have a strand component, strand should be 0,
+   otherwise you will force all entries to the strand given.  Strand
+   is either -1 (reverse compliment) or 1 for standard 5'->3', or 0
+   meaning 'use strand component in entries'
+
+   BASEDIR is the location of the NC fasta files.  Generally, this
+   should always be the default location.
+  "
+  [entries & {:keys [basedir strand delta rna]
+              :or {basedir default-genome-fasta-dir strand 0 delta 0 rna true}}]
+  (let [entries (if (string? entries) (io/read-lines entries) entries)
+        entries (if (= 0 strand) entries (map #(str % "/" strand) entries))]
+    (map #(gen-name-seq % :basedir basedir :delta delta :rna rna) entries)))
 
 
 
@@ -333,7 +417,7 @@
     (assert-tools-exist [blastdbcmd])
     (io/with-out-writer fasta-filespec
       (do-text-file [efile]
-        (let [[entry range] (str/split #" " $line)
+        (let [[entry range] (str/split #"( |/)+" 2 $line)
               [range strand] (str/split #"/" range)
               strand (if (= "-1" strand) "minus" "plus") ; => default plus
               cmdargs ["-db" blastdb
@@ -430,29 +514,53 @@
       (coll? x)))
 
 
+(defn seqline-info-mapper
+  "Helper function for READ-SEQS.  Returns the function to map over
+   seq lines to obtain the requested info.  TYPE is supported seq file
+   type (aln, sto, fna, fa, gma).  INFO is either :name for the
+   sequence identifier, :data for the sequence data, or :both for name
+   and data.
+
+   Impl Note: while this almost begs for multimethods, that would
+   actually increase the complexity as it would mean 8 methods to
+   cover the cases...
+  "
+  [type info]
+  (if (= info :both)
+    #(do [((seqline-info-mapper type :name) %)
+          ((seqline-info-mapper type :data) %)])
+    (case type
+          "aln"
+          (if (= info :data)
+            #(str/replace-re #"^N[CZ_0-9]+ +" "" %)
+            #(re-find  #"^N[CZ_0-9]+" %))
+
+          "sto"
+          (if (= info :data)
+            #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+) +" "" %)
+            #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+) +" %)))
+
+          "gma" (raise :type :NYI :info "GMA format not yet implemented")
+
+          ("fna" "fa")
+          (if (= info :data)
+            second
+            #(re-find #"[A-Za-z0-9._/-]+" (first %))))))
+
 (defn read-seqs
   "Read the sequences in FILESPEC and return set as a seq (Clojure
   seq!).  Filespec can denote either a fna, aln, sto, or gma file
   format file.
   "
-  [filespec]
+  [filespec & {info :info :or {info :data}}]
   (let [type (fs/ftype filespec)
+        f   (seqline-info-mapper type info)
         sqs (str/split-lines (slurp filespec))
         sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
         sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
-        sqs (case type
-              "aln"
-              (map #(str/replace-re #"^N[CZ_0-9]+ +" "" %) sqs)
-
-              "sto"
-              (map #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+) +" "" %)
-                   (take-while #(re-find #"^[A-Z]" %) sqs))
-
-              "gma" (raise :type :NYI :info "GMA format not yet implemented")
-
-              ("fna" "fa")
-              (map second (partition 2 sqs)))]
-    sqs))
+        sqs (if (in type ["fna" "fa"]) (partition 2 sqs) sqs)
+        sqs (if (= type "sto") (take-while #(re-find #"^[A-Z]" %) sqs) sqs)]
+    (map f sqs)))
 
 
 (defn read-aln-seqs

@@ -391,6 +391,10 @@
   ([user]
      (check-set (all *jobs* user))))
 
+(defn check-job
+  [jobid]
+  (chk *jobs* jobid))
+
 (defn check-tasks [jid]
   (let [jids (if (coll? jid) jid [jid])]
     (map (fn[jid]

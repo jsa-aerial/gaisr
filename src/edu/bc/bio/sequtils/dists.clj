@@ -35,8 +35,9 @@
    families distributions.  Intended for use as \"background\"
    distributions in relative entropy and other such comparaitive or
    measure calculations.  These distributions are focused on microbial
-   NC genomes, RFAM alignment families.  At least to start.  Others,
-   such as metagenomic results and NZ genomes could be here in future."
+   NC genomes and RFAM alignment families.  At least to start.
+   Others, such as metagenomic results and NZ genomes could be here in
+   future."
 
   (:require [clojure.contrib.string :as str]
             [clojure.contrib.str-utils :as stru]
@@ -116,13 +117,26 @@
 
 (defn print-dist
   "Prints a distribution DIST, a frequency or probability distribution
-    map, in sorted order of most occurances / highest probability to
-    lowest.  One item per line.
+   map, in sorted order of most occurances / highest probability to
+   lowest.  One item per line.
   "
   [dist]
   (doseq [[k v] (sort-by second > dist)]
     (print " ") (pr k) (print " ") (pr v) (println \,)))
 
+
+(defn prn-dist
+  "Print readably the distribution DIST to file FILE.  This means that
+   FILE can be used as a secondary cache and so can be simply read
+   with Clojures reader to get the internal representation back."
+  [dist file]
+  (io/with-out-writer (fs/fullpath file)
+    (prn dist)))
+
+
+
+;;; (bg-freqs-probs 2 "/data2/BioData/GenomeSeqs"
+;;;                 :ftypes [".fna"] :norm false :par 4)
 
 (def +bg-nc-genomes+
      ^{:doc
@@ -174,6 +188,13 @@
 
 
 (def +bg-nc-genomes-sym+
+     ^{:doc
+       "Dinucleotide Frequencies for all NC microbial genomes where
+        pairs are treated symmetrically, i.e., XY is considerted = YX.
+        In addition to the 10 \"standard\" 4 base pair (A,T,G,C)
+        symmetric permutations, includes many non standard pairs (see
+        +NONSTD-RNA+"}
+
      {"GC" 773022463,
       "GA" 538553092,
       "TC" 538550562,
@@ -197,7 +218,11 @@
       "VY" 1, "DM" 1, "MV" 1, "HR" 1, "YH" 1, "BR" 1,
       "VS" 1})
 
-(def +bg-nc-genomes-sym-probs+ (probs +bg-nc-genomes-sym+))
+(def +bg-nc-genomes-sym-probs+
+     ^{:doc
+       "Dinucleotide probabilities for symmetric frequencies for all
+       NC microbial genomes."}
+     (probs +bg-nc-genomes-sym+))
 
 
 ;;; (bg-freqs-probs 1 "/data2/Bio/RFAM" :ftypes [".sto"] :norm true :par 2)
@@ -288,15 +313,63 @@
      (memoize
       (fn [n & {:keys [fsps-fn cols sym?]
                 :or {fsps-fn cc-freqs-probs cols false sym? false}}]
-        (into
-         {} (map (fn[file]
-                   (let [nm (re-find #"^RF[0-9]+" (fs/basename file))
-                         sqs (read-aln-seqs file :cols cols)
-                         [fs ps] (take 2 (rest (seqs-freqs-probs
-                                                n sqs :fsps-fn fsps-fn
-                                                :nogaps false
-                                                :norm true :par 2)))]
-                     [nm [fs ps]]))
-                 (sort (fs/directory-files "/data2/Bio/RFAM" ".sto")))))))
+        (if (and (= n 2)
+                 (= fsps-fn cc-combins-freqs-probs)
+                 cols)
+          (io/with-in-reader "/data2/BioData/Archives/rfam-freqs-probs.clj"
+            (read))
+          (into
+           {} (map (fn[file]
+                     (let [nm (re-find #"^RF[0-9]+" (fs/basename file))
+                           sqs (read-aln-seqs file :cols cols)
+                           [fs ps] (take 2 (rest (seqs-freqs-probs
+                                                  n sqs :fsps-fn fsps-fn
+                                                  :nogaps false
+                                                  :norm true :par 2)))]
+                       [nm [fs ps]]))
+                   (sort (fs/directory-files "/data2/Bio/RFAM" ".sto"))))))))
 
+
+;;;(bg-freqs-probs-rfam-by-family 2)
+;;;((bg-freqs-probs-rfam-by-family 2) "RF00050")
+;;;
+;;;
+;;; This next one is quite expensive - several minutes and so we
+;;; probably should secondarily cache this - that's where the DB
+;;; should come in, but maybe just hack it to start with by writing it
+;;; to a file...
+;;;
 ;;;(bg-freqs-probs-rfam-by-family 2 :cols true :fsps-fn cc-combins-freqs-probs)
+
+;;;(prn-dist
+;;; (bg-freqs-probs-rfam-by-family 2 :cols true :fsps-fn cc-combins-freqs-probs)
+;;; "/data2/BioData/Archives/rfam-freqs-probs.clj")
+
+;;; (map #(do [% (jensen-shannon (second ((bg-freqs-probs-rfam-by-family
+;;;                                        2 :cols true
+;;;                                        :fsps-fn cc-combins-freqs-probs) %))
+;;;                              (second +bg-freqs-probs-all-rfam-cols+))])
+;;;      (sort (keys (bg-freqs-probs-rfam-by-family 1))))
+
+;;; (def +ecr-rfam-js+
+;;;      (for [sto (fs/directory-files "/data2/Bio/ECRibLeaders/MoStos" ".sto")
+;;;            :let [nm (first (str/split #"\." (fs/basename sto)))
+;;;                  stodist (second (bg-freqs-probs
+;;;                                   2 [sto] :cols true
+;;;                                   :fsps-fn cc-combins-freqs-probs
+;;;                                   :par 2))]]
+;;;        [nm (sort-by
+;;;             second
+;;;             (map #(do [% (jensen-shannon
+;;;                           stodist
+;;;                           (second ((bg-freqs-probs-rfam-by-family
+;;;                                     2 :cols true
+;;;                                     :fsps-fn cc-combins-freqs-probs) %)))])
+;;;                  (sort (keys (bg-freqs-probs-rfam-by-family 1)))))]))
+
+;;; (time
+;;;  (bg-freqs-probs
+;;;   2 (take 1 (fs/directory-files "/data2/Bio/MetaG1/FastaFiles" ".fa"))
+;;;   :par 4))
+
+

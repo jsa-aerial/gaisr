@@ -40,9 +40,9 @@ otfile = File.expand_path(ARGV[1])
 result = RestClient.post(base_url,
                          {"upload-type" => 'name2tax',
                            :subtype => "remote",
-                           :user => 'jsa',
+                           :user => ENV['LOGNAME'],
                            :file => File.new(infile)},
-                         {:cookies => {:user => "jsa"}})
+                         {:cookies => {:user => ENV['LOGNAME']}})
 result = JSON.parse(result.body)
 
 if (result["stat"] != "success")

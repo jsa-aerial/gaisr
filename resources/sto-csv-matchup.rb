@@ -17,8 +17,8 @@ if (ARGV.length() == 0)
   exit(1)
 end
 
-@type = "local"
-@base_url = server + "/mlab/action"
+type = "local"
+base_url = server + "/mlab/action"
 arg1= ARGV[0]
 
 if (arg1 == "-h" or arg1 == "--help")
@@ -33,23 +33,23 @@ elsif (ARGV.length() < 3)
   puts "use sto-csv-matchup -h, for useage"
   exit(1)
 elsif (ENV["HOST"] != "roz")
- @type = "remote"
- @base_url = server + "/mlab/upld"
+  type = "remote"
+  base_url = server + "/mlab/upld"
 end
 
-@sto = File.expand_path(ARGV[0])
-@csv = File.expand_path(ARGV[1])
-@out = File.expand_path(ARGV[2])
+sto = File.expand_path(ARGV[0])
+csv = File.expand_path(ARGV[1])
+out = File.expand_path(ARGV[2])
 
 
 def local_sto_csv ()
-  result = RestClient.post(@base_url,
+  result = RestClient.post(base_url,
                            {:user => ENV['LOGNAME'],
                              :act => "stocsv-match",
-                             :subtype => @type,
-                             :sto => @sto,
-                             :csv => @csv,
-                             :out => @out},
+                             :subtype => type,
+                             :sto => sto,
+                             :csv => csv,
+                             :out => out},
                            {:cookies => {:user => ENV['LOGNAME']}})
   result = JSON.parse(result.body)
   if (result["stat"] != "success")
@@ -61,19 +61,19 @@ end
 
 
 def remote_sto_csv ()
-  result = RestClient.post(@base_url,
+  result = RestClient.post(base_url,
                            {"upload-type" => "stocsv-match",
-                             :subtype => @type,
+                             :subtype => type,
                              :user => ENV['LOGNAME'],
-                             :file => File.new(@sto),
-                             :csv => File.new(@csv),
-                             :out => @out},
+                             :file => File.new(sto),
+                             :csv => File.new(csv),
+                             :out => out},
                            {:cookies => {:user => ENV['LOGNAME']}})
   result = JSON.parse(result.body)
   if (result["stat"] != "success")
     return "Error - #{result['stat']}"
   else
-    outFile = File.new(@out, "w")
+    outFile = File.new(out, "w")
     if outFile
       outFile.syswrite(result["info"])
       outFile.close
@@ -85,7 +85,7 @@ def remote_sto_csv ()
 end
 
 
-if (@type == "remote")
+if (type == "remote")
   result = remote_sto_csv()
 else
   result = local_sto_csv()

@@ -68,7 +68,7 @@
 (defn gap-percent
   "Return the percentage of sq (typically an aligned variant of a
    genome sequence) that is comprised of gap characters.  For the
-   single parameter case, gaps are take as \\. and \\-.  For the
+   single parameter case, gaps are taken as \\. and \\-.  For the
    gap-chars case, gap characters are the elements (characters) in
    gap-chars (a seqable collection)."
    ([sq]

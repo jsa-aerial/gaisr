@@ -54,6 +54,8 @@
 
         [edu.bc.bio.gaisr.db-actions
          :only [seq-query feature-query names->tax]]
+        [edu.bc.bio.gaisr.pipeline
+         :only [run-config-job]]
         [edu.bc.bio.gaisr.post-db-csv
          :only [efile-csvhits->names-and-matches process-hit-file]]
 
@@ -126,7 +128,9 @@
 
         :else
         (let [fname (args :filename)
-              xform #(subs % 0 (.indexOf % ":"))
+              ;; XFORM grabs the entry, but also must remove the fugly
+              ;; name hack of post-db-csv/twiddle-name...
+              xform #(str/replace-re #"/[0-9] " " " (subs % 0 (.indexOf % ":")))
               save-filespec (fs/fullpath (str dir fname ".txt"))
               entry-filespec (fs/fullpath (str dir fname ".ent"))
               fasta-filespec (-> (str/split #"\$\$" selections)
@@ -186,6 +190,44 @@
          :tax-filespec tax-filespec}))))
 
 
+(defn remote-check-sto
+  "Run check-sto on uploaded file upload-file."
+  [upload-file]
+  (let [result (check-sto upload-file :printem false)]
+    {:body (json/json-str {:info (if (= result :good)
+                                   "sto is good"
+                                   (cons "***BAD sto" result))
+                           :stat "success"})}))
+
+(defn remote-run-config
+  "Run a config job based on information in uploaded config-file"
+  [user filename config-file]
+  (let [resultfn
+        (fn[[result :as args]] ; input seq of task results, here only 1 task
+          {:body (json/json-str
+                  {:info (if (= result :good)
+                           (str "Completed job defined by: " filename)
+                           (cons "*** Job FAILED: " args))
+                   :stat "success"})})
+        jobid (add *jobs* user
+                   `[(catch-all (run-config-job ~config-file))]
+                   resultfn)]
+    (start *jobs* jobid)
+    {:body (json/json-str {:info (str filename " job started, jobid " jobid)
+                           :stat "success"})}))
+
+(defn remote-check-job
+  "Check status, and if done, return results for job JOBID of user USER"
+  [user jobid]
+  (let [stat (check-job jobid)]
+    {:body (json/json-str
+            {:info
+             (str "Job " jobid " for user " user
+                  (if (= stat :done)
+                     (let [result ((results *jobs* jobid) jobid)]
+                       (str " finished. Result: " result))
+                     (str "currently " stat)))
+             :stat "success"})}))
 
 
 (defn upload-file [args reqmap]
@@ -209,6 +251,15 @@
       (= upload-type "hitfile")
       (do (io/copy upload-file (io/file-str local-out))
           {:body (json/json-str (process-hit-file local-out))})
+
+      (= upload-type "check-sto")
+      (remote-check-sto upload-file)
+
+      (= upload-type "run-config")
+      (remote-run-config user filename upload-file)
+
+      (= upload-type "check-job")
+      (remote-check-job user (args :jobid))
 
       (= upload-type "name2tax")
       {:body (json/json-str

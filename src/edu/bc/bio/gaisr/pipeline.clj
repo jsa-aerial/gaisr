@@ -628,7 +628,7 @@
    attempt duplication removal, but these relative coordinates when
    changed to absolute coordinates for the entire genome seq can be
    identical.  We don't have absolute coordinates when building the
-   original map, but we do have them after CMSEARCH-HI-PARTS.  We
+   original map, but we do have them after CMSEARCH-HIT-PARTS.  We
    maybe could remove these duplicates earlier (and not make yet
    another pass!), but this at least has the advantage of being
    transparent.
@@ -868,7 +868,7 @@
               hfs-cmss)))
 
 
-(defn run-config-job [job-config-file]
+(defn run-config-job [job-config-file & {:keys [remote] :or {remote false}}]
   (let [config (parse-config-file job-config-file)
         stodir (config :stodir)
         cmdir (config :cmdir)
@@ -887,20 +887,20 @@
 
     (cond
      (and (config :cmbuild) (config :cmcalibrate))
-     (prn (catch-all (do-cmbuild-calibrate stos)))
+     (do-cmbuild-calibrate stos)
 
      (config :cmbuild)
-     (prn (catch-all (do-cmbuild stos)))
+     (do-cmbuild stos)
 
      ;; Note, can't get here unless we have _only_ calibrate directive
      ;; (no build), and so cms can't legitimately be nil.  That is a
      ;; precondition check in do-calibrate
      (config :cmcalibrate)
-     (prn (catch-all (do-calibrate cms))))
+     (do-calibrate cms))
 
     ;; Map over all cmsearch requests
     (when (and cmsearchs (seq hfs-cmss))
-      (prn (catch-all (do-cmsearch hfs-cmss))))
+      (do-cmsearch hfs-cmss))
 
     ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
     ;; csvdir does not exist, generate it.  Place all generated csvs
@@ -911,7 +911,13 @@
             csvs (fs/directory-files cmdir "csv")]
         (doseq [csv csvs]
           (let [fname (fs/basename csv)]
-            (fs/rename csv (fs/join csvdir fname))))))))
+            (fs/rename csv (fs/join csvdir fname))))))
+    :good))
+
+(defn run-config-job-checked
+  "Run a configuration with catch and print for any exceptions"
+  [job-config-file]
+  (prn (catch-all (run-config-job job-config-file))))
 
 
 

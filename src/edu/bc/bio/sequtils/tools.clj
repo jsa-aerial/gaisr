@@ -42,6 +42,7 @@
             [clojure.contrib.seq :as seq]
             [clojure.zip :as zip]
             [clojure.contrib.io :as io]
+            [clojure-csv.core :as csv]
             [clj-shell.shell :as sh]
             [edu.bc.fs :as fs])
   (:use clojure.contrib.math
@@ -69,6 +70,7 @@
    :word-size 8
    :evalue 10
    :fmt "10 qseqid qstart qend evalue sseqid sstart send"
+   :misc nil
    :fn nil
    :fnargs nil]
   (let [seqin       (fs/fullpath in)
@@ -85,17 +87,18 @@
         ctrl-args   ["-strand" (name strand)
                      "-word_size" (str word-size)
                      "-evalue" (str evalue)]
-        fmt-args    ["-outfmt" fmt]]
+        fmt-args    ["-outfmt" fmt]
+        misc-args   (if misc (str/split #" " misc) [])]
 
     (assert-tools-exist [blastn tblastn])
 
     (case pgm
      :blastn
-     (runx blastn (concat io-args ctrl-args fmt-args))
+     (runx blastn (concat io-args ctrl-args fmt-args misc-args))
 
      :tblastn
      (let [ctrl-args (vec (drop 2 ctrl-args))]
-       (runx tblastn (concat io-args ctrl-args fmt-args))))
+       (runx tblastn (concat io-args ctrl-args fmt-args misc-args))))
 
     (if-not fn
       blast-out
@@ -145,7 +148,7 @@
 (defn blastpgm
   "Determine blast program to use based on sequence alphabet of FASTA-FILE.
    If amino acid alphabet, use tblastn, if nucleotide use blastn.  Returns
-   the function for each of these."
+   the function for one of these."
   [fasta-file]
   (with-open [r (io/reader fasta-file)]
     (let [l (doall (second (line-seq r)))]
@@ -154,6 +157,54 @@
         blastn))))
 
 
+
+
+;;; ----------------------------------------------------------------------
+;;; Miscellaneous - I suppose...
+
+
+;;; From time to time we end up with (or acquire from others) stos
+;;; whose seqs have no coordinate info.  This takes such stos and
+;;; regens them with coordinates matching the seqs.
+;;;
+(defn correct-sto-coordinates
+  ""
+  ([stoin]
+     (let [newsto (fs/replace-type stoin "-new.sto")
+           fna (sto->fna stoin (fs/replace-type stoin ".fna"))
+           ids (fs/replace-type stoin "-id.txt")
+           _ (io/with-out-writer ids
+               (doseq [id (read-seqs stoin :info :name)]
+                 (println id)))
+           misc (str "-seqidlist " ids " -perc_identity 100.0")
+           blastout (blast :blastn fna :strand :both :misc misc)
+           id-info (keep #(when (= (second %) "1")
+                            (let [s (nth % 5)
+                                  e (nth % 6)
+                                  [s e sd] (if (> (Integer. s) (Integer. e))
+                                             [e s "-1"]
+                                             [s e "1"])]
+                              (str (first %) "/" s "-" e "/" sd)))
+                         (csv/parse-csv (slurp blastout)))
+           stoseqs (read-seqs stoin)]
+       (io/with-out-writer newsto
+         (println "# STOCKHOLM 1.0\n")
+         (doseq [[idi sq] (partition-all 2 (interleave id-info stoseqs))]
+           (println idi "    " sq))
+         (doseq [gcline (filter #(.startsWith % "#")
+                                (first (sto-GC-and-seq-lines stoin)))]
+           (println gcline)))
+       (io/delete-file ids)
+       newsto))
+  ([sto1 sto2 & stos]
+     (map correct-sto-coordinates (->> stos (cons sto2) (cons sto1)))))
+
+(defn correct-dir-stos
+  ""
+  [stodir & {:keys [dirdir] :or {dirdir false}}]
+  (if (not dirdir)
+    (fs/dodir stodir #(fs/directory-files % ".sto") correct-sto-coordinates)
+    (fs/dodir stodir #(fs/directory-files % "") correct-dir-stos)))
 
 
 ;;; CD Hit Redundancy removal.
@@ -211,9 +262,11 @@
      -outfmt '10 qseqid qstart qend evalue sseqid start send <& others>'
 
    IN is the blast output filespec (path or file obj) and OUT is a filespec
-   (path or file obj) of where to place the parsed output.  This file is then
-   intended to be use as input to the CANDS program of cmfinder that generates
-   per motif-loop data files for input to cmfinder."
+   (path or file obj) of where to place the parsed output.  This file
+   is then intended to be used as input to the CANDS program of
+   cmfinder that generates per motif-loop data files for input to
+   cmfinder.
+  "
   [in out]
   (do-text-to-text
    [in out]

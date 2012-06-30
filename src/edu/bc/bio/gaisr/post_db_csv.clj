@@ -51,10 +51,10 @@
   (:use edu.bc.utils
         [edu.bc.log4clj
          :only [create-loggers log>]]
-	
+
         edu.bc.bio.sequtils.files
-	edu.bc.bio.sequtils.tools
-	
+        edu.bc.bio.sequtils.tools
+
         [edu.bc.bio.gaisr.db-actions
          :only [+start-delta+ base-info-query hit-features-query]]
 
@@ -201,7 +201,15 @@
 
 ;;; START FUGLY HACK---------------------------------------------------------
 ;;;
-(defn twiddle-name [name prev-name]
+(defn twiddle-name
+  "If name = prev-name, create a 'versioned' name by appending /n to
+   name.  n is an incrementing count that starts at 2.  So, generates
+   a sequenceof names: name, name/2, name/3, ...
+
+   This nonsense has to be accounted for when generating entry files
+   from this information in actions/action-request :genfasta and kin.
+  "
+  [name prev-name]
   (if (= name prev-name)
     (let [i (re-find #"/[0-9]" name)
           i (when i (Integer. (subs i 1)))]

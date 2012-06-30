@@ -765,10 +765,12 @@
    the cases of 2 and 3 collections passed to it (collectively or as
    variadic). If sym? is true, treat elements with reverses as equal.
 
-   Conditional mutual information is the mutual information of two
-   random variables conditioned on a third.  Or, put another way, it
-   is the expected value of the mutual information of two RV over the
-   values of a third.
+   Other interpretations/meanings: Conditional mutual information is
+   the mutual information of two random variables conditioned on a
+   third.  Or, put another way, it is the expected value of the mutual
+   information of two RV over the values of a third.  It measures the
+   amount of information shared by X & Y beyond that provided by a
+   common \"mediator\".
 
    Let XYZ be (combinator collx colly collz)
        XZ  be (combinator collx collz)
@@ -1036,9 +1038,9 @@
    Where M = (+ (* lambda Pdist) (* (- 1 lambda) Qdist))
            = (sum (fn[pi qi] (+ (* lambda pi) (* (- 1 lambda) qi))) Pdist Qdist)
 
-   For lambda = 1/2, this reduces to M = 1/2 (sum (fn[pi qi] (+ pi qi))) and
+   For lambda = 1/2, this reduces to M = 1/2 (sum (fn[pi qi] (+ pi qi)) P Q)
 
-   (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2) = jensen shannon
+   and (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2) = jensen shannon
   "
   [lambda Pdist Qdist]
   (let [Omega (set/union (set (keys Pdist)) (set (keys Qdist)))

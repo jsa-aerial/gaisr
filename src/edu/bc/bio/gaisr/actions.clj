@@ -55,7 +55,7 @@
         [edu.bc.bio.gaisr.db-actions
          :only [seq-query feature-query names->tax]]
         [edu.bc.bio.gaisr.pipeline
-         :only [run-config-job]]
+         :only [run-config-job-checked]]
         [edu.bc.bio.gaisr.post-db-csv
          :only [efile-csvhits->names-and-matches process-hit-file]]
 
@@ -202,31 +202,41 @@
 (defn remote-run-config
   "Run a config job based on information in uploaded config-file"
   [user filename config-file]
-  (let [resultfn
-        (fn[[result :as args]] ; input seq of task results, here only 1 task
-          {:body (json/json-str
-                  {:info (if (= result :good)
-                           (str "Completed job defined by: " filename)
-                           (cons "*** Job FAILED: " args))
-                   :stat "success"})})
-        jobid (add *jobs* user
-                   `[(catch-all (run-config-job ~config-file))]
-                   resultfn)]
-    (start *jobs* jobid)
-    {:body (json/json-str {:info (str filename " job started, jobid " jobid)
-                           :stat "success"})}))
+  (try
+    (let [resultfn
+          (fn[[res]] ; input vec of task results, here only 1 task
+            (if (map? res)
+              (cons (res :err)
+                    (keep (fn[[k v]]
+                            (when (in k [:args :pgm]) (str k " " v)))
+                          res))
+              (str "Completed job defined by: " res)))
+          jobid (add *jobs* user
+                     `[(run-config-job-checked ~config-file :printem false)]
+                     resultfn)]
+      (start *jobs* jobid)
+      {:body (json/json-str {:info (str filename " job started, jobid " jobid)
+                             :stat "success"})})
+    (catch clojure.contrib.condition.Condition c
+      {:body (json/json-str {:info (str (dissoc (meta c) :stack-trace))
+                             :stat "error"})})
+    (catch Exception e
+      {:body (json/json-str (with-out-str (print e)))})))
 
 (defn remote-check-job
   "Check status, and if done, return results for job JOBID of user USER"
   [user jobid]
-  (let [stat (check-job jobid)]
+  (let [stat (catch-all (check-job jobid))]
     {:body (json/json-str
-            {:info
-             (str "Job " jobid " for user " user
-                  (if (= stat :done)
-                     (let [result ((results *jobs* jobid) jobid)]
-                       (str " finished. Result: " result))
-                     (str "currently " stat)))
+            {:info (cons (str "Job " jobid " for user '" user "'")
+                         (if (= stat :done)
+                           (let [result (result *jobs* jobid)]
+                             (cons "Finished: " (seq (ensure-vec result))))
+                           (let [tstat (result *jobs* jobid :t1)
+                                 tstat (if (= tstat :in-process)
+                                         "running"
+                                         (str tstat))]
+                             (list (str "currently " tstat)))))
              :stat "success"})}))
 
 
@@ -256,10 +266,10 @@
       (remote-check-sto upload-file)
 
       (= upload-type "run-config")
-      (remote-run-config user filename upload-file)
+      (remote-run-config user filename (.getPath upload-file))
 
       (= upload-type "check-job")
-      (remote-check-job user (args :jobid))
+      (remote-check-job user (read-string (slurp upload-file)))
 
       (= upload-type "name2tax")
       {:body (json/json-str

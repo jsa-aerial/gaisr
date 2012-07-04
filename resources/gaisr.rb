@@ -23,8 +23,8 @@ if (cmd == "-h" or cmd == "--help")
   puts "Usage:\n"
   puts "gaisr subcmd args"
   puts ""
-  puts "subcmd is one of\n * name-taxonomy\n * sto-csv-matchup\n * run-config"
-  puts " * check-sto\n * correct-sto-coordinates\n"
+  puts "subcmd is one of\n * name-taxonomy\n * sto-csv-matchup\n * check-sto"
+  puts " * correct-sto-coordinates\n * run-config\n * check-job"
   puts ""
   puts "args is the set of arguments appropriate to subcmd (including -h)"
   puts ""
@@ -37,7 +37,8 @@ if (sub_cmds.include?(cmd))
   argstr = args.join(" ")
   puts `#{cmd} #{argstr}` # execute cmd, results go to term
   exit(0)
-elsif (not ['check-sto', 'run-config'].include?(cmd))
+elsif (not ['check-sto', 'correct-sto-coordinates',
+            'run-config', 'check-job'].include?(cmd))
   puts "Unknown subcmd #{cmd}"
   puts "use gaisr -h, for useage"
   exit(1)
@@ -54,36 +55,45 @@ def remote_cmd (upload_type, infile)
   return RestClient.post(base_url,
                          {"upload-type" => upload_type,
                            :subtype => "remote",
-                           :user => ENV['LOGNAME'],
+                           :user => ENV['LOGNAME'].downcase,
                            :host => ENV["HOST"],
                            :file => File.new(infile)},
-                         {:cookies => {:user => ENV['LOGNAME']}})
+                         {:cookies => {:user => ENV['LOGNAME'].downcase}})
 end
+
+def report_result (header, result)
+  result = JSON.parse(result.body)
+  if (result["stat"] != "success")
+    puts "Error - #{result['stat']}"
+  else
+    puts ""
+    puts header
+    puts result["info"]
+  end
+end
+
 
 if (cmd == "check-sto")
   args.each do |infile|
     ##infile = File.expand_path(args[0])
     result = remote_cmd(cmd, infile)
-    result = JSON.parse(result.body)
-    if (result["stat"] != "success")
-      puts "Error - #{result['stat']}"
-    else
-      puts ""
-      puts infile
-      puts result["info"]
-    end
+    report_result(infile, result)
   end
+elsif (cmd == "check-job")
+  jobid = args[0]
+  jobidfile = "job"+jobid
+  jobidFile = File.new(jobidfile, "w")
+  jobidFile.syswrite("#{jobid}\n")
+  jobidFile.close
+  result = remote_cmd(cmd, jobidfile)
+  report_result("Status :", result)
 elsif (args.length > 1)
   puts "#{cmd} has only single config file parameter, not #{args.length}"
   exit(1)
 else
-  result = remote_cmd(cmd, infile)
-  result = JSON.parse(result.body)
-    if (result["stat"] != "success")
-      puts "Error - #{result['stat']}"
-    else
-      puts "NYI"
-    end
+  config_file = File.expand_path(args[0])
+  result = remote_cmd(cmd, config_file)
+  report_result("", result)
 end
 
 

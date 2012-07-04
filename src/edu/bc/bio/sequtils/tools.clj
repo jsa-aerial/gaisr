@@ -172,32 +172,65 @@
   ([stoin]
      (let [newsto (fs/replace-type stoin "-new.sto")
            fna (sto->fna stoin (fs/replace-type stoin ".fna"))
+
            ids (fs/replace-type stoin "-id.txt")
+           idseq (read-seqs stoin :info :name)
            _ (io/with-out-writer ids
-               (doseq [id (read-seqs stoin :info :name)]
+               (doseq [[id _ _] (map entry-parts idseq)]
                  (println id)))
+
            misc (str "-seqidlist " ids " -perc_identity 100.0")
-           blastout (blast :blastn fna :strand :both :misc misc)
-           id-info (keep #(when (= (second %) "1")
-                            (let [s (nth % 5)
-                                  e (nth % 6)
-                                  [s e sd] (if (> (Integer. s) (Integer. e))
-                                             [e s "-1"]
-                                             [s e "1"])]
-                              (str (first %) "/" s "-" e "/" sd)))
-                         (csv/parse-csv (slurp blastout)))
-           stoseqs (read-seqs stoin)]
+           ;;blastout (blast :blastn fna :strand :both :misc misc)
+           blastout "/home/jsa/Bio/STOfiles/S15stos/newfirmsto-2-070212.fna.blast"
+
+           id-info (reduce
+                    (fn[m x]
+                      (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))]
+                        (if (and (= (second x) "1")
+                                 (str/substring? nm (nth x 4)))
+                          (let [s (nth x 5)
+                                e (nth x 6)
+                                [s e sd] (if (> (Integer. s) (Integer. e))
+                                           [e s "-1"]
+                                           [s e "1"])]
+                            (assoc m nm (str "/" s "-" e "/" sd)))
+                          m)))
+                    {} (csv/parse-csv (slurp blastout)))
+
+           names-seqs (read-seqs stoin :info :both)
+           bad (keep #(let [nm (first (entry-parts (first %)))]
+                        (when (not (get id-info nm))
+                          [(first %) (second %)
+                           (str/replace-re #"[.-]" "" (second %))
+                           (-> % first gen-name-seq second)]))
+                     names-seqs)
+           good (keep #(let [nm (first (entry-parts (first %)))]
+                         (when-let [v (get id-info nm)]
+                           [(str nm v) (second %)]))
+                      names-seqs)
+           sto-n-orig-line (take 2 (io/read-lines stoin))]
+
        (io/with-out-writer newsto
-         (println "# STOCKHOLM 1.0\n")
-         (doseq [[idi sq] (partition-all 2 (interleave id-info stoseqs))]
-           (println idi "    " sq))
+         (println (first sto-n-orig-line))
+         (println (second sto-n-orig-line) "\n")
+         (doseq [[idi sq] good]
+           (cl-format true "~A~40T~A~%" idi sq))
          (doseq [gcline (filter #(.startsWith % "#")
                                 (first (sto-GC-and-seq-lines stoin)))]
-           (println gcline)))
-       (io/delete-file ids)
+           (let [[gc kind v] (str/split #" +" 3 gcline)]
+             (cl-format true "~A~40T~A~%" (str gc " " kind) v))))
+
+       (when bad
+         (io/with-out-writer (fs/replace-type stoin "-bad.txt")
+           (doseq [[nm gapped degapped actual] bad]
+             (println nm "\n" gapped "\n" degapped "\n" actual))))
+
+       ;(io/delete-file ids)
        newsto))
+
   ([sto1 sto2 & stos]
      (map correct-sto-coordinates (->> stos (cons sto2) (cons sto1)))))
+
 
 (defn correct-dir-stos
   ""

@@ -415,7 +415,7 @@
                           (last (if (> (count %) 2) (butlast %) %))))
                    (str ".cm"))]
     (assert-tools-exist [cmbuildcmd])
-    (runx cmbuildcmd cmfile motif-stofile)
+    (runx cmbuildcmd "-F" cmfile motif-stofile)
     cmfile))
 
 
@@ -868,7 +868,7 @@
               hfs-cmss)))
 
 
-(defn run-config-job [job-config-file & {:keys [remote] :or {remote false}}]
+(defn run-config-job [job-config-file]
   (let [config (parse-config-file job-config-file)
         stodir (config :stodir)
         cmdir (config :cmdir)
@@ -912,12 +912,16 @@
         (doseq [csv csvs]
           (let [fname (fs/basename csv)]
             (fs/rename csv (fs/join csvdir fname))))))
-    :good))
+    job-config-file))
 
 (defn run-config-job-checked
   "Run a configuration with catch and print for any exceptions"
-  [job-config-file]
-  (prn (catch-all (run-config-job job-config-file))))
+  [job-config-file & {:keys [printem] :or {printem true}}]
+  (let [result (catch-all (run-config-job job-config-file))]
+    (if printem
+      (prn result)
+      result)))
+
 
 
 

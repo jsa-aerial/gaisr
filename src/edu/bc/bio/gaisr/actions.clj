@@ -51,6 +51,7 @@
         edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
         edu.bc.bio.sequtils.files
+        [edu.bc.bio.sequtils.tools :only [correct-sto-coordinates]]
 
         [edu.bc.bio.gaisr.db-actions
          :only [seq-query feature-query names->tax]]
@@ -190,6 +191,35 @@
          :tax-filespec tax-filespec}))))
 
 
+
+
+(defmacro remote-try
+  [& body]
+  `(try
+     (do ~@body)
+     (catch clojure.contrib.condition.Condition c#
+       {:body (json/json-str {:info (str (dissoc (meta c#) :stack-trace))
+                              :stat "error"})})
+     (catch Exception e#
+       {:body (json/json-str {:info (str {:err (with-out-str (print e#))})
+                              :stat "error"})})))
+
+(defn get-remote-cemap
+  "Transform the condition/exception map to a list of strings.  Remove
+   stack-trace and err key/vals, place the :err value as first
+   element, all others are strings of key and value as (str k \" \" v)
+  "
+  [cemap]
+  (prn :*** cemap)
+  (let [emsg (if-let [em (cemap :err)] em "Error, see below...")]
+    (cons emsg
+          (keep (fn[[k v]]
+                  (when (not (in k [:err :stack-trace]))
+                    (let [v (if (coll? v) (doall v) v)]
+                      (str k " " v))))
+                cemap))))
+
+
 (defn remote-check-sto
   "Run check-sto on uploaded file upload-file."
   [upload-file]
@@ -199,29 +229,46 @@
                                    (cons "***BAD sto" result))
                            :stat "success"})}))
 
+(defn remote-correct-sto-coordinates
+  "Run coordinate corrector for user on uploaded file upload-file."
+  [user filename upload-file]
+  (remote-try
+   (let [resultfn
+          (fn[[file res]]
+            (if (map? res)
+              (cons :error (cons file (get-remote-cemap res)))
+              (map #(if (fs/exists? %) (slurp %) []) res)))
+          jobid (add *jobs* user
+                     `[(print-str ~filename)
+                       (correct-sto-coordinates ~upload-file)]
+                     resultfn)]
+      (start *jobs* jobid)
+      {:body (json/json-str
+              {:info [(str filename
+                           " coordinate correction started, jobid ")
+                      (str jobid)]
+               :stat "success"})})))
+
+
 (defn remote-run-config
   "Run a config job based on information in uploaded config-file"
   [user filename config-file]
-  (try
+  (remote-try
     (let [resultfn
-          (fn[[res]] ; input vec of task results, here only 1 task
-            (if (map? res)
-              (cons (res :err)
-                    (keep (fn[[k v]]
-                            (when (in k [:args :pgm]) (str k " " v)))
-                          res))
-              (str "Completed job defined by: " res)))
+          (fn[[file res]] ; input vec of task results
+            (prn :### file res)
+            (cond
+             (map? res) (cons :error (cons file (get-remote-cemap res)))
+             (not= :good res) (cons :error (cons file (seq (ensure-vec res))))
+             :else (str "Completed job defined by: " file "; Status: " res)))
           jobid (add *jobs* user
-                     `[(run-config-job-checked ~config-file :printem false)]
+                     `[(print-str ~filename)
+                       (run-config-job-checked ~config-file :printem false)]
                      resultfn)]
       (start *jobs* jobid)
-      {:body (json/json-str {:info (str filename " job started, jobid " jobid)
-                             :stat "success"})})
-    (catch clojure.contrib.condition.Condition c
-      {:body (json/json-str {:info (str (dissoc (meta c) :stack-trace))
-                             :stat "error"})})
-    (catch Exception e
-      {:body (json/json-str (with-out-str (print e)))})))
+      {:body (json/json-str {:info [(str filename " job started, jobid ")
+                                    (str jobid)]
+                             :stat "success"})})))
 
 (defn remote-check-job
   "Check status, and if done, return results for job JOBID of user USER"
@@ -231,8 +278,8 @@
             {:info (cons (str "Job " jobid " for user '" user "'")
                          (if (= stat :done)
                            (let [result (result *jobs* jobid)]
-                             (cons "Finished: " (seq (ensure-vec result))))
-                           (let [tstat (result *jobs* jobid :t1)
+                             (cons "Finished:" (seq (ensure-vec result))))
+                           (let [tstat (result *jobs* jobid :t2)
                                  tstat (if (= tstat :in-process)
                                          "running"
                                          (str tstat))]
@@ -264,6 +311,9 @@
 
       (= upload-type "check-sto")
       (remote-check-sto upload-file)
+
+      (= upload-type "correct-sto-coordinates")
+      (remote-correct-sto-coordinates (.getPath upload-file))
 
       (= upload-type "run-config")
       (remote-run-config user filename (.getPath upload-file))

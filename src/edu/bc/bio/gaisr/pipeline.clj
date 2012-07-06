@@ -856,19 +856,19 @@
 
 (defn do-cmbuild [stofiles]
   {:pre [(seq stofiles)]}
-  (map #(cmbuild %) stofiles))
+  (doall (map #(cmbuild %) stofiles)))
 
 (defn do-calibrate [cmfiles]
   {:pre [(seq cmfiles)]}
-  (cms->calibrated-cms cmfiles))
+  (doall (cms->calibrated-cms cmfiles)))
 
-(defn do-cmsearch [hfs-cmss]
+(defn do-cmsearch [hfs-cmss eval]
   (doall (map (fn[[hf cms]]
-                (cms&hitfna->cmsearch-out cms hf :eval 100.0))
+                (cms&hitfna->cmsearch-out cms hf :eval eval))
               hfs-cmss)))
 
 
-(defn run-config-job [job-config-file]
+(defn run-config-job [job-config-file & {:keys [eval] :or {eval 100.0}}]
   (let [config (parse-config-file job-config-file)
         stodir (config :stodir)
         cmdir (config :cmdir)
@@ -900,7 +900,7 @@
 
     ;; Map over all cmsearch requests
     (when (and cmsearchs (seq hfs-cmss))
-      (do-cmsearch hfs-cmss))
+      (do-cmsearch hfs-cmss eval))
 
     ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
     ;; csvdir does not exist, generate it.  Place all generated csvs
@@ -912,11 +912,11 @@
         (doseq [csv csvs]
           (let [fname (fs/basename csv)]
             (fs/rename csv (fs/join csvdir fname))))))
-    job-config-file))
+    :good))
 
 (defn run-config-job-checked
   "Run a configuration with catch and print for any exceptions"
-  [job-config-file & {:keys [printem] :or {printem true}}]
+  [job-config-file & {:keys [eval printem] :or {eval 100.0 printem true}}]
   (let [result (catch-all (run-config-job job-config-file))]
     (if printem
       (prn result)

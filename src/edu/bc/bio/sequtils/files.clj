@@ -279,18 +279,19 @@
 
    Returns a triple [name [start end] strand]
   "
-  [entry & {:keys [delta] :or {delta 0}}]
-  (let [[name range] (str/split #"( |/)+" 2 entry)
-        name (re-find #"NC_[0-9]+" name)
+  [entry & {:keys [ldelta rdelta] :or {ldelta 0 rdelta 0}}]
+  (let [[name range] (str/split #"( |/|:)+" 2 entry)
+        name (re-find #"[A-Z]+_[A-Z0-9]+" name)
         [range strand] (if range (str/split #"/" range) [nil nil])
         [s e st] (if (not range)
-                   [0 Long/MAX_VALUE "1"]
-                   (let [[s e] (map #(Integer. %) (str/split #"-" range))
+                   [1 Long/MAX_VALUE "1"]
+                   (let [range (if (= \c (.charAt range 0))
+                                 (subs range 1)
+                                 range)
+                         [s e] (map #(Integer. %) (str/split #"-" range))
                          strand (if strand strand (if (> s e) "-1" "1"))
                          [s e] (if (< s e) [s e] [e s])
-                         [s e] (if (not= delta 0)
-                                 [(- s delta) (+ e delta)]
-                                 [s e])]
+                         [s e] [(- s ldelta) (+ e rdelta)]]
                      [s e strand]))]
     [name [s e] st]))
 
@@ -326,10 +327,13 @@
 
    strand is either -1 for reverse compliment or 1 for standard 5'->3'
 
-   DELTA is an integer, which will be subtracted from start and added
-   to end.  So, if positive you tak on delta extra bases to both ends,
-   while if negative, you chop delta bases from both ends.  Default is
-   0.
+   LDELTA is an integer, which will be _subtracted_ from start.  So,
+   ldelta < 0 _removes_ |ldelta| bases from 5', ldelta > 0 'tacks on'
+   ldelta extra bases to the 5' end.  Defaults to 0 (no change).
+
+   RDELTA is an integer, which will be _added_ to the end.  So, ldelta
+   < 0 _removes_ |ldelta| bases from 3', ldelta > 0 'tacks on' ldelta
+   extra bases to the 3' end.  Defaults to 0 (no change).
 
    If RNA is true, change Ts to Us, otherwise return unmodified
    sequence.
@@ -337,14 +341,9 @@
    BASEDIR is the location of the NC fasta files.  Generally, this
    should always be the default location.
   "
-  [entry & {:keys [basedir delta rna]
-            :or {basedir default-genome-fasta-dir delta 0 rna true}}]
-  (let [[name range] (str/split #"( |/)+" 2 entry)
-        name (re-find #"NC_[0-9]+" name)
-        [range strand] (str/split #"/" range)
-        [s e] (map #(Integer. %) (str/split #"-" range))
-        [s e] (if (< s e) [s e] [e s])
-        [s e] (if (not= delta 0) [(- s delta) (+ e delta)] [s e])
+  [entry & {:keys [basedir ldelta rdelta rna]
+            :or {basedir default-genome-fasta-dir ldelta 0 rdelta 0 rna true}}]
+  (let [[name [s e] strand] (entry-parts entry :ldelta ldelta :rdelta rdelta)
         entry (str name "/" s "-" e "/" strand)
         fname (fs/join basedir (str name ".fna"))
         sq (->> (io/read-lines fname) second
@@ -377,11 +376,13 @@
    BASEDIR is the location of the NC fasta files.  Generally, this
    should always be the default location.
   "
-  [entries & {:keys [basedir strand delta rna]
+  [entries & {:keys [basedir strand ldelta rdelta rna]
               :or {basedir default-genome-fasta-dir strand 0 delta 0 rna true}}]
   (let [entries (if (string? entries) (io/read-lines entries) entries)
         entries (if (= 0 strand) entries (map #(str % "/" strand) entries))]
-    (map #(gen-name-seq % :basedir basedir :delta delta :rna rna) entries)))
+    (map #(gen-name-seq
+           % :basedir basedir :ldelta ldelta :rdelta rdelta :rna rna)
+         entries)))
 
 
 
@@ -410,7 +411,9 @@
       fasta-filespec)))
 
 
-(defn- entry-file->fasta-file-ranges [efile fasta-filespec blastdb]
+(defn- ncbi-entry-file->fasta-file-ranges
+  "Use NCBI blastdbcmd to get sequences from coordinates - OBSOLETE!"
+  [efile fasta-filespec blastdb]
   (let [blast-path (get-tool-path :ncbi)
         blastdbcmd (str blast-path "blastdbcmd")
         tmp-file (fs/tempfile "fasta-out" ".fna")]
@@ -430,8 +433,9 @@
     (fs/rm tmp-file)
     fasta-filespec))
 
-
-(defn- entry-file->fasta-file-full [efile fasta-filespec blastdb]
+(defn- ncbi-entry-file->fasta-file-full
+  "Use NCBI blastdbcmd to get full sequences - OBSOLETE!"
+  [efile fasta-filespec blastdb]
   (let [blast-path (get-tool-path :ncbi)
         blastdbcmd (str blast-path "blastdbcmd")
         cmdargs ["-db" blastdb "-entry_batch" efile
@@ -441,19 +445,32 @@
     (catch-all (runx blastdbcmd cmdargs))
     fasta-filespec))
 
-
-(defnk entry-file->fasta-file [efile :loc nil :blastdb nil]
+(defn ncbi-entry-file->fasta-file
+  "Use NCBI blastdbcmd to get fasta file for entries in entry file - OBSOLETE"
+  [efile & {:keys [loc blastdb] :or {loc nil blastdb default-binary-db}}]
   (let [efile (fs/fullpath efile)
-        filespec (fs/fullpath (fs/replace-type efile ".fna"))
-        blastdb (if blastdb blastdb default-binary-db)]
+        filespec (fs/fullpath (fs/replace-type efile ".fna"))]
     (if loc
       (entry-file->fasta-file-ranges efile filespec blastdb)
       (entry-file->fasta-file-full efile filespec blastdb))
     filespec))
 
 
-(defnk entry-file->blastdb [efile :out nil :blastdb nil :loc nil :ids nil]
-  (let [entries-fasta (entry-file->fasta-file efile :loc loc :blastdb blastdb)
+(defn entry-file->fasta-file
+  [efile]
+  (let [efile (fs/fullpath efile)
+        fasta-filespec (fs/fullpath (fs/replace-type efile ".fna"))
+        entries (io/read-lines efile)]
+    (io/with-out-writer fasta-filespec
+      (doseq [[entry sq] (gen-name-seq-pairs entries)]
+        (println (str ">" entry))
+        (println sq)))
+    fasta-filespec))
+
+
+(defn entry-file->blastdb
+  [efile & {:keys [out ids] :or {out nil ids nil}}]
+  (let [entries-fasta (entry-file->fasta-file efile)
         blast-db-file (fs/fullpath
                        (if out out (fs/replace-type efile ".blastdb")))
         blast-path (get-tool-path :ncbi)
@@ -532,13 +549,13 @@
     (case type
           "aln"
           (if (= info :data)
-            #(str/replace-re #"^N[CZ_0-9]+ +" "" %)
+            #(str/replace-re #"^N[CZ_0-9]+\s+" "" %)
             #(re-find  #"^N[CZ_0-9]+" %))
 
           "sto"
           (if (= info :data)
-            #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+) +" "" %)
-            #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+) +" %)))
+            #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)\s+" "" %)
+            #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)\s+" %)))
 
           "gma" (raise :type :NYI :info "GMA format not yet implemented")
 

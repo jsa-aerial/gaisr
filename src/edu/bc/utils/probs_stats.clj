@@ -706,7 +706,7 @@
      (< (math/abs KLD) 1.0E-10) 0.0
      :else
      (raise
-      :type :negRE :KLD KLD :P pdist1 :Q pdist2))))
+      :type :negRE :KLD KLD :Pdist pdist1 :Qdist pdist2))))
 
 
 (defn KLD "Synonym for relative-entropy"[x y] (relative-entropy x y))
@@ -896,7 +896,7 @@
    seems to be the most widely held view, but there are disputes. This
    can either indicate inhibition/redundancy or facilitation/synergy
    between the variables.  It helps to look at the 3 variable case, as
-   it at least lends itself to venn diagrams.
+   it at least lends itself to 'information' (or info venn) diagrams.
 
    II(X,Y,Z) = I(X,Y|Z) - I(X,Y)
 
@@ -928,7 +928,7 @@
 
    It should be reasonably clear at this point that negative II is the
    much more intuitive/typical case, and that positive cases are
-   surprising and possibly more interesting and informative (so to
+   surprising and typically more interesting and informative (so to
    speak...).  A positive example, would be the case of two mutually
    exclusive causes for a common effect (third variable).  In such a
    case, knowing any two completely determines the other.

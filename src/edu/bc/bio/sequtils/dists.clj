@@ -373,3 +373,17 @@
 ;;;   :par 4))
 
 
+#_(time
+   (io/with-out-writer "/data2/Bio/MetaG1/lHmax.clj"
+     (doseq [mg-fa (take 20 (sort (fs/directory-files
+                                   "/data2/Bio/MetaG1/FastaFiles" ".fa")))]
+       (prn [(fs/basename mg-fa)
+             (map #(let [[nm sq] %]
+                     [nm (count sq) (-> sq count log4)
+                      (for [l (range 1 20)]
+                        [l (count (keys (reduce
+                                         (fn[m [k v]]
+                                           (if (> v 1)
+                                             (assoc m k v) m))
+                                         {} (freqn l sq))))])])
+                  (read-seqs mg-fa :info :both))]))))

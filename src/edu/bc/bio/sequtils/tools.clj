@@ -164,8 +164,9 @@
 
 
 ;;; From time to time we end up with (or acquire from others) stos
-;;; whose seqs have no coordinate info.  This takes such stos and
-;;; regens them with coordinates matching the seqs.
+;;; whose seqs have no coordinate info or broken coordinate info.
+;;; This takes such stos and regens them with coordinates matching the
+;;; seqs.
 ;;;
 (defn correct-sto-coordinates
   ""
@@ -181,32 +182,45 @@
 
            misc (str "-seqidlist " ids " -perc_identity 100.0")
            blastout (blast :blastn fna :strand :both :misc misc)
-           ;;blastout "/home/jsa/Bio/STOfiles/S15stos/newfirmsto-2-070212.fna.blast"
-           id-info (reduce
-                    (fn[m x]
-                      (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))]
-                        (if (and (= (second x) "1")
-                                 (str/substring? nm (nth x 4)))
-                          (let [s (nth x 5)
-                                e (nth x 6)
-                                [s e sd] (if (> (Integer. s) (Integer. e))
-                                           [e s "-1"]
-                                           [s e "1"])]
-                            (assoc m nm (str "/" s "-" e "/" sd)))
-                          m)))
-                    {} (csv/parse-csv (slurp blastout)))
 
-           good (keep #(let [nm (first %)]
-                         (when-let [v (get id-info nm)]
-                           [(str nm v) (third %)]))
-                      idseq)
+           id-info
+           (first (reduce
+                   (fn[[m evm] x]
+                     (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))]
+                       (if (and (= (second x) "1")
+                                (str/substring? nm (nth x 4))
+                                (< (get evm nm 0.0) (Double. (third x))))
+                         (let [ev (Double. (third x))
+                               s (nth x 5)
+                               e (nth x 6)
+                               [s e sd] (if (> (Integer. s) (Integer. e))
+                                          [e s "-1"]
+                                          [s e "1"])]
+                           [(assoc m nm (str "/" s "-" e "/" sd))
+                            (assoc evm nm ev)])
+                         [m evm])))
+                   [{} {}] (csv/parse-csv (slurp blastout))))
+
+           good (sort-by
+                 key
+                 (reduce
+                  (fn[m [nm _ nsq]]
+                    (if-let [v (get id-info nm)]
+                      (let [k (str nm v)
+                            cursq (get m k)
+                            sq (if (< (count cursq) (count nsq)) nsq cursq)]
+                        (assoc m k sq))
+                      m))
+                  {} idseq))
 
            bad-file (fs/replace-type stoin "-bad.txt")
            bad (keep (fn[[nm coord sq]]
                        (when (not (get id-info nm))
                          [nm coord sq
                           (str/replace-re #"[.-]" "" sq)
-                          (-> (str nm coord) gen-name-seq second)]))
+                          (if (not (re-find #"^NC" nm))
+                            "Non NC_* sequences not currently available"
+                            (-> (str nm coord) gen-name-seq second))]))
                      idseq)
 
            diff-file (fs/replace-type stoin "-diffs.txt")
@@ -227,6 +241,8 @@
            (let [[gc kind v] (str/split #" +" 3 gcline)]
              (cl-format true "~A~40T~A~%" (str gc " " kind) v)))
          (println "//"))
+       (fs/rename stoin (fs/replace-type stoin "-old.sto"))
+       (fs/rename newsto stoin)
 
        (when (seq diffs)
          (io/with-out-writer diff-file
@@ -243,7 +259,7 @@
        (when (fs/exists? ids) (io/delete-file ids))
        (when (fs/exists? blastout) (io/delete-file blastout))
        (when (fs/exists? fna) (io/delete-file fna))
-       [newsto diff-file bad-file]))
+       [stoin diff-file bad-file]))
 
   ([sto1 sto2 & stos]
      (map correct-sto-coordinates (->> stos (cons sto2) (cons sto1)))))

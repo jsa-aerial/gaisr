@@ -60,25 +60,46 @@
 ;;;  CM-Search and RW (rewrite
 
 
+(defn- fix-file-regex [l]
+  (-> l str/trim (str "$") ((partial str/replace-re #"\*" ".*"))))
+
+
+(defn process-1-file [m directive file]
+  (let [files (conj (get m directive []) file)]
+    (assoc m directive files)))
+
+
 (defn process-sto-files [m l]
-  (let [sto (str/trim l)]
-    (let [stos (conj (get m :cmbuilds []) sto)]
-      (assoc m :cmbuilds stos))))
+  (let [fspec (fix-file-regex l)
+        stodir (m :stodir)
+        stos (fs/re-directory-files stodir fspec)]
+    (reduce (fn[m sto] (process-1-file m :cmbuilds sto))
+            m stos)))
 
 (defn process-cm-files [m l]
-  (let [sto (str/trim l)]
-    (let [stos (conj (get m :calibrates []) sto)]
-      (assoc m :calibrates stos))))
+  (let [fspec (fix-file-regex l)
+        cmdir (m :cmdir)
+        cms (fs/re-directory-files cmdir fspec)]
+    (reduce (fn[m cm] (process-1-file m :calibrates cm))
+            m cms)))
+
 
 (defn process-hit-files [m l]
   (let [hfg (m :hitfile)
         [cm hfs] (str/split #" *, *" l)
         hitfile (or hfg hfs)]
     (assert (not (and hfg hfs)))
-    (let [xref-map (get m :cmsearchs {})
-          hf-cms (get xref-map hitfile [])
-          hf-cms (conj hf-cms cm)]
-      (assoc m :cmsearchs (assoc xref-map hitfile hf-cms)))))
+    (let [cmdir (m :cmdir)
+          hitdir (m :hitfile-dir)
+          cms (fs/re-directory-files cmdir (fix-file-regex cm))
+          hitfs (fs/re-directory-files hitdir (fix-file-regex (or hfg hfs)))
+          cmsXhitfs (reducem (fn[cm sto] [[cm sto]]) concat cms hitfs)]
+      (reduce (fn[m [cm hf]]
+                (let [xref-map (get m :cmsearchs {})
+                      hf-cms (get xref-map hf [])
+                      hf-cms (conj hf-cms cm)]
+                  (assoc m :cmsearchs (assoc xref-map hf hf-cms))))
+              m cmsXhitfs))))
 
 
 (defn parse-config-file [filespec]
@@ -114,9 +135,23 @@
          #"^CM-Calibrate[ :]*"
          (directive (assoc m :cmcalibrate (m :cmdir)) :calibrate)
 
+         ;; NEEDS TO BE FIXED: This clause must come before other
+         ;; cmsearch clauses to ensure both eval and hitfile inclusion.
+         #"^CM-Search +eval *: *[0-9]+[.0-9]*, *hitfile *:"
+         (let [x (str/split #"," l)
+               [ev hf] (map #(second (str/split #": *" %)) x)]
+           (directive
+            (assoc (assoc m :eval ev) :hitfile hf)
+            :cmsearch))
+
          #"^CM-Search +hitfile *:"
          (directive
           (assoc m :hitfile (second (str/split #": *" l)))
+          :cmsearch)
+
+         #"^CM-Search +eval *:"
+         (directive
+          (assoc m :eval (second (str/split #": *" l)))
           :cmsearch)
 
          #"^CM-Search *:"

@@ -200,10 +200,29 @@ if it is not or if the file cannot be deleted."
   [path]
   (seq (.list (io/file path))))
 
-(defn directory-files [directory file-type]
-  (let [pat (re-pattern (str file-type "$"))]
-    (map #(join directory %)
-         (filter #(re-find pat %) (listdir directory)))))
+(defn- _re-dir-files [directory pat]
+  (map #(join directory %)
+       (filter #(re-find pat %) (listdir directory))))
+
+(defn directory-files
+  "Return full path qualified file specifications for all files in
+   directory whose suffix matches file-type.  Typically file-type
+   would be the type suffix (e.g., .txt or .sto or .fna or .clj or
+   whatever), but could include any part of the file name's suffix.
+   So, giving -new.sto for example, works as well.
+  "
+  [directory file-type]
+  (_re-dir-files directory (re-pattern (str file-type "$"))))
+
+(defn re-directory-files
+  "Return full path qualified file specifications for all files in
+   directo ry whose name is matched by re.  RE is a regexp (#\"regex
+   def\" literal or a string that defines a regexp (which will be
+   turned into a pattern).
+  "
+  [directory re]
+  (_re-dir-files directory (re-pattern re)))
+
 
 (defn mkdir
   "Create a directory."

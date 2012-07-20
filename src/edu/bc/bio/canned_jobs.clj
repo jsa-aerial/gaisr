@@ -44,8 +44,8 @@
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
-	edu.bc.bio.sequtils.files
-	edu.bc.bio.sequtils.tools
+        edu.bc.bio.sequtils.files
+        edu.bc.bio.sequtils.tools
 
         [edu.bc.log4clj :only [create-loggers log>]]
         [clojure.contrib.condition
@@ -204,9 +204,9 @@
   (catch-all
    (gen-entry-file entries (fs/fullpath outfile))))
 
-(defn t-entry-file->fasta-file [efile loc blastdb]
+(defn t-entry-file->fasta-file [efile]
   (catch-all
-   (entry-file->fasta-file efile :loc loc :blastdb blastdb)))
+   (entry-file->fasta-file efile)))
 
 
 (defn t-blastn [in args]
@@ -230,26 +230,20 @@
 
 (defn schedule-blast-seq [user pgm entries dir args]
   (let [dir (get-work-dir dir)
-        loc? (has-loc? entries)
-        argm (and args (apply assoc {} args))
-        blastdb (or (and argm (argm :blastdb)) default-binary-db)
         out-filespec (str dir (get-entry-file-name entries))]
     (add *jobs*
          user
          `[(t-gen-entry-file '~entries ~out-filespec)
-           (t-entry-file->fasta-file :t1 ~loc? ~blastdb)
+           (t-entry-file->fasta-file :t1)
            (~pgm :t2 ~@args)
            (t-blast-parse :t3)]
          'jfn-blast)))
 
 (defn schedule-blast-ent [user pgm efile dir args]
-  (let [efile (fs/fullpath efile)
-        loc? (has-loc? efile)
-        argm (and args (apply assoc {} args))
-        blastdb (or (and argm (argm :blastdb)) default-binary-db)]
+  (let [efile (fs/fullpath efile)]
     (add *jobs*
          user
-         `[(t-entry-file->fasta-file ~efile ~loc? ~blastdb)
+         `[(t-entry-file->fasta-file ~efile)
            (~pgm :t1 ~@args)
            (t-blast-parse :t2)]
          'jfn-blast)))
@@ -287,10 +281,10 @@
 
 ;;; Generating a binary blastdb from a set of sequence entries.
 ;;;
-(defn gen-blastdb [entries dir blastdb loc]
+(defn gen-blastdb [entries dir]
   (let [dir (get-work-dir dir)
         efile (gen-entry-file entries (str dir (get-entry-file-name entries)))]
-    (entry-file->blastdb efile :blastdb blastdb :loc loc)))
+    (entry-file->blastdb efile)))
 
 (defnk run-gen-blastdb
   "Run a 'generate binary blastdb' job.  USER is passwd file username,

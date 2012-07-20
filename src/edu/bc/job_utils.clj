@@ -101,7 +101,9 @@
   (wresult [jobs jid] "Wait for, and then return, the result of job JID")
   (results [jobs jid] "Return the results of all tasks and the job")
   (cancel [jobs jid] "cancel job with id JID.")
-  (del [jobs user jid] "remove job with id JID from job set"))
+
+  (del [jobs user jid & {:keys [force] :or {force false}}]
+       "remove job with id JID from job set"))
 
 
 
@@ -326,9 +328,10 @@
           (with-base-chk jid
             (raise :type :nyi :msg "job cancel not yet implemented!")))
 
-  (del [_ user jid]
+  (del [_ user jid & {:keys [force] :or {force false}}]
        (with-base-chk jid
-         (assert (in (chk _ jid) [:new :waiting :done :cancelled :abort]))
+         (when (not force)
+           (assert (in (chk _ jid) [:new :waiting :done :cancelled :abort])))
          (dosync
           (swap! jmap dissoc jid)
           (swap! umap (fn[m u jid]
@@ -373,14 +376,14 @@
      (start-set (all *jobs* user :new))))
 
 
-(defn- delete-set [user jids]
-  (map #(del *jobs* user %1) jids))
+(defn- delete-set [user jids force]
+  (map #(del *jobs* user %1 :force force) jids))
 
 (defn delete-done [user]
-  (delete-set user (all *jobs* user :done)))
+  (delete-set user (all *jobs* user :done) false))
 
-(defn delete-all [user]
-  (delete-set user (all *jobs* user)))
+(defn delete-all [user & {:keys [force] :or {force false}}]
+  (delete-set user (all *jobs* user) force))
 
 
 (defn- check-set [jids]

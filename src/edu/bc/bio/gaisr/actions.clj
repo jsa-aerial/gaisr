@@ -97,7 +97,7 @@
 ;;; files, and fasta files from Scribl hit selections.
 ;;;
 (defn save-content-xform [entries file f]
-  (prn entries)
+  #_(prn entries)
   (io/with-out-writer (io/file-str file)
     (doseq [e entries]
       (println e)))
@@ -137,7 +137,7 @@
               fasta-filespec (-> (str/split #"\$\$" selections)
                                  (save-content-xform save-filespec xform)
                                  (gen-entry-file entry-filespec)
-                                 (entry-file->fasta-file :loc true))]
+                                 (entry-file->fasta-file))]
           (log> "rootLogger" :info "~A and ~A" entry-filespec fasta-filespec)
           {:type :json
            :body (json/json-str
@@ -232,20 +232,21 @@
 (defn remote-correct-sto-coordinates
   "Run coordinate corrector for user on uploaded file upload-file."
   [user filename upload-file]
+  (prn :***RCSC upload-file)
   (remote-try
    (let [resultfn
           (fn[[file res]]
             (if (map? res)
               (cons :error (cons file (get-remote-cemap res)))
-              (map #(if (fs/exists? %) (slurp %) []) res)))
+              (cons :good (map #(if (fs/exists? %) (slurp %) []) res))))
           jobid (add *jobs* user
                      `[(print-str ~filename)
                        (correct-sto-coordinates ~upload-file)]
                      resultfn)]
       (start *jobs* jobid)
       {:body (json/json-str
-              {:info [(str filename
-                           " coordinate correction started, jobid ")
+              {:info [:started :started
+                      (str filename " coordinate correction started, jobid ")
                       (str jobid)]
                :stat "success"})})))
 
@@ -260,31 +261,39 @@
             (cond
              (map? res) (cons :error (cons file (get-remote-cemap res)))
              (not= :good res) (cons :error (cons file (seq (ensure-vec res))))
-             :else (str "Completed job defined by: " file "; Status: " res)))
+             :else (cons :good (list (str "Completed job defined by: " file)
+                                     (str "Result: " res)))))
           jobid (add *jobs* user
                      `[(print-str ~filename)
                        (run-config-job-checked ~config-file :printem false)]
                      resultfn)]
       (start *jobs* jobid)
-      {:body (json/json-str {:info [(str filename " job started, jobid ")
+      {:body (json/json-str {:info [:started :started
+                                    (str filename " job started, jobid ")
                                     (str jobid)]
                              :stat "success"})})))
 
 (defn remote-check-job
   "Check status, and if done, return results for job JOBID of user USER"
   [user jobid]
-  (let [stat (catch-all (check-job jobid))]
-    {:body (json/json-str
-            {:info (cons (str "Job " jobid " for user '" user "'")
-                         (if (= stat :done)
-                           (let [result (result *jobs* jobid)]
-                             (cons "Finished:" (seq (ensure-vec result))))
-                           (let [tstat (result *jobs* jobid :t2)
-                                 tstat (if (= tstat :in-process)
-                                         "running"
-                                         (str tstat))]
-                             (list (str "currently " tstat)))))
-             :stat "success"})}))
+  ;; This 'works', but it is fugly and I don't like it.  Needs to be
+  ;; refactored and cleaned up.
+  (remote-try
+   (let [stat (catch-all (check-job jobid))
+         res (if (= stat :done)
+               (seq (ensure-vec (result *jobs* jobid)))
+               (str "currently "
+                    (if (= :in-process (result *jobs* jobid :t2))
+                      "running"
+                      (str (result *jobs* jobid :t2)))))
+         [jstat res] (if (= stat :done)
+                       [(first res) (rest res)]
+                       [:running res])]
+     {:body (json/json-str
+             {:info (concat
+                     [stat jstat (str "Job " jobid " for user '" user "'")]
+                     (ensure-vec res))
+              :stat "success"})})))
 
 
 (defn upload-file [args reqmap]
@@ -313,7 +322,9 @@
       (remote-check-sto upload-file)
 
       (= upload-type "correct-sto-coordinates")
-      (remote-correct-sto-coordinates (.getPath upload-file))
+      (let [tmp-sto (fs/replace-type (.getPath upload-file) ".sto")]
+        (io/with-out-writer tmp-sto (print (slurp upload-file)))
+        (remote-correct-sto-coordinates user filename tmp-sto))
 
       (= upload-type "run-config")
       (remote-run-config user filename (.getPath upload-file))

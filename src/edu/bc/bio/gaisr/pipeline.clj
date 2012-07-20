@@ -549,7 +549,8 @@
                        v (keep #(when (not= "" %) (str/trim %)) v)]
                    (assoc m k v))))
              {} (partition 2 parts))
-     (build-hitseq-map hitfile)]))
+     (build-hitseq-map hitfile)
+     stofile]))
 
 
 (defn remove-pre&sufix-locs [seq-stg]
@@ -635,32 +636,66 @@
 
    hit-parts is a seq of vecs [nm os oe abs abe & tail], where os and
    oe are the original relative hit start/end and abs and abe are the
-   computed absolute hit start/end.  Filter hit-parts so only one [nm
-   abs abe] identified (keyed) entry remains."
-  [hit-parts]
+   computed absolute hit start/end.
 
-  (second ; just return filtered seq, not the map used...
-   (reduce (fn [[m s] v]
-             (let [[nm os oe abs abe & tail] v
-                   k [nm abs abe]]
-               (if (not (m k))
-                 [(assoc m k true) (conj s v)]
-                 [m s])))
-           [{} []] hit-parts)))
+   spread is positive integer or 0 which defines the max distance
+   between the abs and abe of any two hit-parts for them to be
+   considered the same hit; defaults to 10 bases.
+
+   stofile is the originating sto file for the cmsearch output that is
+   now encoded in hit-parts.  We ensure there are no entries in the
+   output whose coordinates are already within spread of an existing
+   entry in the originating sto.
+
+   Filter hit-parts so only one [nm abs abe] identified (keyed) entry
+   remains.
+  "
+  [hit-parts spread stofile]
+
+  (let [sto-map (reduce (fn[M e]
+                          (let [[nm coord] (->> e entry-parts (take 2))]
+                            (assoc M nm coord)))
+                        {} (read-seqs stofile :info :name))
+        in-spread? (fn [x y] (<= (abs (- x y)) spread))
+        dup? (fn[m [nm abst abend :as k]]
+               (let [[s e :as coord] (m nm)
+                     [stost stoend :as sto-coord] (sto-map nm)]
+                 (or (and coord
+                          (in-spread? s abst)
+                          (in-spread? e abend))
+                     (and sto-coord
+                          (in-spread? stost abst)
+                          (in-spread? stoend abend)))))]
+
+    (second ; just return filtered seq, not the map used...
+     (reduce (fn [[m s] v]
+               (let [[nm os oe abst abend & tail] v
+                     k [nm abst abend]]
+                 (if (dup? m k)
+                   [m s]
+                   [(assoc m k [abst abend]) (conj s v)])))
+             [{} []] hit-parts))))
 
 
-(defn cmsearch-out-csv [cmsearch-out]
+(defn cmsearch-out-csv [cmsearch-out & {:keys [spread] :or {spread 10}}]
   (if (fs/empty? cmsearch-out)
     [[] []]
     (let [csv-file (str/replace-re #"\.out$" ".csv" cmsearch-out)
           dup-file (str/replace-re #"\.out$" ".dup.csv" cmsearch-out)
-          [sto-loc-map hit-map hit-seq-map] (cmsearch-group-hits cmsearch-out)
+
+          [sto-loc-map hit-map hit-seq-map stofile]
+          (cmsearch-group-hits cmsearch-out)
+
           hit-parts (map #(cmsearch-hit-parts % hit-seq-map) hit-map)
           groups (group-hit-parts sto-loc-map hit-parts)
-          good (map #(csv/csv-to-stg (map str %)) (remove-dups (:good groups)))
-          dups (map #(csv/csv-to-stg (map str %)) (:bad groups))]
+
+          good (map #(csv/csv-to-stg (map str %))
+                    (remove-dups (:good groups) spread stofile))
+          dups (map #(csv/csv-to-stg (map str %))
+                    (:bad groups))]
+
       (io/with-out-writer (io/output-stream csv-file)
-        (println +cmsearch-csv-header+)
+        (println (str +cmsearch-csv-header+ "," stofile))
         (doseq [x good] (println x)))
       (io/with-out-writer (io/output-stream dup-file)
         (println +cmsearch-csv-header+)
@@ -668,11 +703,11 @@
       [good dups])))
 
 
-(defn gen-cmsearch-csvs [cmsearch-out-dir]
+(defn gen-cmsearch-csvs [cmsearch-out-dir & {:keys [spread] :or {spread 10}}]
   (let [base cmsearch-out-dir]
     (doseq [x (filter #(re-find #"\.cmsearch\.out$" %)
                       (sort (map #(fs/join base %) (fs/listdir base))))]
-      (cmsearch-out-csv x))))
+      (cmsearch-out-csv x :spread spread))))
 
 
 
@@ -877,6 +912,7 @@
                  (seq (fs/directory-files stodir "sto")))
         cms  (or (seq (map #(fs/join cmdir %) (config :calibrates)))
                  (seq (fs/directory-files cmdir "cm")))
+        eval (or (config :eval) eval)
         cmsearchs (config :cmsearchs)
         hfs-cmss (map (fn[[hf cms]]
                         [(fs/join hitdir hf)
@@ -899,25 +935,27 @@
      (do-calibrate cms))
 
     ;; Map over all cmsearch requests
-    (when (and cmsearchs (seq hfs-cmss))
-      (do-cmsearch hfs-cmss eval))
+    (let [cmouts (if (and cmsearchs (seq hfs-cmss))
+                   (flatten (do-cmsearch hfs-cmss eval))
+                   (fs/directory-files cmdir "cmsearch.out"))]
 
-    ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
-    ;; csvdir does not exist, generate it.  Place all generated csvs
-    ;; in to csvdir
-    (when-let [csvdir (config :gen-csvs)]
-      (when (not (fs/exists? csvdir)) (fs/mkdir csvdir))
-      (let [x (gen-cmsearch-csvs cmdir)
-            csvs (fs/directory-files cmdir "csv")]
-        (doseq [csv csvs]
-          (let [fname (fs/basename csv)]
-            (fs/rename csv (fs/join csvdir fname))))))
-    :good))
+      ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
+      ;; csvdir does not exist, generate it.  Place all generated csvs
+      ;; in to csvdir
+      (when-let [csvdir (config :gen-csvs)]
+        (when (not (fs/exists? csvdir)) (fs/mkdir csvdir))
+        (when (seq cmouts)
+          (doseq [cmout cmouts] (cmsearch-out-csv cmout))
+          (let [csvs (fs/directory-files cmdir "csv")]
+            (doseq [csv csvs]
+              (let [fname (fs/basename csv)]
+                (fs/rename csv (fs/join csvdir fname)))))))
+      :good)))
 
 (defn run-config-job-checked
   "Run a configuration with catch and print for any exceptions"
   [job-config-file & {:keys [eval printem] :or {eval 100.0 printem true}}]
-  (let [result (catch-all (run-config-job job-config-file))]
+  (let [result (catch-all (run-config-job job-config-file :eval eval))]
     (if printem
       (prn result)
       result)))

@@ -128,7 +128,6 @@ end
 def correct_sto_finish (file, info)
   ## it's amazing how verbose and convoluted this all is.  You
   ## could easily do this entire function in three lines of Clojure.
-  ## Ruby sucks!!!
   basedir = File.dirname(file)
   filename = File.basename(file)
   puts "Finished sto correction for #{file}", "Results in #{basedir}"

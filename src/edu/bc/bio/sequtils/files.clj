@@ -24,7 +24,7 @@
 ;; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION    ;;
 ;; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.          ;;
 ;;                                                                          ;;
-;; Author: Jon Anthony                                                      ;;
+;; Author: Jon Anthony, Shermin Pei                                         ;;
 ;;                                                                          ;;
 ;;--------------------------------------------------------------------------;;
 ;;
@@ -212,7 +212,7 @@
   [sto & {printem :printem :or {printem true}}]
   (let [valid-symbols #{"A" "C" "G" "U"
                         "-" "." ":" "_" ","
-                        "a" "b" "B"
+                        "a" "b" "B" "n" "N"
                         "(" ")" "<" ">"}
         [_ seq-lines cons-lines] (join-sto-fasta-lines sto "")
         [_ [_ cl]] (first cons-lines)
@@ -316,7 +316,8 @@
 
 (defn gen-name-seq
   "Generate a pair [entry genome-seq], from ENTRY as possibly modified
-   by DELTA and RNA.  ENTRY is a string \"name/range/strand\", where
+   by [L|R]DELTA and RNA.  ENTRY is a string \"name/range/strand\",
+   where
 
    name is the genome NC name (and we only currently support NCs),
 
@@ -331,8 +332,8 @@
    ldelta < 0 _removes_ |ldelta| bases from 5', ldelta > 0 'tacks on'
    ldelta extra bases to the 5' end.  Defaults to 0 (no change).
 
-   RDELTA is an integer, which will be _added_ to the end.  So, ldelta
-   < 0 _removes_ |ldelta| bases from 3', ldelta > 0 'tacks on' ldelta
+   RDELTA is an integer, which will be _added_ to the end.  So, rdelta
+   < 0 _removes_ |rdelta| bases from 3', rdelta > 0 'tacks on' rdelta
    extra bases to the 3' end.  Defaults to 0 (no change).
 
    If RNA is true, change Ts to Us, otherwise return unmodified
@@ -377,7 +378,8 @@
    should always be the default location.
   "
   [entries & {:keys [basedir strand ldelta rdelta rna]
-              :or {basedir default-genome-fasta-dir strand 0 delta 0 rna true}}]
+              :or {basedir default-genome-fasta-dir
+                   strand 0 ldelta 0 rdelta 0 rna true}}]
   (let [entries (if (string? entries) (io/read-lines entries) entries)
         entries (if (= 0 strand) entries (map #(str % "/" strand) entries))]
     (map #(gen-name-seq
@@ -451,8 +453,8 @@
   (let [efile (fs/fullpath efile)
         filespec (fs/fullpath (fs/replace-type efile ".fna"))]
     (if loc
-      (entry-file->fasta-file-ranges efile filespec blastdb)
-      (entry-file->fasta-file-full efile filespec blastdb))
+      (ncbi-entry-file->fasta-file-ranges efile filespec blastdb)
+      (ncbi-entry-file->fasta-file-full efile filespec blastdb))
     filespec))
 
 

@@ -50,6 +50,7 @@
   (:use clojure.contrib.math
         edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
+        [edu.bc.bio.seq-utils :only [gap-count]]
         edu.bc.bio.sequtils.files
         [edu.bc.bio.sequtils.tools :only [correct-sto-coordinates]]
 
@@ -194,6 +195,11 @@
 
 
 (defmacro remote-try
+  "Wraps a body of JSON returning remote access results in try/catches
+   to ensure we don't just roll over and die with no reporting to
+   client!  Accounts for the 'special' form of a contrib.condition
+   Condition.
+  "
   [& body]
   `(try
      (do ~@body)
@@ -224,15 +230,148 @@
   "Run check-sto on uploaded file upload-file."
   [upload-file]
   (let [result (check-sto upload-file :printem false)]
-    {:body (json/json-str {:info (if (= result :good)
+    {:body (json/json-str {:info [:NA :NA
+                                  (if (= result :good)
                                    "sto is good"
-                                   (cons "***BAD sto" result))
+                                   (cons "***BAD sto" result))]
                            :stat "success"})}))
+
+
+(defn new-aln-name-seq
+  "One fugly function that needs to be rather persnickety as the
+   details are kind of tricky - or maybe just bean counting precise...
+
+   Take an entry ent and its sequence sq and left/right deltas ld and
+   rd and return an new [ent' sq'] pair reflecting the changes
+   required by the addition/removal of characters (including gaps)
+   from the front and end of sq.
+
+   Gaps are counted as characters of sq, but not as sequence elements
+   for recalculation of coordinates.
+  "
+  [ent sq ld rd]
+  (let [sqcnt (count sq)
+        [nm [os oe] sd] (entry-parts ent)
+        oe (if (= oe Long/MAX_VALUE)  ; check for no coordinate info in entry
+             (+ os sqcnt)
+             oe)
+
+        s (- os (if (neg? ld) (+ ld (gap-count (str/take (- ld) sq))) ld))
+        e (+ oe (if (neg? rd) (+ rd (gap-count (str/drop (+ sqcnt rd) sq))) rd))
+        s (if (neg? s) 1 s) ; check for bad ld forcing falling off front
+
+        prefixfn #(if (= s os)
+                    ""
+                    (gen-name-seq
+                     (str/join "/" [nm (str s "-" (dec os)) sd])))
+        suffixfn #(if (= oe e)
+                    ""
+                    (gen-name-seq
+                            (str/join "/" [nm (str (inc oe) "-" e) sd])))
+        sq (cond
+            (and (pos? ld) (pos? rd))
+            (let [[_ lssq] (prefixfn)
+                  [_ rssq] (suffixfn)]
+              (str lssq sq rssq))
+
+            (and (pos? ld) (neg? rd))
+            (let [[_ lssq] (prefixfn)
+                  rssq (str/butlast (abs rd) sq)]
+              (str lssq rssq))
+
+            (and (neg? ld) (neg? rd))
+            (subs sq (abs ld) (+ sqcnt rd))
+
+            (and (neg? ld) (pos? rd))
+            (let [[_ rssq] (suffixfn)]
+              (str (subs sq (abs ld)) rssq)))]
+
+    [(str/join "/" [nm (str s "-" e) sd]) sq]))
+
+
+(defn remote-gen-name-seqs
+  "Create a new or adjust an old set of entry/sequence pairs.  There
+   are two main types of input for this:
+
+   * Sequence files
+   * Entry files
+
+   Sequence files in turn are of two types: simple fasta format or
+   alignment formats of sto or clustalw.
+
+   Entry files are just that - simple text files of entries, one per
+   line, with nc name, coordinates, and strand information. as defined
+   by gen-name-seq (for which see for the details).  Entry files
+   return the entries and corresponding sequences in fasta format.
+
+   For fasta files, just treat them as an alternate form of entry file
+   and return a fasta file with the adjusted sequences and
+   coordinates (see delta info below).
+
+   For alignment files, must carefully adjust the sequences and
+   coordinates to account for gaps.  Deltas affect total characters
+   added/removed from prefix/suffix of sequences.  However,
+   coordinates for this are adjuste by only the amount of non gap
+   characters in those substrings of the sequence.
+
+   deltas is an array (possibly nil) of one or two integers (+/-) that
+   indicate changes to the prefix and suffix of sequences and the
+   coordinates of their corresponding entries.  Again, details are as
+   defined by gen-name-seq.
+  "
+  [user filename upload-file deltas]
+  (remote-try
+   (let [alns ["sto" "aln"]
+         fnas ["fna" "fa"]
+         sto-n-orig-line (take 2 (io/read-lines upload-file))
+         ftype (fs/ftype filename)
+         [ldelta rdelta] deltas
+         ldelta (if ldelta ldelta 0)
+         rdelta (if rdelta rdelta 0)
+
+         new-ents-seqs
+         (if (in ftype ["ent" "txt"])
+           (gen-name-seq-pairs
+            (io/read-lines upload-file) :ldelta ldelta :rdelta rdelta)
+
+           ;; Else, some sort of sequence file
+           (let [entries-and-seqs (read-seqs upload-file :info :both)
+                 fna (in ftype fnas)]
+             (map (fn[[ent sq]]
+                    (let [[nent nsq :as both]
+                          (if fna ; NON alignment easy!
+                            (gen-name-seq ent :ldelta ldelta :rdelta rdelta)
+                            ;; Else must carefully adjust within alignment!
+                            (new-aln-name-seq ent sq ldelta rdelta))]
+                      both))
+                  entries-and-seqs)))
+
+         local-file (fs/tempfile "rem-gen-name-seqs-" (str "." ftype))]
+
+     (io/with-out-writer local-file
+       (when (in ftype alns)
+         (let [lines sto-n-orig-line
+               lines (if (= ftype "sto") (concat lines [""])  lines)]
+           (doseq [l lines] (println l))))
+       (doseq [[idi sq] new-ents-seqs]
+         (if (in ftype alns)
+           (cl-format true "~A~40T~A~%" idi sq)
+           (do (println (str ">" idi)) (println sq))))
+       (when (= ftype "sto")
+         (doseq [gcline (filter #(.startsWith % "#")
+                                (first (sto-GC-and-seq-lines upload-file)))]
+           (let [[gc kind v] (str/split #" +" 3 gcline)]
+             (cl-format true "~A~40T~A~%" (str gc " " kind) v)))
+         (println "//")))
+
+     {:body (json/json-str
+             {:info [:NA :NA (slurp local-file)]
+              :stat "success"})})))
+
 
 (defn remote-correct-sto-coordinates
   "Run coordinate corrector for user on uploaded file upload-file."
   [user filename upload-file]
-  (prn :***RCSC upload-file)
   (remote-try
    (let [resultfn
           (fn[[file res]]
@@ -296,7 +435,12 @@
               :stat "success"})})))
 
 
-(defn upload-file [args reqmap]
+(defn upload-file
+  "Dispatch function for upload posts.  ARGS contains a map of
+   subcommand information, including the primary function to perform
+   encoded as value of key upload-type.
+  "
+  [args reqmap]
   (log> "rootLogger" :info "UPLOAD ~S, Cookies: ~S" args (reqmap :cookies))
   (let [user (get-in reqmap [:cookies "user" :value])
         upload-type (args :upload-type)
@@ -325,6 +469,13 @@
       (let [tmp-sto (fs/replace-type (.getPath upload-file) ".sto")]
         (io/with-out-writer tmp-sto (print (slurp upload-file)))
         (remote-correct-sto-coordinates user filename tmp-sto))
+
+      (= upload-type "get-seqs")
+      (let [deltas (map #(if (string? %) (Integer. %) %) (args :misc))
+	    ftype (fs/ftype filename)
+	    tmp-file (fs/replace-type (.getPath upload-file) (str "." ftype))]
+	(fs/rename (.getPath upload-file) tmp-file)
+        (remote-gen-name-seqs user filename tmp-file deltas))
 
       (= upload-type "run-config")
       (remote-run-config user filename (.getPath upload-file))

@@ -58,73 +58,6 @@
 
 
 
-(defn norm-elements
-  "\"Normalize\" elements in sequences by ensuring each character is
-   mapped to its uppercase variant."
-  [seqs]
-  (map str/upper-case seqs))
-
-
-(defn gap-percent
-  "Return the percentage of sq (typically an aligned variant of a
-   genome sequence) that is comprised of gap characters.  For the
-   single parameter case, gaps are taken as \\. and \\-.  For the
-   gap-chars case, gap characters are the elements (characters) in
-   gap-chars (a seqable collection)."
-   ([sq]
-      (let [[_ ps] (freqs-probs 1 sq)
-            gp (+ (get ps \- 0) (get ps \. 0))]
-        gp))
-   ([sq gap-chars]
-      (let [[_ ps] (freqs-probs 1 sq)
-            gp (sum (filter #(get ps % 0) gap-chars))]
-        gp)))
-
-(defn filter-pgap
-  "Filter the sequence set seqs, by returning only those that have
-   less than a pgap percentage of gap characters. Gap chars are either
-   the defaults \\. \\- or those in gap-chars (a seqable collection)."
-  ([seqs pgap]
-     (filter #(< (gap-percent %) pgap) seqs))
-  ([seqs pgap gap-chars]
-     (filter #(< (gap-percent % gap-chars) pgap) seqs)))
-
-(defn degap-seqs
-  "Remove gap characters from a sequence or set of sequences.  These
-   would be from an alignment set.  It is not clear how / where useful
-   this is/would be as it destroys the alignment spacing.  Other than
-   a single sequence situation, use degap-tuples instead!!
-
-   Gap chars are either the defaults \\. \\- or those in gap-chars (a
-   seqable collection).
-  "
-  ([seqs]
-     (if (coll? seqs)
-       (map #(str/replace-re #"[-.]+" "" %) seqs)
-       (str/replace-re #"[-.]+" "" seqs)))
-  ([seqs gap-chars]
-     (if (coll? seqs)
-       (map (fn[sq] (apply str (filter (fn[c] #(not (in c gap-chars))) sq)))
-            seqs)
-       (apply str (filter (fn[c] #(not (in c gap-chars))) seqs)))))
-
-(defn gaps?
-  "Return whether K, a char, string, or coll, contains a \"gap
-   character\".  For the single parameter case gap chars are taken as,
-   a \\. or \\-.  For the gap-chars case gap characters are the
-   elements (characters) in gap-chars (a seqable collection).
-  "
-  ([k]
-     (or
-      (and (char? k) (in k [\. \-]))
-      (and (string? k) (re-find #"(\.|-)" k))
-      (and (coll? k) (or (in \- k) (in \. k)))))
-  ([k gap-chars]
-     (or
-      (and (char? k) (in k gap-chars))
-      (and (string? k) (some #(in % gap-chars) k))
-      (and (coll? k) (some #(in % gap-chars) k)))))
-
 (defn degap-freqs
   "Take a frequency map, and remove all elements whose keys contain
    gap characters.  Gap chars are either the defaults \\. \\- or those
@@ -142,7 +75,7 @@
 
 (defn degap-tuples
   "Remove gap characters from a tuple of sequences.  Typically this is
-   a pair of sequences (as for example arising 1from (combins 2
+   a pair of sequences (as for example arising from (combins 2
    some-seq-set)).  The degaping works for gaps in any (through all)
    of the elements and preserves the correct bases and their order in
    cases where gaps line up with non gaps.  Gap chars are either the

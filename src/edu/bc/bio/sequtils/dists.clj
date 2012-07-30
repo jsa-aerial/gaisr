@@ -387,3 +387,54 @@
                                              (assoc m k v) m))
                                          {} (freqn l sq))))])])
                   (read-seqs mg-fa :info :both))]))))
+
+
+(def l-1 (probs 3 "CAAAAAGAAAUAGUAGGGCUUUUGAAAGUAACGGCCGCCCUGCAAAGAGCGGCCGUUCGCCUUACGUUUUUUA"))
+
+(def l-2 (probs 2 "CAAAAAGAAAUAGUAGGGCUUUUGAAAGUAACGGCCGCCCUGCAAAGAGCGGCCGUUCGCCUUACGUUUUUUA"))
+
+(for [x (keys l-1) a "AGUC"]
+  (str x a))
+
+(reduce (fn[m lmer]
+          (let [l (dec (count lmer))
+                x (subs lmer 1)
+                y (subs lmer 0 l)
+                z (subs lmer 1 l)]
+            (if (and (l-1 x) (l-1 y) (l-2 z))
+              (assoc m lmer (/ (* (l-1 x) (l-1 y)) (l-2 z)))
+              m)))
+        {} *1)
+
+(jensen-shannon
+ *1 (probs 4 "CAAAAAGAAAUAGUAGGGCUUUUGAAAGUAACGGCCGCCCUGCAAAGAGCGGCCGUUCGCCUUACGUUUUUUA"))
+
+
+
+(defn ffs-step [l-1 l-2]
+  (reduce (fn[m lmer]
+            (let [l (dec (count lmer))
+                  x (subs lmer 1)
+                  y (subs lmer 0 l)
+                  z (subs lmer 1 l)]
+              (if (and (l-1 x) (l-1 y) (l-2 z))
+                (assoc m lmer (/ (* (l-1 x) (l-1 y)) (l-2 z)))
+                m)))
+          {} (for [x (keys l-1) a "AGUC"] (str x a))))
+
+(defn CREl [l sq limit]
+  (loop [k 1
+         l l
+         sm 0]
+    (if (>= k limit)
+      sm
+      (let [l-1 (probs (- l 1) sq)
+            l-2 (probs (- l 2) sq)
+            P (probs l sq)
+            Q (ffs-step l-1 l-2)
+            KL (catch-all (DX||Y P Q))]
+        ;;(prn KL)
+        (recur (inc k)
+               (inc l)
+               (+ sm KL))))))
+

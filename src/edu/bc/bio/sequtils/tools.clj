@@ -48,6 +48,7 @@
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
+        [edu.bc.bio.seq-utils :only [degap-seqs]]
         edu.bc.bio.sequtils.files
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]
@@ -186,12 +187,12 @@
            id-info
            (first (reduce
                    (fn[[m evm] x]
-                     (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))]
+                     (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))
+                           ev (Double. (nth x 3))]
                        (if (and (= (second x) "1")
                                 (str/substring? nm (nth x 4))
-                                (< (get evm nm 0.0) (Double. (third x))))
-                         (let [ev (Double. (third x))
-                               s (nth x 5)
+                                (< ev (get evm nm 1.0)))
+                         (let [s (nth x 5)
                                e (nth x 6)
                                [s e sd] (if (> (Integer. s) (Integer. e))
                                           [e s "-1"]
@@ -199,7 +200,7 @@
                            [(assoc m nm (str "/" s "-" e "/" sd))
                             (assoc evm nm ev)])
                          [m evm])))
-                   [{} {}] (csv/parse-csv (slurp blastout))))
+                   [{} {}] (butlast (csv/parse-csv (slurp blastout)))))
 
            good (sort-by
                  key
@@ -207,8 +208,11 @@
                   (fn[m [nm _ nsq]]
                     (if-let [v (get id-info nm)]
                       (let [k (str nm v)
-                            cursq (get m k)
-                            sq (if (< (count cursq) (count nsq)) nsq cursq)]
+                            cursq (get m k "")
+                            sq (if (< (-> cursq degap-seqs count)
+                                      (-> nsq degap-seqs count))
+                                 nsq
+                                 cursq)]
                         (assoc m k sq))
                       m))
                   {} idseq))

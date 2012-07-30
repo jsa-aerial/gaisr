@@ -56,6 +56,88 @@
 
 
 
+(defn norm-elements
+  "\"Normalize\" elements in sequences by ensuring each character is
+   mapped to its uppercase variant."
+  [seqs]
+  (map str/upper-case seqs))
+
+
+(defn gap-percent
+  "Return the percentage of sq (typically an aligned variant of a
+   genome sequence) that is comprised of gap characters.  For the
+   single parameter case, gaps are taken as \\. and \\-.  For the
+   gap-chars case, gap characters are the elements (characters) in
+   gap-chars (a seqable collection)."
+   ([sq]
+      (let [[_ ps] (freqs-probs 1 sq)
+            gp (+ (get ps \- 0) (get ps \. 0))]
+        gp))
+   ([sq gap-chars]
+      (let [[_ ps] (freqs-probs 1 sq)
+            gp (sum (filter #(get ps % 0) gap-chars))]
+        gp)))
+
+(defn filter-pgap
+  "Filter the sequence set seqs, by returning only those that have
+   less than a pgap percentage of gap characters. Gap chars are either
+   the defaults \\. \\- or those in gap-chars (a seqable collection)."
+  ([seqs pgap]
+     (filter #(< (gap-percent %) pgap) seqs))
+  ([seqs pgap gap-chars]
+     (filter #(< (gap-percent % gap-chars) pgap) seqs)))
+
+(defn degap-seqs
+  "Remove gap characters from a sequence or set of sequences.  These
+   would be from an alignment set.  It is not clear how / where useful
+   this is/would be as it destroys the alignment spacing.  Other than
+   a single sequence situation, use degap-tuples instead!!
+
+   Gap chars are either the defaults \\. \\- or those in gap-chars (a
+   seqable collection).
+  "
+  ([seqs]
+     (if (coll? seqs)
+       (map #(str/replace-re #"[-.]+" "" %) seqs)
+       (str/replace-re #"[-.]+" "" seqs)))
+  ([seqs gap-chars]
+     (if (coll? seqs)
+       (map (fn[sq] (apply str (filter (fn[c] #(not (in c gap-chars))) sq)))
+            seqs)
+       (apply str (filter (fn[c] #(not (in c gap-chars))) seqs)))))
+
+(defn gaps?
+  "Return whether K, a char, string, or coll, contains a \"gap
+   character\".  For the single parameter case gap chars are taken as,
+   a \\. or \\-.  For the gap-chars case gap characters are the
+   elements (characters) in gap-chars (a seqable collection).
+  "
+  ([k]
+     (or
+      (and (char? k) (in k [\. \-]))
+      (and (string? k) (re-find #"(\.|-)" k))
+      (and (coll? k) (or (in \- k) (in \. k)))))
+  ([k gap-chars]
+     (or
+      (and (char? k) (in k gap-chars))
+      (and (string? k) (some #(in % gap-chars) k))
+      (and (coll? k) (some #(in % gap-chars) k)))))
+
+
+(defn gap-count
+  "Return the number of \"gap characters\" in sq.  For the single
+   parameter case gap chars are taken as, a \\. or \\-.  For the
+   gap-chars case gap characters are the elements (characters) in
+   gap-chars (a seqable collection).
+  "
+  ([sq]
+     (gap-count sq [\. \-]))
+  ([sq gap-chars]
+     (reduce (fn[cnt ch] (+ cnt (if (gaps? ch gap-chars) 1 0))) 0 sq)))
+
+
+
+
 (defn reverse-compliment
   "Reverse compliment of DNA/RNA sequence SQ. Return the sequence that
    would pair with (reverse SQ).
@@ -68,6 +150,7 @@
             {\A \T \T \A \G \C \C \G}
             {\A \U \U \A \G \C \C \G})]
     (str/join "" (reverse (map m sq)))))
+
 
 
 ;;; ----------------------------------------------------------------------

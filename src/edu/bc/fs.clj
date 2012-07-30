@@ -16,11 +16,12 @@
 (def separator File/separator)
 
 
-(defn fullpath [filespec-str]
+(defn fullpath
   "Canonicalize FILESPEC, a string, to a fully qualified file path
    for the native system.  ~ in position one is translated to the
    users home directory path, / and \\ are translated to the file
    separator for the native system."
+  [filespec-str]
   (let [^String s (str filespec-str)
         s (.replace s  \\ File/separatorChar)
         s (.replace s \/ File/separatorChar)]
@@ -204,6 +205,9 @@ if it is not or if the file cannot be deleted."
   (map #(join directory %)
        (filter #(re-find pat %) (listdir directory))))
 
+(defn- fix-file-regex [l]
+  (-> l str/trim (str "$") ((partial str/replace-re #"\*" ".*"))))
+
 (defn directory-files
   "Return full path qualified file specifications for all files in
    directory whose suffix matches file-type.  Typically file-type
@@ -221,7 +225,9 @@ if it is not or if the file cannot be deleted."
    turned into a pattern).
   "
   [directory re]
-  (_re-dir-files directory (re-pattern re)))
+  (_re-dir-files directory (re-pattern (fix-file-regex re))))
+
+
 
 
 (defn mkdir

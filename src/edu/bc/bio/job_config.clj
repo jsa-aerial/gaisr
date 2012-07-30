@@ -60,28 +60,22 @@
 ;;;  CM-Search and RW (rewrite
 
 
-(defn- fix-file-regex [l]
-  (-> l str/trim (str "$") ((partial str/replace-re #"\*" ".*"))))
-
-
 (defn process-1-file [m directive file]
   (let [files (conj (get m directive []) file)]
     (assoc m directive files)))
 
 
 (defn process-sto-files [m l]
-  (let [fspec (fix-file-regex l)
+  (let [fspec l
         stodir (m :stodir)
-        stos (fs/re-directory-files stodir fspec)]
+        stos (if (.startsWith fspec fs/separator)
+               (list fspec)
+               (fs/re-directory-files stodir fspec))]
     (reduce (fn[m sto] (process-1-file m :cmbuilds sto))
             m stos)))
 
 (defn process-cm-files [m l]
-  (let [fspec (fix-file-regex l)
-        cmdir (m :cmdir)
-        cms (fs/re-directory-files cmdir fspec)]
-    (reduce (fn[m cm] (process-1-file m :calibrates cm))
-            m cms)))
+  (process-1-file m :calibrates l))
 
 
 (defn process-hit-files [m l]
@@ -89,17 +83,14 @@
         [cm hfs] (str/split #" *, *" l)
         hitfile (or hfg hfs)]
     (assert (not (and hfg hfs)))
-    (let [cmdir (m :cmdir)
-          hitdir (m :hitfile-dir)
-          cms (fs/re-directory-files cmdir (fix-file-regex cm))
-          hitfs (fs/re-directory-files hitdir (fix-file-regex (or hfg hfs)))
-          cmsXhitfs (reducem (fn[cm sto] [[cm sto]]) concat cms hitfs)]
-      (reduce (fn[m [cm hf]]
+    (let [hitdir (m :hitfile-dir)
+          hitfs (fs/re-directory-files hitdir (or hfg hfs))]
+      (reduce (fn[m hf]
                 (let [xref-map (get m :cmsearchs {})
                       hf-cms (get xref-map hf [])
                       hf-cms (conj hf-cms cm)]
                   (assoc m :cmsearchs (assoc xref-map hf hf-cms))))
-              m cmsXhitfs))))
+              m hitfs))))
 
 
 (defn parse-config-file [filespec]
@@ -141,7 +132,7 @@
          (let [x (str/split #"," l)
                [ev hf] (map #(second (str/split #": *" %)) x)]
            (directive
-            (assoc (assoc m :eval ev) :hitfile hf)
+            (assoc (assoc m :eval (Double. ev)) :hitfile hf)
             :cmsearch))
 
          #"^CM-Search +hitfile *:"
@@ -151,7 +142,7 @@
 
          #"^CM-Search +eval *:"
          (directive
-          (assoc m :eval (second (str/split #": *" l)))
+          (assoc m :eval (Double. (second (str/split #": *" l))))
           :cmsearch)
 
          #"^CM-Search *:"

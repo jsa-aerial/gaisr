@@ -426,6 +426,7 @@
           {} (for [x (keys l-1) a "AGUC"] (str x a))))
 
 (defn CREl [l sq limit]
+  {:pre [(> l 2)]}
   (loop [k 1
          l l
          sm 0]

@@ -658,14 +658,16 @@
                         {} (read-seqs stofile :info :name))
         in-spread? (fn [x y] (<= (abs (- x y)) spread))
         dup? (fn[m [nm abst abend :as k]]
-               (let [[s e :as coord] (m nm)
+               (let [[s e :as coord] (m k)
                      [stost stoend :as sto-coord] (sto-map nm)]
                  (or (and coord
                           (in-spread? s abst)
                           (in-spread? e abend))
                      (and sto-coord
-                          (in-spread? stost abst)
-                          (in-spread? stoend abend)))))]
+                          (let [[abst abend]
+                                (if (< abend abst) [abend abst] [abst abend])]
+                            (in-spread? stost abst)
+                            (in-spread? stoend abend))))))]
 
     (second ; just return filtered seq, not the map used...
      (reduce (fn [[m s] v]
@@ -677,7 +679,7 @@
              [{} []] hit-parts))))
 
 
-(defn cmsearch-out-csv [cmsearch-out & {:keys [spread] :or {spread 10}}]
+(defn cmsearch-out-csv [cmsearch-out & {:keys [spread] :or {spread 50}}]
   (if (fs/empty? cmsearch-out)
     [[] []]
     (let [csv-file (str/replace-re #"\.out$" ".csv" cmsearch-out)
@@ -703,7 +705,7 @@
       [good dups])))
 
 
-(defn gen-cmsearch-csvs [cmsearch-out-dir & {:keys [spread] :or {spread 10}}]
+(defn gen-cmsearch-csvs [cmsearch-out-dir & {:keys [spread] :or {spread 50}}]
   (let [base cmsearch-out-dir]
     (doseq [x (filter #(re-find #"\.cmsearch\.out$" %)
                       (sort (map #(fs/join base %) (fs/listdir base))))]

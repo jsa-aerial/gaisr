@@ -126,6 +126,7 @@
          #"^CM-Calibrate[ :]*"
          (directive (assoc m :cmcalibrate (m :cmdir)) :calibrate)
 
+
          ;; NEEDS TO BE FIXED: This clause must come before other
          ;; cmsearch clauses to ensure both eval and hitfile inclusion.
          #"^CM-Search +eval *: *[0-9]+[.0-9]*, *hitfile *:"
@@ -147,6 +148,14 @@
 
          #"^CM-Search *:"
          (directive (assoc m :hitfile nil) :cmsearch)
+
+
+         #"^Gen-CSVs +spread *:*"
+         (let [x (str/split #"," l)
+               [sp dir] (map #(str/trim (second (str/split #": *" %))) x)]
+           (directive
+            (assoc (assoc m :spread (Integer. sp)) :gen-csvs dir)
+            :gen-csv))
 
          #"^Gen-CSVs[ :]*"
          (directive

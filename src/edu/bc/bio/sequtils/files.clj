@@ -567,14 +567,15 @@
             #(re-find #"[A-Za-z0-9._/-]+" (first %))))))
 
 (defn read-seqs
-  "Read the sequences in FILESPEC and return set as a seq (Clojure
-  seq!).  Filespec can denote either a fna, aln, sto, or gma file
-  format file.
+  "Read the sequences in FILESPEC and return set as a lazy
+  (Clojure!) seq.  Filespec can denote either a fna, aln, sto, or gma
+  file format file.
   "
   [filespec & {info :info :or {info :data}}]
   (let [type (fs/ftype filespec)
         f   (seqline-info-mapper type info)
-        sqs (str/split-lines (slurp filespec))
+        ;;sqs (str/split-lines (slurp filespec)) ; <-- NOT LAZY!!
+        sqs (io/read-lines filespec)
         sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
         sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
         sqs (if (in type ["fna" "fa"]) (partition 2 sqs) sqs)

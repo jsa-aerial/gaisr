@@ -60,7 +60,9 @@
   "\"Normalize\" elements in sequences by ensuring each character is
    mapped to its uppercase variant."
   [seqs]
-  (map str/upper-case seqs))
+  (if (string? seqs)
+    (str/upper-case seqs)
+    (map str/upper-case seqs)))
 
 
 (defn gap-percent

@@ -107,7 +107,7 @@
   "
   [n coll freq-fn]
   (let [freqs (freq-fn n coll)
-        sz (sum (vals freqs))
+        sz (double (sum (vals freqs)))
         probs (reduce (fn[m [k v]]
                         (assoc m k (double (/ v sz))))
                       {} freqs)]

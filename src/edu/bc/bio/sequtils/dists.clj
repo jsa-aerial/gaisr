@@ -414,16 +414,105 @@
 )
 
 
-(defn ffs-step [l-1 l-2]
+(defn expected-qdict [q-1 q-2 & {:keys [alpha] :or {alpha (alphabet :rna)}}]
   (reduce (fn[m lmer]
             (let [l (dec (count lmer))
                   x (subs lmer 1)
                   y (subs lmer 0 l)
                   z (subs lmer 1 l)]
-              (if (and (l-1 x) (l-1 y) (l-2 z))
-                (assoc m lmer (/ (* (l-1 x) (l-1 y)) (l-2 z)))
+              (if (and (q-1 x) (q-1 y) (q-2 z))
+                (assoc m lmer (/ (* (q-1 x) (q-1 y)) (q-2 z)))
                 m)))
-          {} (for [x (keys l-1) a "AGUC"] (str x a))))
+          {} (for [x (keys q-1) a alpha] (str x a)))))
+
+
+(defn freq-xdict-dict
+  [q sq]
+  (let [ext-sq (str sq "X")
+        residue-key (subs ext-sq (- (count sq) (- q 1)))
+        q-xfreq-dict (freqn q ext-sq)
+        q-freq-dict (dissoc q-xfreq-dict residue-key)]
+    [q-xfreq-dict q-freq-dict]))
+
+(defn q-1-dict
+  ([q-xdict]
+     (reduce (fn[m [k v]]
+               (let [l (count k)
+                     pre (subs k 0 (dec l))]
+                 (assoc m pre (+ (get m pre 0) v))))
+             {} q-xdict))
+  ([q sq]
+     (probs (dec q) sq)))
+
+(defn q1-xdict-dict
+  [q sq & {:keys [ffn] :or {ffn probs}}]
+  (let [[q-xfreq-dict q-freq-dict] (freq-xdict-dict q sq)
+        q-xpdf-dict (probs q-xfreq-dict)
+        q-pdf-dict (probs q-freq-dict)]
+    {:xfreq q-xfreq-dict :xpdf q-xpdf-dict
+     :freq q-freq-dict :pdf q-pdf-dict}))
+
+
+
+(defn reconstruct-dict
+  [l sq]
+  {:pre [(> l 2)]}
+  (let [q (dec l)
+        qmaps (q1-xdict-dict q sq)
+        [q-xdict q-dict] (map qmaps [:xpdf :pdf])
+        q-1dict (q-1-dict q-xdict)]
+    (expected-qdict q-dict q-1dict)))
+
+
+(defn max-qdict-entropy
+  [q & {:keys [alpha] :or {alpha (alphabet :rna)}}]
+  (let [base (count alpha)]
+    (* q (log2 base))))
+
+(defn informativity
+  ([q sq]
+     (- (max-qdict-entropy q) (entropy (probs q sq))))
+  ([q-dict]
+     (let [q (count (first (keys q-dict)))]
+       (- (max-qdict-entropy q) (entropy q-dict)))))
+
+
+(defn limit-entropy
+  [q|q-dict sq|q-1dict & {:keys [alpha] :or {alpha (alphabet :rna)}}]
+  {:pre [(or (and (integer? q|q-dict)
+                  (or (string? sq|q-1dict) (coll? sq|q-1dict)))
+             (and (map? q|q-dict) (map? sq|q-1dict)))]}
+
+  (if (map? q|q-dict)
+    (let [q-dict q|q-dict
+          q-1dict sq|q-1dict]
+      (/ (- (entropy q-dict) (entropy q-1dict))
+         (log2 (count alpha))))
+
+    (let [q q|q-dict
+          sq sq|q-1dict
+          lgcnt (log2 (count alpha))]
+      (if (= q 1)
+        (/ (entropy (probs 1 sq)) lgcnt)
+
+        (let [qmaps (q1-xdict-dict q sq)
+              [q-xdict q-dict] (map qmaps [:xpdf :pdf])
+              q-1dict (q-1-dict q-xdict)]
+          (if (< (count q-dict) (count q-1dict))
+            :UNDEFINED ; Exception seems blunt, -1??
+            (/ (- (entropy q-dict) (entropy q-1dict)) lgcnt)))))))
+
+
+(defn limit-informativity
+  ([q sq]
+     )
+  ([q-dict]
+     ))
+
+
+
+
+
 
 (defn CREl [l sq limit]
   {:pre [(> l 2)]}
@@ -441,4 +530,5 @@
         (recur (inc k)
                (inc l)
                (+ sm KL))))))
+
 

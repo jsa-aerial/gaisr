@@ -465,7 +465,7 @@
                   s (if (< s e) s e)
                   e (if (= s e) x e)]
               (assoc m nm (conj (get m nm []) [s e]))))
-          {} (map #(first (str/split #" " %))
+          {} (map #(first (str/split #"\s+" %))
                   (filter #(re-find #"^N(C|S|Z)" %) stofile-lazyseq))))
 
 (defn get-cmfinder-sto-locs [stofile-lazyseq]
@@ -476,7 +476,7 @@
                   s (Integer. s)
                   e (Integer. e)]
               (assoc m nm (conj (get m nm []) [s e]))))
-          {} (map #(second (str/split #" +" %))
+          {} (map #(second (str/split #"\s+" %))
                   (filter #(re-find #"DE" %) stofile-lazyseq))))
 
 (defn get-infernal-sto-locs [stofile-lazyseq]
@@ -490,7 +490,7 @@
                   s (if (< s e) s e)
                   e (if (= s e) x e)]
               (assoc m nm (conj (get m nm []) [s e]))))
-          {} (map #(first (str/split #" " %))
+          {} (map #(first (str/split #"\s+" %))
                (filter #(re-find #"^N(C|S|Z)" %) stofile-lazyseq))))
 
 (defn get-sto-seq-locs [stofile]
@@ -502,7 +502,7 @@
                   (re-find #"ORIGINAL_MOTIF" fmt-line) :generic
                   :else (raise :type :unknown-sto-fmt
                                :args [stofile fmt-line]))
-        rem-file (drop 2 stofile-lazyseq)]
+        rem-file (drop-until #(not (.startsWith % "#")) stofile-lazyseq)]
     (case file-fmt
           :cmfinder (get-cmfinder-sto-locs rem-file)
           :infernal (get-infernal-sto-locs rem-file)

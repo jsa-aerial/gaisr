@@ -48,7 +48,7 @@
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
-        [edu.bc.bio.seq-utils :only [degap-seqs]]
+        [edu.bc.bio.seq-utils :only [norm-elements degap-seqs]]
         edu.bc.bio.sequtils.files
         [clojure.contrib.condition
          :only (raise handler-case *condition* print-stack-trace)]
@@ -169,6 +169,93 @@
 ;;; This takes such stos and regens them with coordinates matching the
 ;;; seqs.
 ;;;
+
+(defn genome-seq-dup?
+  [coord1 coord2 & {:keys [cutoff] :or {cutoff 0.8}}]
+
+  (let [coord-pat #"([0-9]+)-([0-9]+)"
+        [s1 e1] (map #(Integer. %) (rest (re-find coord-pat coord1)))
+        sd1 (last (str/split #"/" coord1))
+        [s2 e2] (map #(Integer. %) (rest (re-find coord-pat coord2)))
+        sd2 (last (str/split #"/" coord2))]
+    (cond
+     (not= sd1 sd2) ; strands different
+     false
+
+     (or (< s1 s2 e2 e1) (< s2 s1 e1 e2))  ; total overlap
+     true
+
+     (or (< e1 s2) (< e2 s1)) ; 0 overlap
+     false
+
+     :else
+     (let [l1 (inc (- e1 s1))
+           l2 (inc (- e2 s2))
+           lavg (/ (+ l1 l2) 2.0)
+           overlap (inc (if (<= s1 s2) (- e1 s2) (- e2 s1)))]
+       [l1 l2 lavg overlap (/ overlap lavg)
+        (not (neg? overlap))
+        (>= (/ overlap lavg) cutoff)]))))
+
+(defn get-blast-id-info-new
+  [blast-output-file]
+  (reduce
+   (fn[m x]
+     (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))
+           ev (Double. (nth x 3))]
+       (if (and (= (second x) "1")
+                (str/substring? nm (nth x 4))
+                ;; somewhat arbitrary, but real examples should
+                ;; have very low evalues
+                (< ev 1e-05))
+         (let [s (Integer. (nth x 5))
+               e (Integer. (nth x 6))
+               [s e sd] (if (> s e) [e s -1] [s e 1])
+               entry (str nm "/" s "-" e "/" sd)
+               sq (if (not (re-find #"^NC" entry))
+                    "Non NC_* unavailable"
+                    (second (gen-name-seq entry)))]
+           (assoc m nm (conj (get m nm [])
+                             [(str "/" s "-" e "/" sd) sq])))
+         m)))
+   {} (butlast (csv/parse-csv (slurp blast-output-file)))))
+
+(defn filter-base-hits-to-most-likely
+  [blast-output-file]
+  (into {} ; Place in set where keys are names and val is vec of coord/sq pairs
+        (for [[nm info] (get-blast-id-info-new blast-output-file)]
+          [nm (vec (let [combos (combins 2 info)]
+                     (if combos
+                       (reduce (fn [m [[c1 sq1] [c2 sq2]]]
+                                 (if (genome-seq-dup? c1 c2)
+                                   (let [e1 (get m c1)
+                                         e2 (get m c2)]
+                                     (if (and e1 e2) (dissoc m c2) m))
+                                   ;;else, yes we may overwrite same
+                                   ;;entry with same value a few times
+                                   (assoc (assoc m c1 sq1) c2 sq2)))
+                               {} combos)
+                       info)))])))
+
+(defn entry-aln-sqs
+  [id-info idseq]
+  (let [[good bad]
+        (reduce (fn[[good bad] [nm coord aln-sq]]
+                  (if-let [info (get id-info nm)]
+                    (let [base-sq (norm-elements (degap-seqs aln-sq))
+                          match-coord (some #(when (= (second %) base-sq)
+                                               (first %))
+                                            info)]
+                      (if match-coord
+                        [(assoc good (str nm match-coord)
+                                [match-coord coord aln-sq])
+                         bad]
+                        [good (assoc bad (str nm coord) aln-sq)]))
+                     [good (assoc bad (str nm coord) aln-sq)]))
+                [{} {}] idseq)]
+    [(sort-by key good) (sort-by key bad)]))
+
+
 (defn correct-sto-coordinates
   ""
   ([stoin]
@@ -184,61 +271,35 @@
            misc (str "-seqidlist " ids " -perc_identity 100.0")
            blastout (blast :blastn fna :strand :both :misc misc)
 
-           id-info
-           (first (reduce
-                   (fn[[m evm] x]
-                     (let [nm (re-find #"^[A-Za-z_0-9]+" (first x))
-                           ev (Double. (nth x 3))]
-                       (if (and (= (second x) "1")
-                                (str/substring? nm (nth x 4))
-                                (< ev (get evm nm 1.0)))
-                         (let [s (nth x 5)
-                               e (nth x 6)
-                               [s e sd] (if (> (Integer. s) (Integer. e))
-                                          [e s "-1"]
-                                          [s e "1"])]
-                           [(assoc m nm (str "/" s "-" e "/" sd))
-                            (assoc evm nm ev)])
-                         [m evm])))
-                   [{} {}] (butlast (csv/parse-csv (slurp blastout)))))
+           id-info (filter-base-hits-to-most-likely blastout)
 
-           good (sort-by
-                 key
-                 (reduce
-                  (fn[m [nm _ nsq]]
-                    (if-let [v (get id-info nm)]
-                      (let [k (str nm v)
-                            cursq (get m k "")
-                            sq (if (< (-> cursq degap-seqs count)
-                                      (-> nsq degap-seqs count))
-                                 nsq
-                                 cursq)]
-                        (assoc m k sq))
-                      m))
-                  {} idseq))
+           [good bad] (entry-aln-sqs id-info idseq)
 
            bad-file (fs/replace-type stoin "-bad.txt")
-           bad (keep (fn[[nm coord sq]]
-                       (when (not (get id-info nm))
-                         [nm coord sq
-                          (str/replace-re #"[.-]" "" sq)
-                          (if (not (re-find #"^NC" nm))
-                            "Non NC_* sequences not currently available"
-                            (-> (str nm coord) gen-name-seq second))]))
-                     idseq)
+           bad (keep (fn[[nm-coord aln-sq]]
+                       (let [nm (first (str/split #"/" 2 nm-coord))
+                             fna (fs/join default-genome-fasta-dir
+                                          (str nm ".fna"))
+                             degapped (degap-seqs aln-sq)
+                             actual (if (not (fs/exists? fna))
+                                      "Non current NC_* sequences unavailable"
+                                      (-> nm-coord gen-name-seq second))
+                             dup? (= (norm-elements degapped) actual)]
+                         [nm-coord aln-sq degapped actual dup?]))
+                     bad)
 
            diff-file (fs/replace-type stoin "-diffs.txt")
-           diffs (keep (fn[[nm coord]]
-                         (when-let [v (get id-info nm)]
-                           (when (not= coord v)
-                             [nm coord v])))
-                       idseq)
-           sto-n-orig-line (take 2 (io/read-lines stoin))]
+           diffs (keep (fn[[nm-coord [ncoord ocoord aln-sq]]]
+                         (when (not= ncoord ocoord)
+                           [nm-coord ocoord]))
+                       good)
+           sto-n-orig-line (take 3 (io/read-lines stoin))]
 
        (io/with-out-writer newsto
          (println (first sto-n-orig-line))
-         (println (second sto-n-orig-line) "\n")
-         (doseq [[idi sq] good]
+         (println (second sto-n-orig-line))
+         (println (third sto-n-orig-line) "\n")
+         (doseq [[idi [_ _ sq]] good]
            (cl-format true "~A~40T~A~%" idi sq))
          (doseq [gcline (filter #(.startsWith % "#")
                                 (first (sto-GC-and-seq-lines stoin)))]
@@ -250,15 +311,16 @@
 
        (when (seq diffs)
          (io/with-out-writer diff-file
-           (doseq [[nm coord newcoord] diffs]
-             (println (str nm coord) " --> " (str nm newcoord)))))
+           (doseq [[nm-coord ocoord] diffs]
+             (let [nm (first (str/split #"/" nm-coord))]
+               (println (str nm ocoord) " --> " nm-coord)))))
 
        (when (seq bad)
          (io/with-out-writer bad-file
-           (doseq [[nm coord gapped degapped actual] bad]
-             (println (str nm coord) "\n"
+           (doseq [[nm-coord gapped degapped actual dup?] bad]
+             (println nm-coord (if dup? "is DUP!" "") "\n"
                       gapped "\n" degapped "\n"
-                      actual))))
+                      actual "\n"))))
 
        (when (fs/exists? ids) (io/delete-file ids))
        (when (fs/exists? blastout) (io/delete-file blastout))

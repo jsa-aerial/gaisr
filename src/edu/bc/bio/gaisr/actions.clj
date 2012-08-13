@@ -256,10 +256,13 @@
              (+ os sqcnt)
              oe)
 
+        [ld rd] (if (= sd "1") [ld rd] [rd ld]) ; flip for coord computation
         s (- os (if (neg? ld) (+ ld (gap-count (str/take (- ld) sq))) ld))
         e (+ oe (if (neg? rd) (+ rd (gap-count (str/drop (+ sqcnt rd) sq))) rd))
         s (if (neg? s) 1 s) ; check for bad ld forcing falling off front
+        [ld rd] (if (= sd "1") [ld rd] [rd ld]) ; flip back for seq subs
 
+        zero-pos? #(>= % 0)
         prefixfn #(if (= s os)
                     ""
                     (gen-name-seq
@@ -267,24 +270,27 @@
         suffixfn #(if (= oe e)
                     ""
                     (gen-name-seq
-                            (str/join "/" [nm (str (inc oe) "-" e) sd])))
+                     (str/join "/" [nm (str (inc oe) "-" e) sd])))
+
         sq (cond
-            (and (pos? ld) (pos? rd))
+            (and (zero-pos? ld) (zero-pos? rd))
             (let [[_ lssq] (prefixfn)
-                  [_ rssq] (suffixfn)]
+                  [_ rssq] (suffixfn)
+                  [lssq rssq] (if (= sd "1") [lssq rssq] [rssq lssq])]
               (str lssq sq rssq))
 
-            (and (pos? ld) (neg? rd))
-            (let [[_ lssq] (prefixfn)
+            (and (zero-pos? ld) (neg? rd))
+            (let [[_ lssq] (if (= sd "1") (prefixfn) (suffixfn))
                   rssq (str/butlast (abs rd) sq)]
               (str lssq rssq))
 
             (and (neg? ld) (neg? rd))
             (subs sq (abs ld) (+ sqcnt rd))
 
-            (and (neg? ld) (pos? rd))
-            (let [[_ rssq] (suffixfn)]
-              (str (subs sq (abs ld)) rssq)))]
+            (and (neg? ld) (zero-pos? rd))
+            (let [[_ rssq] (if (= sd "1") (suffixfn) (prefixfn))
+                  lssq (subs sq (abs ld))]
+              (str lssq rssq)))]
 
     [(str/join "/" [nm (str s "-" e) sd]) sq]))
 
@@ -472,9 +478,9 @@
 
       (= upload-type "get-seqs")
       (let [deltas (map #(if (string? %) (Integer. %) %) (args :misc))
-	    ftype (fs/ftype filename)
-	    tmp-file (fs/replace-type (.getPath upload-file) (str "." ftype))]
-	(fs/rename (.getPath upload-file) tmp-file)
+            ftype (fs/ftype filename)
+            tmp-file (fs/replace-type (.getPath upload-file) (str "." ftype))]
+        (fs/rename (.getPath upload-file) tmp-file)
         (remote-gen-name-seqs user filename tmp-file deltas))
 
       (= upload-type "run-config")

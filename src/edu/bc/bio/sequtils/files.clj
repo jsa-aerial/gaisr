@@ -70,7 +70,8 @@
          (or (not (.startsWith % "#"))
              (or (.startsWith % "#=GC SS_cons")
                  (.startsWith % "#=GC RF"))))
-   (io/read-lines (fs/fullpath stofilespec))))
+   (filter #(not= (str/replace-re #"\s+" "" %) "")
+           (io/read-lines (fs/fullpath stofilespec)))))
 
 
 (defn join-sto-fasta-lines [infilespec origin]
@@ -190,7 +191,11 @@
       alnout)))
 
 
-(declare read-seqs)
+;;; Forward declarations...
+(declare
+ read-seqs
+ entry-parts)
+
 (defn sto->fna
   "Convert a sto file into a fasta file.  Split seq lines into names
    and seq data and interleave these.  Seq data has all gap characters
@@ -234,12 +239,19 @@
         check-len (fn [[n s]]
                     [n (= (count s) (count cl))])
 
+        ;; Check for valid entry formats.  Defined as parseable by
+        ;; entry-parts
+        check-entry (fn [[n _]]
+                      [n (not (vector? (-> n entry-parts catch-all)))])
+
         chks [["sequence contains invalid character in: "
                (map first (remove #(second %) (map #(check-char %) sl)))]
               ["sequence is repeated - two or more times with same name: "
                (map first (filter #(second %) (map #(check-double-len %) sl)))]
               ["sequence contains invalid length compared to cons-line in: "
                (map first (remove #(second %) (map #(check-len %) sl)))]
+              ["sequence line has invalid entry - not parseable: "
+               (map first (remove #(not (second %)) (map #(check-entry %) sl)))]
               ["consensus structure contains invalid character"
                (if-let [x (second (check-char ["#SS_cons" cl]))]
                  ()
@@ -575,7 +587,9 @@
   (let [type (fs/ftype filespec)
         f   (seqline-info-mapper type info)
         ;;sqs (str/split-lines (slurp filespec)) ; <-- NOT LAZY!!
-        sqs (io/read-lines filespec)
+        sqs (filter #(let [l (str/replace-re #"^\s+" "" %)]
+                       (and (not= l "") (not (.startsWith l "#"))))
+                    (io/read-lines filespec))
         sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
         sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
         sqs (if (in type ["fna" "fa"]) (partition 2 sqs) sqs)

@@ -105,6 +105,9 @@
         getf (fn[m k l]
                (assoc m k (str/trim
                            (second (str/split #": *" l)))))]
+
+    ;; Basically a simple state machine.  Not quite an FSA as there is
+    ;; some memory involved. But no stack either.
     (reduce
      (fn[m l]
        (condp #(re-find %1 %2) l

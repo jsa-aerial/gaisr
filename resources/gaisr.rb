@@ -325,9 +325,9 @@ def display_help (cmd)
     puts ""
     puts "  Gaps are treated as characters and counted in terms of trimming the"
     puts "  sequences (removal of characters from either end), but are not"
-    puts "  counted in adjusting the corresponding entry's coordindates.  So,"
+    puts "  counted in adjusting the corresponding entry's coordinates.  So,"
     puts "  the count of non gap characters in the trimmed subsequence is used"
-    puts "  to compute the new coordinates that macth the trimmed sequence."
+    puts "  to compute the new coordinates that match the trimmed sequence."
 
   when "correct-sto-coordinates"
     puts "Takes a sto file, and for each entry/sequence pair, determines if the"

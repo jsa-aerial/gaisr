@@ -478,7 +478,8 @@
 
 
 (defn limit-entropy
-  [q|q-dict sq|q-1dict & {:keys [alpha] :or {alpha (alphabet :rna)}}]
+  [q|q-dict sq|q-1dict &
+   {:keys [alpha NA] :or {alpha (alphabet :rna) NA -1.0}}]
   {:pre [(or (and (integer? q|q-dict)
                   (or (string? sq|q-1dict) (coll? sq|q-1dict)))
              (and (map? q|q-dict) (map? sq|q-1dict)))]}
@@ -499,7 +500,7 @@
               [q-xdict q-dict] (map qmaps [:xpdf :pdf])
               q-1dict (q-1-dict q-xdict)]
           (if (< (count q-dict) (count q-1dict))
-            :UNDEFINED ; Exception seems blunt, -1??
+            (if (fn? NA) (NA q-dict q-1dict) NA)
             (/ (- (entropy q-dict) (entropy q-1dict)) lgcnt)))))))
 
 
@@ -510,25 +511,67 @@
      ))
 
 
-
-
-
-
-(defn CREl [l sq limit]
+(defn CREl [l sq & {:keys [limit] :or {limit 15}}]
   {:pre [(> l 2)]}
-  (loop [k 1
-         l l
-         sm 0]
-    (if (>= k limit)
-      sm
-      (let [l-1 (probs (- l 1) sq)
-            l-2 (probs (- l 2) sq)
-            P (probs l sq)
-            Q (ffs-step l-1 l-2)
-            KL (catch-all (DX||Y P Q))]
-        ;;(prn KL)
-        (recur (inc k)
-               (inc l)
-               (+ sm KL))))))
+  (sum (fn[k]
+         (catch-all (DX||Y
+                     (probs k sq)
+                     (reconstruct-dict k sq))))
+       (range l (inc limit))))
 
 
+(defn xxxx []
+  )
+
+
+#_(def sample-metag-cres
+     (->> (fs/directory-files "/data2/Bio/MetaG1/FastaFiles" ".fa")
+          first read-seqs
+          (take 20)
+          (map #(pxmap (fn[k] [k (CREl k %) (count %)]) 2 (range 3 16)))))
+
+#_(doseq [cres (take 3 sample-metag-cres)]
+  (let [ks (map first cres)
+        cnt (third (first cres))
+        cres (map second cres)]
+    (incanter.core/view (incanter.charts/scatter-plot
+                         ks cres
+                         :x-label "feature length"
+                         :y-label "Commulative Relative Entropy"
+                         :title (str "CRE(l, F/F^), len: " cnt
+                                     " Fmax: " (round (ln cnt)))))))
+
+#_(doseq [cres foocres]
+  (let [ks (map first cres)
+        cnt (third (first cres))
+        cres (map second cres)]
+    (incanter.core/view (incanter.charts/scatter-plot
+                         ks cres
+                         :x-label "feature length"
+                         :y-label "Commulative Relative Entropy"
+                         :title (str "CRE(l, F/F^), len: " cnt
+                                     " Fmax: " (round (ln cnt)))))))
+
+#_(def count-map
+     (reduce (fn[m file]
+               (reduce (fn[m sq]
+                         (let [cnt (count sq)]
+                           (assoc m cnt (inc (get m cnt 0)))))
+                       m (read-seqs file)))
+             {} (fs/directory-files "/data2/Bio/MetaG1/FastaFiles" ".fa")))
+
+
+#_(def count-maps
+       (map #(do [(fs/basename %)
+                  (reduce (fn[m sq]
+                            (let [cnt (count sq)]
+                              (assoc m cnt (inc (get m cnt 0)))))
+                          {} (read-seqs %))])
+            (fs/directory-files "/data2/Bio/MetaG1/FastaFiles" ".fa")))
+
+#_(sort-by
+   first
+   (map #(do [(first %) (->> % second (sort-by first >)
+                             ((fn[sq]
+                                [(take 5 sq) (drop (- (count sq) 5) sq)])))])
+        count-maps))

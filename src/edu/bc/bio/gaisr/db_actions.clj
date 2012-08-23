@@ -3,7 +3,7 @@
 ;;                            D B - A C T I O N S                           ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -73,7 +73,7 @@
         ds)))
 
 
-(defn sql-query [stmt & {f :f p :p :or {f identity p false}}]
+(defn sql-query [stmt & {:keys [f p] :or {f identity p false}}]
   (when p (println stmt))
   (sql/with-connection mysql-ds
     (sql/with-query-results qresults [stmt]
@@ -243,7 +243,7 @@
            and loc.end_pos between /spre/ and /epost/)")
 
 
-;;; For a given bioentry (organism) + "hit" start..end subseq location
+;;; For a given bioentry (genome) + "hit" start..end subseq location
 ;;; on its genome (as obtained by some "comparison" method to a
 ;;; candidate sequence), obtain the feature sets by location
 ;;; constraints.  The location constraints are (- start +start-delta+)
@@ -258,8 +258,6 @@
         end (str end)
         subtable (str/replace-re #"/xxx/" entry-name seqfeature-subtable)
         subtable (str/replace-re #"/spre/" spre subtable)
-        ;;subtable (str/replace-re #"/sss/" start subtable)
-        ;;subtable (str/replace-re #"/eee/" end subtable)
         subtable (str/replace-re #"/epost/" epost subtable)
         fields (str "sfqv.seqfeature_id, "
                     "x.type_term_id, x.name as sftype, "

@@ -520,8 +520,36 @@
        (range l (inc limit))))
 
 
-(defn xxxx []
-  )
+(defn information-capacity
+  [q sq & {:keys [cmpfn] :or {cmpfn jensen-shannon}}]
+  (catch-all (cmpfn (probs q sq)
+                    (reconstruct-dict q sq))))
+
+
+(defn hybrid-dictionay
+  [l sqs & {:keys [par] :or {par 1}}]
+  {:pre [(or (string? sqs) (coll? sqs))]}
+  (let [sqs (degap-seqs (if (coll? sqs) sqs (read-seqs sqs)))
+        cnt (count sqs)
+        dicts (pxmap #(probs l %) par sqs)
+        Omega (apply set/union (map #(-> % keys set) dicts))
+        hybrid (reducem (fn[k d] {k (get d k 0)})
+                        #(merge-with + %1 %2)
+                        Omega dicts)]
+    (reduce (fn[m [k v]] (assoc m k (double (/ v cnt))))
+            {} hybrid)))
+
+
+#_(let [l 6
+      name-seqs (->> "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv" edu.bc.bio.gaisr.post-db-csv/get-entries
+                     (keep (fn[[nm s e & _]]
+                             (when (fs/exists? (fs/join default-genome-fasta-dir (str nm ".fna")))
+                               (str nm "/" (if (> (Integer. s) (Integer. e)) (str e "-" s "/-1") (str s "-" e "/1"))))))
+                     (pxmap gen-name-seq 10))
+      sqs (map second name-seqs)
+      hd (hybrid-dictionay l sqs :par 10)
+      dicts (pxmap #(probs l %) 10 sqs)]
+  (pxmap #(jensen-shannon % hd) 10 dicts))
 
 
 #_(def sample-metag-cres
@@ -534,12 +562,13 @@
   (let [ks (map first cres)
         cnt (third (first cres))
         cres (map second cres)]
-    (incanter.core/view (incanter.charts/scatter-plot
-                         ks cres
-                         :x-label "feature length"
-                         :y-label "Commulative Relative Entropy"
-                         :title (str "CRE(l, F/F^), len: " cnt
-                                     " Fmax: " (round (ln cnt)))))))
+    (incanter.core/view
+     (incanter.charts/scatter-plot
+      ks cres
+      :x-label "feature length"
+      :y-label "Commulative Relative Entropy"
+      :title (str "CRE(l, F/F^), len: " cnt
+                  " Fmax: " (round (ln cnt)))))))
 
 #_(doseq [cres foocres]
   (let [ks (map first cres)
@@ -575,3 +604,41 @@
                              ((fn[sq]
                                 [(take 5 sq) (drop (- (count sq) 5) sq)])))])
         count-maps))
+
+
+#_(doseq [cres (map #(pxmap (fn[k] [k (CREl k %) (count %)]) 4 (range 3 16))
+                  (->> "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv"
+                       edu.bc.bio.gaisr.post-db-csv/get-entries
+                       (keep (fn[[nm s e & _]]
+                               (when (fs/exists? (fs/join default-genome-fasta-dir (str nm ".fna")))
+                                 (str nm "/" (if (> (Integer. s) (Integer. e)) (str e "-" s "/-1") (str s "-" e "/1"))))))
+                       gen-name-seq-pairs
+                       (map second)
+                       (take 7)))]
+  (let [ks (map first cres)
+        cnt (third (first cres))
+        cres (map second cres)
+        Fmax (round (ln cnt))]
+    (incanter.core/view
+     (incanter.charts/scatter-plot
+      ks cres
+      :x-label "feature length"
+      :y-label "Commulative Relative Entropy"
+      :title (str "CRE(l, F/F^), len: " cnt
+                  " Fmax: " Fmax)))))
+
+
+#_(doseq [cres (map #(pxmap (fn[k] [k (CREl k %) (count %)]) 4 (range 3 16)) jsa)]
+  (let [ks (map first cres)
+        cnt (third (first cres))
+        cres (map second cres)
+        Fmax (round (ln cnt))]
+    (incanter.core/save
+     (incanter.charts/scatter-plot
+      ks cres
+      :x-label "feature length"
+      :y-label "Commulative Relative Entropy"
+      :title (str "CRE(l, F/F^), len: " cnt
+                  " Fmax: " Fmax))
+     (fs/join "/home/jsa/Bio/MetaGenome/Charts"
+              (str "CREl-" cnt "-fmax-" Fmax ".png")))))

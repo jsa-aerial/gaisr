@@ -145,6 +145,7 @@
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00003.sto")
 
+
 (defn- insert-genome-rnahits
   [values]
   (sql-update
@@ -179,6 +180,8 @@
               genome-groups))))
 
 #_(update-genome-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
+#_(update-genome-rnahit "/home/kaila/Bio/Tests/JSA/RNA_00006.sto")
+
 
 #_(map :name (sql-query "select name from rnahit"))
 
@@ -226,20 +229,71 @@
     (sql-query stmt)))
 
 
-(comment
-  (count-genomes "Firmicutes")
-  (count-genomes "Bacteria")
-  (count-genomes "Vibrionales")
-  (count-genomes "Enterobacteriales")
-  (count-genomes "endosymbiont")
+(defn get-ncs-by-taxon-rna-gene
+  "For TAXON (a single string naming a taxon or a collection of such
+   strings) and for the options RNA and/or GENE return a collection
+   comprised of [tx rn ncs] or [tx gn ncs] or [tx rn gn ncs], where:
 
-  (count-genomes "Firmicutes" :new-rnas true)
-  (count-genomes "Bacteria" :new-rnas true)
-  (count-genomes "Vibrionales" :new-rnas true)
-  (count-genomes "Enterobacteriales" :new-rnas true)
-  (count-genomes "endosymbiont" :new-rnas true)
-  )
+   * Collection contains only one of these element types
 
+   * tx is one of TAXON
+
+   * rn is a new rna name (eg, \"rna_00001\")
+
+   * gn is a gene name (eg, \"rplA\"
+
+   * ncs is a collection of NC* genome names
+  "
+
+  [taxon & {:keys [rna gene] :or {rna nil gene nil}}]
+  {:pre [(or (string? rna) (string? gene))]}
+  (for [taxon (ensure-vec taxon)
+        :let [stmt "select be.name,rh.name as rna, rh.gene_name as gene
+                           from bioentry as be,
+                                ancestor as an,
+                                taxon as tx,
+                                rnahit as rh,
+                                genome_rnahit as grh "
+              stmt (str stmt "where "
+                             "rh.rnahit_id=grh.rnahit_id "
+                             (if rna (str "and rh.name=\"" rna "\" ") "")
+                             (if gene (str "and rh.gene_name=\"" gene "\" ") "")
+                             "and   grh.bioentry_id=be.bioentry_id
+                              and   be.taxon_id=tx.taxon_id
+                              and   tx.ncbi_taxon_id=an.ncbi_taxon_id
+                              and   an.ancestors regexp \"")
+              stmt (str stmt taxon "\"")
+              ;;_ (println stmt)
+              result (sql-query stmt)
+              ncs (map :name result)
+              rnas (map :rna result)
+              rnas-ncs (reduce (fn[m e]
+                                 (let [k (:rna e)
+                                       v (:name e)]
+                                   (assoc m k (conj (get m k []) v))))
+                               {} result)
+              genes-ncs (reduce (fn[m e]
+                                 (let [k (:gene e)
+                                       v (:name e)]
+                                   (assoc m k (conj (get m k []) v))))
+                               {} result)]]
+    (cond
+     (and rna gene) [taxon rna gene ncs]
+     gene [taxon gene rnas-ncs]
+     rna [taxon rna genes-ncs])))
+
+
+(defn print-ncs-by-taxon
+  [coll]
+  (if (= (count (first coll)) 4)
+    (doseq [[taxon rn gn ncs] coll]
+      (println (str/join ", " [taxon rn gn]) ":\n")
+      (doseq [nc ncs] (println (str "    " nc))))
+    (doseq [[taxon x ncs] coll]
+      (println "\n" (str/join ", " [taxon x]) ":\n")
+      (doseq [[n vs] ncs]
+        (println (str "    " n " -> "))
+        (doseq [v vs] (println (str "        " v)))))))
 
 
 (def bacterial-taxons-of-note
@@ -255,10 +309,35 @@
       "Acidobacteria" "Archaea" "Buchnera" "Blochmannia"
       "Wigglesworthia" "endosymbiont" "Xenorhabdus"])
 
-(def bacterial-taxons-of-note-other
-     ["Oceanospirillales" "Buchnera" "Blochmannia"
-      "Wigglesworthia" "endosymbiont" "Xenorhabdus"])
+(def sorted-bacterial-taxons-of-note
+     ["Acidobacteria" "Actinobacteria" "Aeromonadales" "Alphaproteobacteria"
+      "Alteromonadales" "Aquificae" "Archaea" "Bacilli" "Bacteroidetes"
+      "Betaproteobacteria" "Blochmannia" "Buchnera" "Chlamydiae" "Chlorobi"
+      "Chloroflexi" "Chromatiales" "Clostridia" "Cyanobacteria" "Deinococci"
+      "Deltaproteobacteria" "Enterobacteriales" "Epsilonproteobacteria"
+      "Erysipelotrichi" "Firmicutes" "Fusobacteria" "Gammaproteobacteria"
+      "Legionellales" "Legionellales" "Methylococcales" "Negativicutes"
+      "Oceanospirillales" "Pasteurellales" "Pseudomonadales" "Spirochaetes"
+      "Tenericutes" "Thermotogae" "Thiotrichales" "Verrucomicrobia"
+      "Vibrionales" "Wigglesworthia" "Xanthomonadales" "Xenorhabdus"
+      "endosymbiont"])
 
+
+
+
+(comment
+  (count-genomes "Firmicutes")
+  (count-genomes "Bacteria")
+  (count-genomes "Vibrionales")
+  (count-genomes "Enterobacteriales")
+  (count-genomes "endosymbiont")
+
+  (count-genomes "Firmicutes" :new-rnas true)
+  (count-genomes "Bacteria" :new-rnas true)
+  (count-genomes "Vibrionales" :new-rnas true)
+  (count-genomes "Enterobacteriales" :new-rnas true)
+  (count-genomes "endosymbiont" :new-rnas true)
+  )
 
 
 
@@ -283,7 +362,6 @@
     (println (str/join ", " grp)))
 
 
-
 #_(sort-by
    second
    (map
@@ -299,3 +377,47 @@
 
 #_(sql-query
    "select * from bioentry where name=\"NC_000925\"")
+
+
+#_(sql-query
+   "select be.name,an.ancestors
+           from bioentry as be, taxon as tx, ancestor as an
+           where be.taxon_id=tx.taxon_id
+           and   tx.ncbi_taxon_id=an.ncbi_taxon_id
+           and   an.ancestors regexp \"Leuconostoc\"
+           and   be.name regexp \"^NC\"")
+
+
+
+#_(print-ncs-by-taxon
+   (get-ncs-by-taxon-rna-gene
+    ["Deltaproteobacteria" "Epsilonproteobacteria"
+     "Alphaproteobacteria" "Betaproteobacteria"]
+    :rna "rna_00007"))
+
+#_(print-ncs-by-taxon
+   (get-ncs-by-taxon-rna-gene
+    ["Tenericutes" "Thermotogae" "Fusobacteria" "Chloroflexi"
+     "Cyanobacteria" "Verrucomicrobia/Chlamydia" "Deinococci"
+     "Bacteroidetes" "Chlorobi"]
+    :gene "rplA"))
+
+#_(let [ncs (-> (get-ncs-by-taxon-rna-gene "Firmicutes" :gene "rplA")
+                first third
+                (get "rna_00007")
+                (#(reduce (fn[m nm] (assoc m nm nm)) {} %)))]
+    (->> (read-seqs "/home/kaila/Bio/Tests/RNA_00007.sto" :info name)
+         (map entry-parts)
+         (map first)
+         (filter #(get ncs %))
+         (reduce (fn [m nm]
+                   (assoc m nm (inc (get m nm 0))))
+                 {})
+         (group-by #(val %))
+         (#(do [(map first (% 1)) (map first (% 2))]))
+         ((fn[[ones twos]]
+            (let [one-cnt (count ones)
+                  two-cnt (count twos)
+                  total (+ one-cnt two-cnt)]
+              (/ two-cnt total))))))
+

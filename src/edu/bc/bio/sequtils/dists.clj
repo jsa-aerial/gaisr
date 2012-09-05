@@ -526,7 +526,7 @@
                     (reconstruct-dict q sq))))
 
 
-(defn hybrid-dictionay
+(defn hybrid-dictionary
   [l sqs & {:keys [par] :or {par 1}}]
   {:pre [(or (string? sqs) (coll? sqs))]}
   (let [sqs (degap-seqs (if (coll? sqs) sqs (read-seqs sqs)))
@@ -540,16 +540,83 @@
             {} hybrid)))
 
 
-#_(let [l 6
-      name-seqs (->> "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv" edu.bc.bio.gaisr.post-db-csv/get-entries
-                     (keep (fn[[nm s e & _]]
-                             (when (fs/exists? (fs/join default-genome-fasta-dir (str nm ".fna")))
-                               (str nm "/" (if (> (Integer. s) (Integer. e)) (str e "-" s "/-1") (str s "-" e "/1"))))))
-                     (pxmap gen-name-seq 10))
-      sqs (map second name-seqs)
-      hd (hybrid-dictionay l sqs :par 10)
-      dicts (pxmap #(probs l %) 10 sqs)]
-  (pxmap #(jensen-shannon % hd) 10 dicts))
+
+
+#_(def *sto-hybrid-s4-0712*
+     (let [l 7
+           name-seqs (->> "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv" edu.bc.bio.gaisr.post-db-csv/get-entries
+                          (keep (fn[[nm s e & _]]
+                                  (when (fs/exists? (fs/join default-genome-fasta-dir (str nm ".fna")))
+                                    (str nm "/" (if (> (Integer. s) (Integer. e)) (str e "-" s "/-1") (str s "-" e "/1"))))))
+                          (pxmap gen-name-seq 10))
+           names (map first name-seqs)
+           sqs (map second name-seqs)
+           sqs-hd (hybrid-dictionary l sqs :par 10)
+           refsqs (->> (read-seqs "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto") degap-seqs)
+           sto-hd (hybrid-dictionary l refsqs :par 10)
+           dicts (pxmap #(probs l %) 10 sqs)
+           ;;sqsds (sort (pxmap #(DX||Y % sqs-hd) 10 dicts))
+           stods (pxmap #(DX||Y % sto-hd) 10 dicts)
+           nms-stods (sort-by second (map (fn[nm d] [nm d]) names stods))
+           xs (range (count sqs))
+           chart (incanter.charts/scatter-plot
+                  xs (map second nms-stods)
+                  :x-label "Sequence"
+                  :y-label "RE to Hybrid"
+                  :title (str "Sto to Hybrid, Resolution: " l))
+           ;;chart (incanter.charts/add-points chart xs sqsds)
+           ]
+       (incanter.core/view chart)
+       nms-stods))
+
+
+##_(def *sto-hybrid-s4-0712-wctx*
+     (let [l 7
+           delta 5000
+           names (->> "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv"
+                      edu.bc.bio.gaisr.post-db-csv/get-entries
+                      (keep (fn[[nm s e & _]]
+                              (when (fs/exists? (fs/join default-genome-fasta-dir (str nm ".fna")))
+                                (str nm "/" (if (> (Integer. s) (Integer. e)) (str e "-" s "/-1") (str s "-" e "/1")))))))
+           name-seqs (->> names
+                          (pxmap entry-parts 10)
+                          (keep (fn[[nm [s e] sd]]
+                                  (let [s (- s delta) s (if (<= s 0) 1 s) e (+ e delta)]
+                                    (str nm "/" (if (> s e) (str e "-" s "/-1") (str s "-" e "/1"))))))
+                          (pxmap gen-name-seq 10))
+           sqs (map second name-seqs)
+           sqs-hd (hybrid-dictionary l sqs :par 10)
+           refsqs (->> (read-seqs "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_0712.sto" :info :name)
+                       (pxmap entry-parts 10)
+                       (pxmap (fn[[nm [s e] sd]]
+                                (let [s (- s delta) s (if (<= s 0) 1 s) e (+ e delta)]
+                                  (str/join "/" [nm (str s "-" e) sd]))) 10)
+                       (pxmap gen-name-seq 10)
+                       (map second))
+           sto-hd (hybrid-dictionary l refsqs :par 10)
+           dicts (pxmap #(probs l %) 10 sqs)
+           ;;sqsds (sort (pxmap #(DX||Y % sqs-hd) 10 dicts))
+           stods (pxmap #(DX||Y % sto-hd) 10 dicts)
+           nms-stods (sort-by second (map (fn[nm d] [nm d]) names stods))
+           xs (range (count sqs))
+           chart (incanter.charts/scatter-plot
+                  xs (map second nms-stods)
+                  :x-label "Sequence"
+                  :y-label "RE to Hybrid"
+                  :title (str "Sto to Hybrid, Resolution: " l))
+           ;;chart (incanter.charts/add-points chart xs sqsds)
+           ]
+       (incanter.core/view chart)
+       nms-stods))
+
+#_(let [candidates (->> (io/read-lines "/home/jsa/Bio/STOfiles/S15stos/FreqDicts/S4_072612a.ent")
+                      (map entry-parts)
+                      (map (fn[[nm [s e] sd]] [(str nm "/" s "-" e "/" sd) true]))
+                      #_(take 15))
+      s4-picked (into {} candidates)
+      good (into {} (take 250 *sto-hybrid-s4-0712-wctx*))
+      bad (into {} (drop 315 *sto-hybrid-s4-0712-wctx*))]
+  [(count (reduce (fn[m [k v]] (if (get s4-picked k) (assoc m k v) m)) {} good)) (count s4-picked)])
 
 
 #_(def sample-metag-cres

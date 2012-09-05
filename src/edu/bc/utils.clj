@@ -67,6 +67,11 @@
 ;;; are either already in Clojure or in bits of contribs or probably
 ;;; _will_ be in future (at which point these can be retired...)
 
+(defn timefn [f & args]
+  (let [start-time (. java.lang.System (nanoTime))
+        ret (apply f args)]
+    [ret (/ (double (- (. java.lang.System (nanoTime)) start-time))
+            1000000.0)]))
 
 (def ^{:private true} *uid* (atom (.getTime (Date.))))
 
@@ -239,7 +244,7 @@
        (map f coll)
        (apply concat
               (doall (pmap (fn[subset] (doall (map f subset)))
-                           (partition-all par coll))))))
+                           (partition-all (/ (count coll) par) coll))))))
   ([f par coll1 coll2]
      (if (= par 1)
        (map f coll1 coll2)

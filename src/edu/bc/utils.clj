@@ -67,7 +67,15 @@
 ;;; are either already in Clojure or in bits of contribs or probably
 ;;; _will_ be in future (at which point these can be retired...)
 
-(defn timefn [f & args]
+(defn timefn
+  "Time the application of F (a function) to ARGS (any set of args as
+   expected by f.  Returns a two element vector [ret time] where,
+
+   ret is the return value of f
+
+   time is the time f took to compute ret in milliseconds
+  "
+  [f & args]
   (let [start-time (. java.lang.System (nanoTime))
         ret (apply f args)]
     [ret (/ (double (- (. java.lang.System (nanoTime)) start-time))

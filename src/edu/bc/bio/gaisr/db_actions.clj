@@ -33,7 +33,6 @@
   (:require [clojure.contrib.sql :as sql]
             [org.bituf.clj-dbcp :as dbcp]
             [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
             [clojure.zip :as zip]
@@ -499,8 +498,43 @@
     (sql-query stmt)))
 
 
+(defn insts-by-rank
+  "Fetch the set of instances (genomes) classified by taxon by rank.
+
+   TERM is a taxon denotation - an integer or integer string that is
+   the taxon_id, or a name or partial name that is a
+   prefix (potentially full) of the taxon's name.
+
+   RANK is the name of a taxonomic rank under the taxon denoted by
+   TERM.
+
+   PRED is a predicate to filter the instance sets of each rank
+   before random selection of instances from them.  Defaults to
+   identity - no filtering.
+
+   ENTRY-TYPE is one of #{:NC :NZ :OTHER :ALL} indicating the type of
+   genome entry to return.  :NC indicates NC* genomes (annotated), :NZ
+   indicating metagenomic (of sub type???), :OTHER is any non NC* or
+   NZ*, and :ALL is any type.
+
+   Result is a set of 'node' entries.  Each such entry is a map of
+   information on the organism, including its bioentry id, name, taxon
+   id, ncbi taxon id, et.al.
+   "
+  [term rank & {:keys [pred entry-type] :or {pred identity entry-type :NC}}]
+  (keep (fn[s] (filter pred (seq s)))
+        (map #(flatten
+               (keep (fn[m]
+                       (let [insts (taxon-direct-instances (m :taxon_id))]
+                         (when insts insts)))
+                     %))
+             (map #(taxon-leafs (% :taxon_id))
+                  (filter #(= (:node_rank %) rank)
+                          (taxon-subclasses term))))))
+
+
 (defn rand-insts-by-rank
-  "Fetch a 'random' set of instances (organisms) by taxon by rank.
+  "Fetch a 'random' set of instances (genomes) classified by taxon by rank.
 
    TERM is a taxon denotation - an integer or integer string that is
    the taxon_id, or a name or partial name that is a
@@ -520,7 +554,7 @@
    of information on the organism, including its bioentry id, name,
    taxon id, ncbi taxon id, et.al.
    "
-  [term rank & {pred :pred cnt :cnt :or {pred identity cnt 1}}]
+  [term rank & {:keys [pred cnt] :or {pred identity cnt 1}}]
 
   (apply
    set/union

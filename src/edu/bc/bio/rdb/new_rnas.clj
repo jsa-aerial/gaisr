@@ -50,7 +50,7 @@
         [clojure.contrib.pprint
          :only (cl-format compile-format)]
         [edu.bc.bio.gaisr.db-actions
-         :only [mysql-ds sql-query]])
+         :only [mysql-ds sql-query insts-by-rank]])
 
   (:import javax.sql.DataSource
            com.mysql.jdbc.jdbc2.optional.MysqlConnectionPoolDataSource))
@@ -420,4 +420,5 @@
                   two-cnt (count twos)
                   total (+ one-cnt two-cnt)]
               (/ two-cnt total))))))
+
 

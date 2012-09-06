@@ -37,7 +37,6 @@
   (:require [clojure.contrib.math :as math]
             [clojure.contrib.combinatorics :as comb]
             [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
             [clojure.zip :as zip]
@@ -95,7 +94,7 @@
     (frequencies (seq coll))
     (loop [s (seq coll)
            res (transient {})]
-      (let [k (str/join "" (take n s))]
+      (let [k (apply str (take n s))]
         (if (>= (count s) n)
           (recur (rest s)
                  (assoc! res k (inc (get res k 0))))

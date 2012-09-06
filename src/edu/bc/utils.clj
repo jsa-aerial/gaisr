@@ -242,10 +242,19 @@
 
 
 (defn pxmap
-  "Constrained pmap.  Constrain pmap to at most par threads.  Effectively,
-   (pmap f (partition-all par colls).  Implicit doall on results to
-   force execution.  For multiple collection variants, chunks the
-   _transpose_ of the collection of collections.
+  "Constrained pmap.  Constrain pmap to at most par threads.
+   Generally, to ensure non degrading behavior, par should be
+   <= (.. Runtime getRuntime availableProcessors).  It can be more,
+   but if par >> availableProcessors, thrashing (excessive context
+   switching) can become an issue.  Nevertheless, there are cases
+   where having par be larger can reduce the ill effects of the
+   partition problem.  NOTE: no effort is made provide the true (or
+   even a \"good\") solution to the partitioning of f over coll(s).
+
+   Effectively, (pmap f (partition-all (/ (count coll) par) coll).
+   Implicit doall on results to force execution.  For multiple
+   collection variants, chunks the _transpose_ of the collection of
+   collections.
   "
   ([f par coll]
      (if (= par 1)

@@ -117,15 +117,33 @@
                       :new "N/A"])
                (drop 1 rows))))))
 
+
+(defn canonical-entry-info [entries]
+  (map #(let [[nm [s e] sd] (entry-parts %) [s e] (if (= sd "1") [s e] [e s])]
+          [nm s e 0.0 0.0 :new "N/A"])
+       entries))
+
+(defn sto-entries [stofile]
+  (let [entries (read-seqs stofile :info :name)]
+    (canonical-entry-info entries)))
+
+(defn ent-entries [ent-file]
+  (let [entries (io/read-lines ent-file)]
+    (canonical-entry-info entries)))
+
+
 (defn get-entries [csv-hit-file]
   (let [file (fs/fullpath csv-hit-file)
-        rows (csv/parse-csv (slurp file))
-        head (first rows)]
-    ;;(prn head)
-    ;;(prn (head 4) (head 9) (head 10) (head 24) (head 11) (head 15) (head 13))
-    (if (= (first head) "gaisr name")
-      (gaisr-csv rows)
-      (legacy-csv rows))))
+        ftype (fs/ftype file)]
+    (cond
+     (= ftype "sto") (sto-entries file)
+     (= ftype "ent") (ent-entries file)
+     :else
+     (let [rows (csv/parse-csv (slurp file))
+           head (first rows)]
+       (if (= (first head) "gaisr name")
+         (gaisr-csv rows)
+         (legacy-csv rows))))))
 
 
 (defn filter-entries [entries]

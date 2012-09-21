@@ -534,7 +534,7 @@
 
 
 ;;; Wrapper for module/name-space separation and visibility structure
-;;;
+;;; Obsolete?  Check and remove!
 (defn map-names-to-ancestors [args]
   (names->tax args))
 

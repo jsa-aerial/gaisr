@@ -248,7 +248,7 @@
    but if par >> availableProcessors, thrashing (excessive context
    switching) can become an issue.  Nevertheless, there are cases
    where having par be larger can reduce the ill effects of the
-   partition problem.  NOTE: no effort is made provide the true (or
+   partition problem.  NOTE: no effort is made to provide the true (or
    even a \"good\") solution to the partitioning of f over coll(s).
 
    Effectively, (pmap f (partition-all (/ (count coll) par) coll).

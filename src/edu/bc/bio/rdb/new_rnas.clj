@@ -422,3 +422,11 @@
               (/ two-cnt total))))))
 
 
+#_(print-ncs-by-taxon
+   (get-ncs-by-taxon-rna-gene
+    " Thermus "
+    :rna "rna_00009"))
+
+(insts-by-rank "Bacilus subtilis" "family")
+(count (insts-by-rank
+        "Proteobacteria" "genus" :pred #(re-find #"^NC" (:name %))))

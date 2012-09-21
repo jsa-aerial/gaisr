@@ -59,8 +59,8 @@
 
         [edu.bc.bio.gaisr.operon-ctx
          :only [get-region]]
-        [edu.bc.bio.gaisr.actions
-         :only [map-names-to-ancestors]]
+        [edu.bc.bio.gaisr.db-actions
+         :only [names->tax]]
         [edu.bc.bio.gaisr.post-db-csv
          :only [+cmsearch-csv-header+]]
         ))
@@ -182,7 +182,7 @@
                       (if (< level (count as))
                         (nth (reverse as) level)
                         (first as)))])
-                 (map-names-to-ancestors taxon-tuple-map))))
+                 (names->tax taxon-tuple-map))))
 
 (defn phylo-cluster-tuples [taxon-tuple-map level]
   (let [entries (seq (entries-at-level taxon-tuple-map level))]

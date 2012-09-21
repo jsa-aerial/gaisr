@@ -561,19 +561,6 @@
 
 
 
-(defn entropy
-  "Entropy calculation for the probability distribution dist.  While
-   public, this is mostly useful as a local helper function.
-  "
-  [dist & {logfn :logfn :or {logfn log2}}]
-  (let [dist (if (map? dist) (vals dist) dist)]
-    (- (sum (fn[v]
-              (let [v (double v)]
-                (if (= 0.0 v)
-                  0.0
-                  (double (* v (logfn v))))))
-            dist))))
-
 (defn shannon-entropy
   "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
    where i ranges over the unique elements of S and pi is the
@@ -586,6 +573,22 @@
                    (double (* p (double (logfn p))))))
                fs)]
     (double (- H))))
+
+(defn entropy
+  "Entropy calculation for the probability distribution dist.
+   Typically dist is a map giving the PMF of some sample space.  If it
+   is a string or vector, this calls shannon-entropy on dist.
+  "
+  [dist & {logfn :logfn :or {logfn log2}}]
+  (if (or (string? dist) (vector? dist))
+    (shannon-entropy dist)
+    (let [dist (if (map? dist) (vals dist) dist)]
+      (- (sum (fn[v]
+                (let [v (double v)]
+                  (if (= 0.0 v)
+                    0.0
+                    (double (* v (logfn v))))))
+              dist)))))
 
 
 (defn joint-entropy

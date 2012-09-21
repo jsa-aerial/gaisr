@@ -182,5 +182,3 @@
     map-zip
     #(insert % levenshtein "one" "two" "three" "four"))
    node-count)
-
-  )

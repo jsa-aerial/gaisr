@@ -511,7 +511,9 @@
      ))
 
 
-(defn CREl [l sq & {:keys [limit alpha] :or {limit 15 alpha (alphabet :rna)}}]
+(defn CREl
+  [l sq & {:keys [limit alpha]
+           :or {limit 15 alpha (alphabet :rna)}}]
   {:pre [(> l 2)]}
   (sum (fn[k]
          (catch-all (DX||Y
@@ -554,15 +556,16 @@
 
 
 (defn cre-vals
-  [sqs & {:keys [limit selectfn] :or {limit 14 selectfn identity}}]
+  [sqs & {:keys [limit alpha selectfn]
+          :or {limit 14 alpha (alphabet :rna) selectfn identity}}]
   {:pre [(or (string? sqs) (coll? sqs))]}
   (if (string? sqs)
     (for [l (range 3 (inc limit))]
-      [l (CREl l sqs) (count sqs)])
+      [l (CREl l sqs :alpha alpha) (count sqs)])
     (let [sqs (selectfn sqs)]
       (for [sq sqs
             l (range 3 (inc limit))]
-        [l (CREl l sq) (count sq)]))))
+        [l (CREl l sq :alpha alpha) (count sq)]))))
 
 (defn ctx-seq
   [entry & {:keys [ldelta rdelta delta]}]
@@ -587,8 +590,9 @@
                             (str s "-" e "/1"))))))))))
 
 (defn cre-samples
-  [seqs & {:keys [directed ldelta rdelta delta cnt limit par]
-           :or {directed true cnt 5 limit 14 par 10}}]
+  [seqs & {:keys [alpha directed ldelta rdelta delta cnt limit par]
+           :or {alpha (alphabet :rna)
+                directed true cnt 5 limit 14 par 10}}]
   {:pre [(or delta (and (not directed) ldelta rdelta))]}
   (let [entries (if (coll? seqs) seqs (get-entries seqs))
         ldelta (if delta delta ldelta)
@@ -606,7 +610,8 @@
      d (for [x (range 1 (inc cnt))
              sq [(rand-nth name-seq-pairs)]
              l (range 3 (inc limit))]
-         [l (CREl l (second sq)) (-> sq second count) (first sq)]))))
+         [l (CREl l (second sq) :alpha alpha)
+          (-> sq second count) (first sq)]))))
 
 (defn plot-cres
   [cre-samples]
@@ -624,7 +629,8 @@
 
 
 (defn sto-re-dists
-  [l csv-file sto-file & {:keys [delta par] :or {delta 5000 par 10}}]
+  [l csv-file sto-file & {:keys [refn delta par]
+                          :or {refn DX||Y delta 5000 par 10}}]
   (let [csv (fs/fullpath csv-file)
         prot-name (->> csv
                        (str/split #"/") last (str/split #"\.") first
@@ -645,7 +651,7 @@
                     (map second))
         sto-hd (hybrid-dictionary l refsqs :par par)
         dicts (pxmap #(probs l %) par sqs)
-        stods (pxmap #(DX||Y % sto-hd) par dicts)]
+        stods (pxmap #(refn % sto-hd) par dicts)]
     [(sort-by second > (map (fn[en d] [en d]) entries stods))
      prot-name
      (count sqs)]))
@@ -703,7 +709,7 @@
 
 (defn compute-candidate-info
   [sto-file candidate-file delta cutoff
-   & {:keys [cmp-ents plot-cre plot-dists] :or {}}]
+   & {:keys [refn cmp-ents plot-cre plot-dists] :or {refn DX||Y}}]
   (let [cres (cre-samples sto-file :delta 1800 :cnt 3)
         res (reduce (fn[res v]
                       (/ (+ res
@@ -711,7 +717,8 @@
                          2.0))
                     0.0 cres)
         res (if res (Math/ceil res) (-> cres first last first))
-        [ent-ds nm sz] (sto-re-dists res candidate-file sto-file :delta delta)
+        [ent-ds nm sz] (sto-re-dists res candidate-file sto-file
+                                     :refn refn :delta delta)
         cutpt (first (select-cutpoint (map second ent-ds) :area cutoff))
         perf-stats (when cmp-ents (selection-perf ent-ds cmp-ents cutpt))]
     (when plot-cre (plot-cres cres))

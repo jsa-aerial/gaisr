@@ -242,9 +242,9 @@
    details are kind of tricky - or maybe just bean counting precise...
 
    Take an entry ent and its sequence sq and left/right deltas ld and
-   rd and return an new [ent' sq'] pair reflecting the changes
-   required by the addition/removal of characters (including gaps)
-   from the front and end of sq.
+   rd and return a new [ent' sq'] pair reflecting the changes required
+   by the addition/removal of characters (including gaps) from the
+   front and end of sq.
 
    Gaps are counted as characters of sq, but not as sequence elements
    for recalculation of coordinates.
@@ -256,11 +256,15 @@
              (+ os sqcnt)
              oe)
 
-        [ld rd] (if (= sd "1") [ld rd] [rd ld]) ; flip for coord computation
+        [ld rd sq] (if (= sd "1") ; flip for coord computation
+                     [ld rd sq]
+                     [rd ld (str/reverse sq)])
         s (- os (if (neg? ld) (+ ld (gap-count (str/take (- ld) sq))) ld))
         e (+ oe (if (neg? rd) (+ rd (gap-count (str/drop (+ sqcnt rd) sq))) rd))
         s (if (neg? s) 1 s) ; check for bad ld forcing falling off front
-        [ld rd] (if (= sd "1") [ld rd] [rd ld]) ; flip back for seq subs
+        [ld rd sq] (if (= sd "1") ; flip back for seq subs
+                     [ld rd sq]
+                     [rd ld (str/reverse sq)])
 
         zero-pos? #(>= % 0)
         prefixfn #(if (= s os)

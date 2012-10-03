@@ -1041,9 +1041,12 @@
    (+ (* lambda (DX||Y Pdist M)) (* (- 1 lambda) (DX||Y Qdist M)))
 
    Where M = (+ (* lambda Pdist) (* (- 1 lambda) Qdist))
-           = (sum (fn[pi qi] (+ (* lambda pi) (* (- 1 lambda) qi))) Pdist Qdist)
+           = (merge-with (fn[pi qi] (+ (* lambda pi) (* (- 1 lambda) qi)))
+                         Pdist Qdist)
 
-   For lambda = 1/2, this reduces to M = 1/2 (sum (fn[pi qi] (+ pi qi)) P Q)
+   For lambda = 1/2, this reduces to
+
+   M = 1/2 (merge-with (fn[pi qi] (+ pi qi)) P Q)
 
    and (/ (+ (DX||Y Pdist M) (DX||Y Qdist M)) 2) = jensen shannon
   "

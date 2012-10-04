@@ -907,7 +907,7 @@
 (defn get-cmsearch-groups [cmdir cmsearchs]
   (map (fn[[hf cmfspecs]]
          [hf (flatten (map #(fs/re-directory-files cmdir %) cmfspecs))])
-       cmsearchs))) ; map of hitf->[regex-cm-filespecs]
+       cmsearchs)) ; map of hitf->[regex-cm-filespecs]
 
 (defn do-cmsearch [hfs-cmss eval]
   (doall (map (fn[[hf cms]]

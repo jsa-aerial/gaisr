@@ -49,13 +49,14 @@
    edu.bc.bio.sequtils.files
    edu.bc.bio.sequtils.tools
    edu.bc.bio.sequtils.info-theory
-   edu.bc.bio.sequtils.dists
+   ;;edu.bc.bio.sequtils.dists
    edu.bc.bio.canned-jobs
    edu.bc.bio.db-downloads
 
    edu.bc.bio.gaisr.operon-ctx  ; Initial Hit (blast, ...) operon ctx
    edu.bc.bio.gaisr.pipeline    ; pipeline functions and framework
    edu.bc.bio.gaisr.post-db-csv ; Post database query processing
+   edu.bc.bio.sequtils.dists    ; bad dependency get-entries!!
    edu.bc.bio.gaisr.actions     ; web services implementation
    edu.bc.bio.gaisr.www         ; web services REST interface
    ))

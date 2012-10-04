@@ -46,6 +46,8 @@
             [clojure.zip :as zip]
             [clojure.contrib.io :as io]
             [clj-shell.shell :as sh]
+            [incanter.core]
+            [incanter.charts]
             [edu.bc.fs :as fs])
   (:use clojure.contrib.math
         edu.bc.utils
@@ -60,52 +62,6 @@
         ))
 
 
-
-;;; ----------------------------------------------------------------------
-;;;
-;;; IUPAC (International Union of Pure and Applied Chemistry) codes
-;;; for nucleotides and various "groups" of nucleotides.
-;;;
-
-(def +IUPAC+
-     ^{:doc "These are the codes for \"bases\" used in alignments"}
-     {\A "Adenine"
-      \C "Cytosine"
-      \G "Guanine"
-      \T "Thymine"
-      \U "Uracil"
-      \R "AG"
-      \Y "CUT"
-      \S "GC"
-      \W "AUT"
-      \K "GUT"
-      \M "AC"
-      \B "CGUT"
-      \D "AGUT"
-      \H "ACUT"
-      \V "ACG"
-      \N "any"
-      \. "gap"
-      \- "gap"})
-
-(def +NONSTD-RNA+
-     ^{:doc "These are the codes for all non standard \"bases\" used
-             in alignments"}
-
-     {\T "Thymine"
-      \R "AG"       ; purines
-      \Y "CUT"      ; pyrimidines
-      \S "GC"
-      \W "AUT"
-      \K "GUT"
-      \M "AC"
-      \B "CGUT"
-      \D "AGUT"
-      \H "ACUT"
-      \V "ACG"
-      \N "any"
-      \. "gap"
-      \- "gap"})
 
 
 ;;; ----------------------------------------------------------------------
@@ -389,30 +345,8 @@
                   (read-seqs mg-fa :info :both))]))))
 
 
-(comment
 
-(def l-1 (probs 3 "CAAAAAGAAAUAGUAGGGCUUUUGAAAGUAACGGCCGCCCUGCAAAGAGCGGCCGUUCGCCUUACGUUUUUUA"))
-
-(def l-2 (probs 2 "CAAAAAGAAAUAGUAGGGCUUUUGAAAGUAACGGCCGCCCUGCAAAGAGCGGCCGUUCGCCUUACGUUUUUUA"))
-
-(for [x (keys l-1) a "AGUC"]
-  (str x a))
-
-(reduce (fn[m lmer]
-          (let [l (dec (count lmer))
-                x (subs lmer 1)
-                y (subs lmer 0 l)
-                z (subs lmer 1 l)]
-            (if (and (l-1 x) (l-1 y) (l-2 z))
-              (assoc m lmer (/ (* (l-1 x) (l-1 y)) (l-2 z)))
-              m)))
-        {} *1)
-
-(jensen-shannon
- *1 (probs 4 "CAAAAAGAAAUAGUAGGGCUUUUGAAAGUAACGGCCGCCCUGCAAAGAGCGGCCGUUCGCCUUACGUUUUUUA"))
-
-)
-
+;;;--------- REFACTOR - The following needs to go into info-theory or ??? ;;;
 
 (defn expected-qdict [q-1 q-2 & {:keys [alpha] :or {alpha (alphabet :rna)}}]
   (reduce (fn[m lmer]
@@ -629,9 +563,10 @@
 
 
 (defn sto-re-dists
-  [l csv-file sto-file & {:keys [refn delta par]
-                          :or {refn DX||Y delta 5000 par 10}}]
-  (let [csv (fs/fullpath csv-file)
+  [l csv-file sto-file & {:keys [refn delta order par]
+                          :or {refn DX||Y delta 5000 order :down par 10}}]
+  (let [comp (if (= order :up) < >)
+        csv (fs/fullpath csv-file)
         prot-name (->> csv
                        (str/split #"/") last (str/split #"\.") first
                        (str/replace-re #"_" " "))
@@ -641,31 +576,37 @@
                                 rdel (if +? delta 100)]
                             (gen-name-seq % :ldelta ldel :rdelta rdel))
                          par entries)
-        sqs (map second name-seqs)
+        sqs (seqXlate (map second name-seqs))
         refsqs (->> (get-entries sto-file)
                     (pxmap #(let [+? (= 1 (->> % (pos \-) count))
                                   ldel (if +? 100 delta)
                                   rdel (if +? delta 100)]
                               (gen-name-seq % :ldelta ldel :rdelta rdel))
                            par)
-                    (map second))
+                    (map second)
+                    (#(seqXlate %)))
         sto-hd (hybrid-dictionary l refsqs :par par)
         dicts (pxmap #(probs l %) par sqs)
         stods (pxmap #(refn % sto-hd) par dicts)]
-    [(sort-by second > (map (fn[en d] [en d]) entries stods))
+    [(sort-by second comp (map (fn[en d] [en d]) entries stods))
      prot-name
      (count sqs)]))
 
 (defn select-cutpoint
-  [re-points & {:keys [area] :or {area 7/10}}]
+  [re-points & {:keys [area ends] :or {area 7/10}}]
   (let [s (* (sum re-points) area)]
-    (reduce (fn[[x v] re]
-              (if (< v s) [(inc x) (+ v re)] [x v]))
-            [0 0]
-            re-points)))
+    (if (= ends :both)
+      (reducem + #(cond (number? %1) [2 (+ %1 %2)]
+                        (> (second %1) s) %1
+                        :else [(inc (first %1)) (+ (second %1) %2)])
+               :|| re-points (reverse re-points))
+      (reduce (fn[[x v] re]
+                (if (< v s) [(inc x) (+ v re)] [x v]))
+              [0 0]
+              re-points))))
 
 (defn selection-perf
-  [nm-re-coll ent-file cutpoint]
+  [nm-re-coll ent-file cutpoint & {:keys [ends] :or {ends :low}}]
    (let [candidates (->> (io/read-lines ent-file)
                          (map entry-parts)
                          (map (fn[[nm [s e] sd]]
@@ -675,18 +616,29 @@
                              (assoc m k (inc (get m k 0))))
                            {} candidates)
          picked (count human-picked)
-         good (into {} (take cutpoint nm-re-coll))
+
+         good (cond
+               (= ends :low)
+               (into {} (take cutpoint nm-re-coll))
+               (= ends :high)
+               (into {} (drop (- (count nm-re-coll) cutpoint) nm-re-coll))
+               :else ; :both
+               (into {} (concat
+                         (take cutpoint nm-re-coll)
+                         (drop (- (count nm-re-coll) cutpoint) nm-re-coll))))
+         good-size (count good)
+
          true+ (count (reduce (fn[m [k v]]
                                 (if (get human-picked k)
                                   (assoc m k v) m))
                               {} good))
-         false+ (- cutpoint true+)
-         bad (into {} (drop cutpoint nm-re-coll))
+         false+ (- good-size true+)
          false- (- picked true+)]
      [:total total
+      :cutpoint cutpoint
       :true+ true+
       :true+picked (float (/ true+ picked))
-      :true+cutpoint (float (/ true+ cutpoint))
+      :good-true+ (float (/ true+ good-size))
       :false+ false+
       :false- false-
       :false-picked (float (/ false- picked))
@@ -709,18 +661,21 @@
 
 (defn compute-candidate-info
   [sto-file candidate-file delta cutoff
-   & {:keys [refn cmp-ents plot-cre plot-dists] :or {refn DX||Y}}]
-  (let [cres (cre-samples sto-file :delta 1800 :cnt 3)
+   & {:keys [refn order ends cmp-ents plot-cre plot-dists]
+      :or {refn DX||Y order :down :ends :both}}]
+  (let [cres (cre-samples sto-file :delta delta :cnt 3)
         res (reduce (fn[res v]
                       (/ (+ res
-                            (some #(when (< (second %) 0.01) (first %)) v))
+                            (some #(when (< (second %) 0.005) (first %)) v))
                          2.0))
                     0.0 cres)
         res (if res (Math/ceil res) (-> cres first last first))
         [ent-ds nm sz] (sto-re-dists res candidate-file sto-file
-                                     :refn refn :delta delta)
-        cutpt (first (select-cutpoint (map second ent-ds) :area cutoff))
-        perf-stats (when cmp-ents (selection-perf ent-ds cmp-ents cutpt))]
+                                     :refn refn :delta delta :order order)
+        cutpt (first (select-cutpoint (map second ent-ds)
+                                      :area cutoff :ends ends))
+        perf-stats (when cmp-ents (selection-perf ent-ds cmp-ents cutpt
+                                                  :ends ends))]
     (when plot-cre (plot-cres cres))
     (when plot-dists (plot-sto-dists nm sz res cutpt ent-ds))
     [(take cutpt ent-ds) (butlast perf-stats)]))

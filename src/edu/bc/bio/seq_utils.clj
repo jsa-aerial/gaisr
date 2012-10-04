@@ -55,6 +55,66 @@
         ))
 
 
+;;; ----------------------------------------------------------------------
+;;;
+;;; IUPAC (International Union of Pure and Applied Chemistry) codes
+;;; for nucleotides and various "groups" of nucleotides.
+;;;
+
+(def +IUPAC+
+     ^{:doc "These are the codes for \"bases\" used in alignments"}
+     {\A "Adenine"
+      \C "Cytosine"
+      \G "Guanine"
+      \T "Thymine"
+      \U "Uracil"
+      \R "AG"
+      \Y "CUT"
+      \S "GC"
+      \W "AUT"
+      \K "GUT"
+      \M "AC"
+      \B "CGUT"
+      \D "AGUT"
+      \H "ACUT"
+      \V "ACG"
+      \N "any"
+      \. "gap"
+      \- "gap"})
+
+(def +NONSTD-RNA+
+     ^{:doc "These are the codes for all non standard \"bases\" used
+             in alignments"}
+
+     {\T "Thymine"
+      \R "AG"       ; purines
+      \Y "CUT"      ; pyrimidines
+      \S "GC"
+      \W "AUT"
+      \K "GUT"
+      \M "AC"
+      \B "CGUT"
+      \D "AGUT"
+      \H "ACUT"
+      \V "ACG"
+      \N "any"
+      \. "gap"
+      \- "gap"})
+
+(def +RY-XLATE+
+     ^{:doc "Map for translating DNA and RNA seqs to purine and
+             pyrimidine seqs.  Assumes normed-elements (for which
+             see)"}
+     {\A \R \G \R \C \Y \U \Y \T \Y})
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; Various sequence (element) transformers and translators.  Mostly
+;;; for nucleotide sequences, but could (should?) be generalized a bit
+;;; for AA seqs as well.
+;;;
+
 
 (defn norm-elements
   "\"Normalize\" elements in sequences by ensuring each character is
@@ -152,6 +212,22 @@
             {\A \T \T \A \G \C \C \G}
             {\A \U \U \A \G \C \C \G})]
     (str/join "" (reverse (map m sq)))))
+
+
+(defn seqXlate
+  "Translate sqs according to the translation map xmap.  SQS is either
+   a single sequence (string) or a collection of such.  It cannot be a
+   file.  Each sequence has its elements transformed according xmap
+   and each is returned as a string.
+  "
+  [sqs & {:keys [xmap] :or {xmap +RY-XLATE+}}]
+  (let [xlate (fn [sq]
+                (apply str (map #(let [x (xmap %)] (if x x %))
+                                (degap-seqs sq))))]
+    (if (string? sqs)
+      (xlate sqs)
+      (map xlate sqs))))
+
 
 
 

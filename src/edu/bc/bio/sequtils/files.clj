@@ -571,6 +571,11 @@
             #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)\s+" "" %)
             #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)\s+" %)))
 
+          "ent"
+          (if (= info :data)
+            #(second (gen-name-seq %))
+            #(first (gen-name-seq %)))
+
           "gma" (raise :type :NYI :info "GMA format not yet implemented")
 
           ("fna" "fa")

@@ -293,7 +293,7 @@
   "
   [entry & {:keys [ldelta rdelta] :or {ldelta 0 rdelta 0}}]
   (let [[name range] (str/split #"( |/|:)+" 2 entry)
-        name (re-find #"[A-Z]+_[A-Z0-9]+" name)
+        name (re-find #"[A-Z]+_[A-Za-z0-9]+" name)
         [range strand] (if range (str/split #"/" range) [nil nil])
         [s e st] (if (not range)
                    [1 Long/MAX_VALUE "1"]
@@ -574,7 +574,8 @@
           "ent"
           (if (= info :data)
             #(second (gen-name-seq %))
-            #(first (gen-name-seq %)))
+            #(->> (str/split #"( |/)" %) (str/join "/")))
+          ;;#(first (gen-name-seq %)))
 
           "gma" (raise :type :NYI :info "GMA format not yet implemented")
 

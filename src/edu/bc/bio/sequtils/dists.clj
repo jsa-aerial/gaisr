@@ -688,14 +688,15 @@
 
 
 (defn plot-sto-dists
-  [prot-name cnt-seqs res cutpt nms-stods]
+  [prot-name cnt-seqs ctx-delta res cutpt nms-stods]
   (let [xs (range cnt-seqs)
         chart (incanter.charts/scatter-plot
                xs (map second nms-stods)
                :x-label "Sequence"
                :y-label "Sq RE to Hybrid"
-               :title (str prot-name " search sqs to Sto Hybrid"
-                           " Resolution: " res ", Cutpt: " cutpt)
+               :title (str prot-name " Sq RE to Sto Hybrid."
+                           " Ctx Sz: " ctx-delta
+                           " Res: " res ", Cutpt: " cutpt)
                :series-label "sq/hbrid-distance"
                :legend true)]
     (incanter.core/view chart)))
@@ -704,9 +705,10 @@
 (defn compute-candidate-info
   ""
   [sto-file candidate-file delta cutoff
-   & {:keys [refn xlate alpha crecut limit res order ends plot-cre plot-dists]
+   & {:keys [refn xlate alpha crecut limit res order ends
+             plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15
-           order :down :ends :both}}]
+           order :up :ends :low}}]
 
   (let [cres (when (not res)
                (cre-samples sto-file :delta delta
@@ -726,44 +728,97 @@
                                       :area cutoff :ends ends))
         [good bad] (get-good-candidates nm-re-sq cutpt :ends ends)]
     (when plot-cre (plot-cres cres))
-    (when plot-dists (plot-sto-dists pnm sz res cutpt nm-re-sq))
+    (when plot-dists (plot-sto-dists pnm sz delta res cutpt nm-re-sq))
     [good bad cutpt nm-re-sq]))
 
 
 (defn compute-candidate-sets
   ""
-  [sto-file rna-only-candidate-file candidate-file delta cutoff
-   & {:keys [refn xlate alpha crecut limit res
-             order ends cmp-ents plot-cre plot-dists]
+  [sto-file candidate-file first-phase-entry-file final-entry-file delta
+   & {:keys [refn xlate alpha crecut limit
+             res order ends hit-cutoff cutoff
+             cmp-ents plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10
-           limit 15 order :up :ends :low}}]
+           limit 15 order :up :ends :low hit-cutoff 40/100 cutoff 19/100}}]
 
-  (let [[rna-only-good
+  (let [final-entry-file (fs/fullpath final-entry-file)
+        final-bad-entry-file (fs/replace-type
+                              final-entry-file
+                              (str "-bad." (fs/ftype final-entry-file)))
+        [rna-only-good
          rna-only-bad
          cutpt1
          nm-re-sq] (compute-candidate-info
-                  sto-file rna-only-candidate-file 0 40/100
-                  :refn refn :xlate +RY-XLATE+ :alpha alpha
-                  :limit limit :res 6 :order order :ends ends
-                  :plot-cre plot-cre :plot-dists plot-dists)
-         rna-only-perf-stats (when cmp-ents
-                               (selection-perf
-                                nm-re-sq cmp-ents cutpt1
-                                :ends ends :good rna-only-good))
+                    sto-file candidate-file 0 hit-cutoff
+                    :refn refn :xlate +RY-XLATE+ :alpha alpha
+                    :limit limit :res 6 :order order :ends ends
+                    :plot-cre plot-cre :plot-dists plot-dists)
+        rna-only-perf-stats (when cmp-ents
+                              (selection-perf
+                               nm-re-sq cmp-ents cutpt1
+                               :ends ends :good rna-only-good))
+        _ (->> rna-only-good (map first)
+               (#(gen-entry-file % first-phase-entry-file)))
 
-         [good bad
-          cutpt2
-          nm-re-sq] (compute-candidate-info
-                     sto-file candidate-file delta cutoff
-                     :refn refn :xlate +RY-XLATE+ :alpha alpha
-                     :crecut crecut :limit limit :order order :ends ends
-                     :plot-cre plot-cre :plot-dists plot-dists)
-          perf-stats (when cmp-ents
-                       (selection-perf
-                        nm-re-sq cmp-ents cutpt2 :ends ends :good good))]
+        [good bad
+         cutpt2
+         nm-re-sq] (compute-candidate-info
+                    sto-file first-phase-entry-file delta cutoff
+                    :refn refn :xlate xlate :alpha alpha
+                    :crecut crecut :limit limit :order order :ends ends
+                    :plot-cre plot-cre :plot-dists plot-dists)
+        perf-stats (when cmp-ents
+                     (selection-perf
+                      nm-re-sq cmp-ents cutpt2 :ends ends :good good))]
 
+    (->> good (#(gen-entry-nv-file % final-entry-file)))
+    (->> bad (#(gen-entry-nv-file % final-bad-entry-file)))
     [[good bad cutpt2] [rna-only-good rna-only-bad cutpt1]]))
 
+
+
+(defn hit-context-delta [sto & {:keys [gene cnt margin]
+                                :or {cnt 5 margin 0}}]
+  {:pre [(string? gene)]}
+  (let [sample (random-subset (read-seqs sto :info :name) cnt)
+        nms-loci (map #(let [[nm [s e] sd] (entry-parts %)] [nm s e sd]) sample)
+        features (map (fn[[nm s e sd]]
+                        [[nm s e sd]
+                         (edu.bc.bio.gaisr.db-actions/hit-features-query
+                          nm s e)])
+                      nms-loci)
+        nms-lens
+        (->> features
+             (map (fn[[[nm s e sd :as entry] ctx]]
+                    [entry
+                     (ffirst
+                      (keep (fn[m]
+                              (let [nvs (m :nvs)
+                                    x (keep #(when (and (= (% :name) "gene")
+                                                        (= (% :value) gene))
+                                               ;; -1 sd => hit end - ctx start
+                                               ;;  1 sd => ctx end - hit start
+                                               (let [{cs :start
+                                                      ce :end
+                                                      csd :strand}
+                                                     (first (m :locs))
+                                                     len (inc (if (= 1 csd)
+                                                                (- ce s)
+                                                                (- e cs)))]
+                                               [len %]))
+                                            nvs)]
+                                (when (and (in (m :sftype) ["CDS" "gene"])
+                                           (seq x))
+                                  (first x))))
+                            ctx))]))
+             (filter second))
+        base (+ margin
+                (if (not (seq nms-lens))
+                  (hit-context-delta sto :gene gene :cnt cnt)
+                  (reduce (fn[sz [nm s]]
+                            (first (div (+ sz s) 2)))
+                          (-> nms-lens first second) (rest nms-lens))))]
+    (* (floor (+ (/ base 100) 1)) 100)))
 
 
 
@@ -827,17 +882,7 @@
               [e entropy (->> e entry-parts second (#(abs (apply - %))))]))
        (map first) (take 2) last)
        set)
-  (set (get-entries "/home/jsa/Bio/FreqDicts/S4_072612-final.ent"))))
-
-(def jsa
-     (compute-candidate-info
-      "/home/jsa/Bio/FreqDicts/S4_0712.sto"
-      "/home/jsa/Bio/FreqDicts/trial.ent"
-      1800 100/100
-      :cmp-ents "/home/jsa/Bio/FreqDicts/S4_072612-final.ent"
-      :refn DX||Y :res 10 :xlate +RY-XLATE+
-      :order :up :ends :low
-      :plot-cre false :plot-dists true))
+ (set (get-entries "/home/jsa/Bio/FreqDicts/S4_072612-final.ent")))
 
 
 (->> (read-seqs "/home/jsa/Bio/FreqDicts/S4_0712comb.ent" :info :name)

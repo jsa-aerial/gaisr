@@ -127,8 +127,9 @@
     [name [ns ne] strand len]))
 
 (defn utrs-filter [entries
-                   & {par :par upstream :upstream downstream :downstream
-                      :or {par 10 upstream 25 downstream 25}}]
+                   & {:keys [par upstream downstream]
+                      :or {par 10 upstream 500 downstream 25}}]
+  (println :--> " " (first entries))
   (let [q (math/floor (/ (count entries) par))
         entsets (partition q q [] entries)
         leftover (last entsets)
@@ -159,7 +160,7 @@
         entries (utrs-2-entfile-fmt entries)
         efile (gen-entry-file entries (fs/tempfile "hit-seqs-" ".ent" subdir))
         nlsq-tuples (-> efile
-                        (entry-file->fasta-file :loc true)
+                        entry-file->fasta-file
                         ((fn[x](fs/copy x hitfna) x))
                         slurp
                         ((fn[x](str/split #"\n" x)))
@@ -332,7 +333,7 @@
 
 (def *clusnr* "ClusNR")
 
-(defn get-candidates [hit-file & {cmpfn :cmpfn dir :dir
+(defn get-candidates [hit-file & {:keys [cmpfn dir]
                                   :or {cmpfn cd-hit-est dir nil}}]
   (let [hit-file (fs/fullpath hit-file)
         dir (fs/fullpath (fs/join (if dir dir (fs/dirname hit-file)) *clusnr*))
@@ -514,17 +515,25 @@
                                 #(re-find #"^BCOM" %)
                                 (str/split #"\n" (slurp cmfile)))))))
 
-(defn gi-name [gi]
-  (first (re-find #"N(C|S|Z)_[0-9A-Z]+" gi)))
+(defn ent-name [ent-line]
+  (if (= (str/take 3 ent-line) ">gi")
+    (first (re-find #"N(C|S|Z)_[0-9A-Z]+" ent-line))
+    (first (entry-parts ent-line))))
 
-(defn gi-loc [gi]
-  (let [l (first (re-find #":(.|)[0-9]+-[0-9]+" gi))]
-    (when l (subs l (first (pos-any "0123456789" l))))))
+(defn ent-loc [ent-line]
+  (if (= (str/take 3 ent-line) ">gi")
+    (let [l (first (re-find #":(.|)[0-9]+-[0-9]+" ent-line))]
+      (when l (subs l (first (pos-any "0123456789" l)))))
+    (->> ent-line
+         entry-parts
+         ((fn[[nm [s e] sd]]
+            (let [[s e] (if (= sd "-1") [e s] [s e])]
+              (str s "-" e)))))))
 
 (defn build-hitseq-map [hitfile]
   (reduce (fn[m [gi sq]]
-            (let [nc (gi-name gi)
-                  k (if nc (str nc ":" (gi-loc gi)) gi)]
+            (let [nc (ent-name gi)
+                  k (if nc (str nc ":" (ent-loc gi)) gi)]
               (assoc m k sq)))
           {} (partition 2 (io/read-lines (io/file-str hitfile)))))
 
@@ -544,8 +553,8 @@
                (if (= (first k) "#")
                  m
                  (let [k (first k)
-                       nc (first (re-find #"N(C|S|Z)_[0-9A-Z]+" k))
-                       k (if nc (str nc ":" (re-find #"[0-9]+-[0-9]+$" k)) k)
+                       nc (ent-name k)
+                       k (if nc (str nc ":" (ent-loc k)) k)
                        v (keep #(when (not= "" %) (str/trim %)) v)]
                    (assoc m k v))))
              {} (partition 2 parts))
@@ -760,11 +769,22 @@
     (pmap #(core-processing hit-fna base %) wsets)))
 
 
-(defn run-pipeline-full [selections]
+(defn run-pipeline-front [selections
+                          & {:keys [ev wordsize] :or {ev 10}}]
+  (let [selections-fna (get-selection-fna selections)
+        blaster (blastpgm selections-fna)
+        wdsz (if wordsize wordsize (if (= blaster tblastn) 4 8))
+        hit-file (blaster selections-fna :word-size wdsz :evalue ev)
+        hitfna (fs/replace-type hit-file ".hitfna")
+        clusters (get-candidates hit-file)]
+    [hitfna hit-file]))
+
+(defn run-pipeline-full [selections
+                         & {:keys [ev wordsize] :or {ev 10}}]
   (let [selections-fna (get-selection-fna selections)
         blaster (blastpgm selections-fna)
         wdsz (if (= blaster tblastn) 4 8)
-        hit-file (blaster selections-fna :word-size wdsz)
+        hit-file (blaster selections-fna :word-size wdsz :evalue ev)
         hitfna (fs/replace-type hit-file ".hitfna")
         clusters (get-candidates hit-file)
         clusnr-dir (fs/join (fs/dirname hit-file) *clusnr*)

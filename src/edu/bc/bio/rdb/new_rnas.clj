@@ -87,19 +87,43 @@
        (sql/transaction
         ~sql-op))))
 
-(defn create-rnahit-tables []
+
+(defn create-rnahit-table []
   (sql-update
    (do-commands
     "CREATE TABLE rnahit (
-          rnahit_id   INT(10) UNSIGNED NOT NULL auto_increment,
-          name        varchar(40),
-          gene_name   varchar(40),
-          PRIMARY KEY (rnahit_id),
-          UNIQUE (name)
+          rnahit_id     INT(10) UNSIGNED NOT NULL auto_increment,
+          name          varchar(40) NOT NULL,
+          gene_name     varchar(40) NOT NULL,
+          ncbi_taxon_id INT(11) UNSIGNED NOT NULL,
+          PRIMARY KEY (rnahit_id)
      ) ENGINE=INNODB"
     "CREATE INDEX rnahit_gene ON rnahit(gene_name)"
+    "CREATE INDEX rnahit_ncbi_tx_id ON rnahit(ncbi_taxon_id)"
+    "CREATE INDEX rnahit_txs_genes ON rnahit(ncbi_taxon_id,gene_name)"
     "CREATE INDEX rnahit_gene_name ON rnahit(name,gene_name)"
+    )))
 
+(defn create-verified-rnahit-table []
+  (sql-update
+   (do-commands
+    "CREATE TABLE verified_rnahit (
+          verified_id        INT(10) UNSIGNED NOT NULL auto_increment,
+          rnahit_id          INT(10) UNSIGNED NOT NULL,
+          verified_taxon_id  INT(11) UNSIGNED NOT NULL,
+          verified_loc       varchar (20) NOT NULL,
+          PRIMARY KEY (verified_id)
+     ) ENGINE=INNODB"
+    "CREATE INDEX verified_rhid     ON verified_rnahit(rnahit_id)"
+    "CREATE INDEX verified_taxon_id ON verified_rnahit(verified_taxon_id)"
+    "CREATE INDEX verified_location ON verified_rnahit(verified_loc)"
+    "CREATE INDEX verified_tx_loc
+            ON verified_rnahit(verified_taxon_id,verified_loc)"
+    )))
+
+(defn create-genome-rnahit-table []
+  (sql-update
+   (do-commands
     "CREATE TABLE genome_rnahit (
         genome_rnahit_id   INT(10) UNSIGNED NOT NULL auto_increment,
         bioentry_id        INT(10) UNSIGNED NOT NULL,
@@ -110,11 +134,72 @@
     "CREATE INDEX genome_rnahit_rhid  ON genome_rnahit(rnahit_id)"
     )))
 
-(defn drop-rnahit-tables []
-  (sql-update
-   (do-commands
-    "drop table rnahit"
-    "drop table genome_rnahit")))
+(defn create-newhit-tables []
+  (create-rnahit-table)
+  (create-verified-rnahit-table)
+  (create-genome-rnahit-table))
+
+
+(defn drop-rnahit-table []
+  (sql-update (do-commands "drop table rnahit")))
+
+(defn drop-verified-rnahit-table []
+  (sql-update (do-commands "drop table verified_rnahit")))
+
+(defn drop-genome-rnahit-table []
+  (sql-update (do-commands "drop table genome_rnahit")))
+
+(defn drop-newhit-tables []
+  (drop-rnahit-table)
+  (drop-verified-rnahit-table)
+  (drop-genome-rnahit-table))
+
+
+#_
+(do
+  (drop-rnahit-table)
+  (create-rnahit-table)
+  (drop-verified-rnahit-table)
+  (create-verified-rnahit-table))
+
+
+(defn get-sto-files [designator]
+  (cond
+   (coll? designator) (map fs/fullpath designator)
+   (fs/directory? designator) (sort (fs/directory-files designator ".sto"))
+   :else (list (fs/fullpath designator))))
+
+(defn get-mlab-gfinfo [sto]
+  (let [rna-name (->> sto fs/basename (str/split #"\.")
+                      first str/lower-case)
+        gfs (take-until
+             #(not= "#=GF " (str/take 5 %))
+             (drop 1 (io/read-lines sto)))
+        infomap  (into
+                  {}
+                  (for [gf gfs
+                        :let [bits (str/split #"\s+" gf)
+                              kind (->> bits second str/lower-case keyword)
+                              data (third bits)]
+                        :when (in kind [:rna :taxon :in-vivo :in-vitro])]
+                    [kind (cond
+                           (= kind :rna) data
+                           (= kind :taxon) (Integer. data)
+                           :else (map #(Integer. %)
+                                      (when data (str/split #", *" data))))]))
+        rna (infomap :rna)
+        taxon (infomap :taxon)
+        invitros (infomap :in-vitro)
+        invivos (infomap :in-vivo)]
+    (if (and (empty? invitros) (empty invivos))
+      [[rna-name rna taxon 0 "na"]]
+      (reduce (fn[v vid] (conj v [rna-name rna taxon vid "vitro"]))
+              (reduce (fn[v vid] (conj v [rna-name rna taxon vid "vivo"]))
+                      [] invivos)
+              invitros))))
+
+;;;(map get-mlab-gfinfo (get-sto-files "/home/kaila/Bio/Tests/JSA/NewRNAs"))
+;;;(map get-mlab-gfinfo (get-sto-files "/home/kaila/Bio/Tests/JSA"))
 
 
 (defn- insert-rnahits
@@ -123,27 +208,41 @@
    (apply
     sql/insert-values
     :rnahit
-    [:name :gene_name] values)))
+    [:name :gene_name :ncbi_taxon_id] values)))
 
 (defn update-rnahit
   [stospec]
-  (let [stos (if (fs/directory? stospec)
-               (sort (fs/directory-files stospec ".sto"))
-               (list (fs/fullpath stospec)))]
+  (let [stos (get-sto-files stospec)]
     (insert-rnahits
-     (partition-all
-      2 (flatten
-         (map #(let [rna-name (->> % fs/basename (str/split #"\.")
-                                   first str/lower-case)
-                     genes (->> % io/read-lines (drop 2) first
-                                (str/split #"\s+") last
-                                (str/split #" *, *"))]
-                 (map (fn[g] [rna-name g])
-                      genes))
-              stos))))))
+     (sort-by first (set (map (fn[[n gn ntx & tail]] [n gn ntx])
+                              (apply concat (map get-mlab-gfinfo stos))))))))
 
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
+;;;(update-rnahit "/home/kaila/Bio/Tests/JSA")
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00003.sto")
+
+(def rnaname-id-map
+     (reduce (fn[M m] (assoc M (m :name) (m :rnahit_id)))
+             {} (sql-query "select rh.name,rh.rnahit_id from rnahit as rh")))
+
+(defn- insert-verified-info
+  [values]
+  (sql-update
+   (apply
+    sql/insert-values
+    :verified_rnahit
+    [:rnahit_id :verified_taxon_id :verified_loc] values)))
+
+(defn update-verified-info
+  [stospec]
+  (let [stos (get-sto-files stospec)]
+    (insert-verified-info
+     (sort-by first (map (fn[[n gn ntx vid vloc]]
+                           [(rnaname-id-map n) vid vloc])
+                         (apply concat (map get-mlab-gfinfo stos)))))))
+
+;;;(update-verified-info "/home/kaila/Bio/Tests/JSA/NewRNAs")
+;;;(update-verified-info "/home/kaila/Bio/Tests/JSA")
 
 
 (defn- insert-genome-rnahits
@@ -156,16 +255,11 @@
 
 (defn update-genome-rnahit
   [stospec]
-  (let [stos (if (fs/directory? stospec)
-               (sort (fs/directory-files stospec ".sto"))
-               (list (fs/fullpath stospec)))
+  (let [stos (get-sto-files stospec)
         rnahit-ids (map #(->> % fs/basename
                               (str/split #"\.")
                               first str/lower-case
-                              (pr-str)
-                              (str "select rnahit_id from rnahit where name=")
-                              (sql-query)
-                              first (:rnahit_id))
+                              rnaname-id-map)
                         stos)
         genome-groups (map
                        (fn[sto]
@@ -180,7 +274,8 @@
               genome-groups))))
 
 #_(update-genome-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
-#_(update-genome-rnahit "/home/kaila/Bio/Tests/JSA/RNA_00006.sto")
+#_(update-genome-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00006.sto")
+#_(update-genome-rnahit "/home/kaila/Bio/Tests/JSA")
 
 
 #_(map :name (sql-query "select name from rnahit"))
@@ -226,6 +321,64 @@
         stmt (if gene (str stmt gene-clause) stmt)
         stmt (str/replace-re #"/taxon/" taxon stmt)
         stmt (str stmt ") as foo")]
+    (sql-query stmt)))
+
+
+(def new-rna-taxon-genome-subtbl
+     "(select distinct tx.taxon_id
+              from bioentry as be,
+                   taxon as tx,
+                   ancestor as an,
+                   rnahit as rh,
+                   genome_rnahit as grh
+              where be.bioentry_id=grh.bioentry_id
+              and be.taxon_id=tx.taxon_id
+              and tx.ncbi_taxon_id=an.ncbi_taxon_id
+              and grh.rnahit_id=rh.rnahit_id
+              and an.ancestors regexp \"/taxon/\"")
+
+(def taxon-genome-subtbl
+     "(select distinct tx.taxon_id
+              from bioentry as be,
+                   taxon as tx,
+                   ancestor as an
+              where be.taxon_id=tx.taxon_id
+              and tx.ncbi_taxon_id=an.ncbi_taxon_id
+              and an.ancestors regexp \"/taxon/\"")
+
+(defn get-genomes
+  [taxon & {:keys [plasmids ncs-only new-rnas gene]
+            :or {plasmids false ncs-only true new-rnas false gene nil}}]
+  (let [plasmid-clause " and be.description not regexp \"plasmid\""
+        ncsonly-clause " and be.name regexp \"^NC\""
+        rna-clause     " and rh.name="
+        gene-clause    " and rh.gene_name="
+        rna-clause (when (string? new-rnas) (str rna-clause \" new-rnas \"))
+        gene-clause (when gene (str gene-clause  \" gene \"))
+
+        subtbl (if new-rnas new-rna-taxon-genome-subtbl taxon-genome-subtbl)
+        subtbl (str/replace-re #"/taxon/" taxon taxon-genome-subtbl)
+        subtbl (if plasmids subtbl (str subtbl plasmid-clause))
+        subtbl (if ncs-only (str subtbl ncsonly-clause) subtbl)
+        subtbl (str subtbl ") as foo ")
+
+        tables " from bioentry as be,"
+        tables (str (if (or rna-clause gene-clause)
+                      (str tables "rnahit as rh,genome_rnahit as grh,")
+                      tables)
+                    subtbl)
+        preds " where be.taxon_id=foo.taxon_id"
+        preds (if (or rna-clause gene-clause)
+                (str preds
+                     " and be.bioentry_id=grh.bioentry_id"
+                     " and grh.rnahit_id=rh.rnahit_id")
+                preds)
+
+        stmt (str "select be.name, be.bioentry_id, foo.taxon_id" tables preds)
+        stmt (if ncs-only (str stmt ncsonly-clause) stmt)
+        stmt (if plasmids stmt (str stmt plasmid-clause))
+        stmt (if rna-clause (str stmt rna-clause) stmt)
+        stmt (if gene-clause (str stmt gene-clause) stmt)]
     (sql-query stmt)))
 
 
@@ -318,21 +471,77 @@
       "Erysipelotrichi" "Firmicutes" "Fusobacteria" "Gammaproteobacteria"
       "Legionellales" "Legionellales" "Methylococcales" "Negativicutes"
       "Oceanospirillales" "Pasteurellales" "Pseudomonadales" "Spirochaetes"
-      "Tenericutes" "Thermotogae" "Thiotrichales" "Verrucomicrobia"
-      "Vibrionales" "Wigglesworthia" "Xanthomonadales" "Xenorhabdus"
-      "endosymbiont"])
+      "Tenericutes" "Thermolithobacteria" "Thermotogae" "Thiotrichales"
+      "Verrucomicrobia" "Vibrionales" "Wigglesworthia" "Xanthomonadales"
+      "Xenorhabdus" "endosymbiont"])
 
 
+
+
+;;;  rnas ["rna_00011" "rna_00012" "rna_00013"]] ;(keys rnaname-id-map)
+;;;
+(defn rna-taxon-info
+  "For each rna in RNAS (a collection of new rna names) create a
+   breakdown of count, percentage of total and NC list for each taxon
+   in TAXONS.  Place results in outfile.
+  "
+  [out-file & {:keys [rnas taxons]
+               :or {rnas (sort (keys rnaname-id-map))
+                    taxons sorted-bacterial-taxons-of-note}}]
+  (io/with-out-writer out-file
+    (doseq [grp (for [rna rnas
+                      taxon taxons
+                      :let [fullcnt (-> taxon count-genomes first vals first)
+                            cnt (-> taxon (count-genomes :new-rnas rna)
+                                    first vals first)]
+                      :when (and (> cnt 0) (> fullcnt 0))]
+                  [rna taxon cnt
+                   fullcnt (double (* 100.0 (/ cnt fullcnt)))
+                   (->> (get-ncs-by-taxon-rna-gene taxon :rna rna)
+                        first third vals first set)])]
+      (println)
+      (println (str/join ", " (take 5 grp)))
+      (doseq [nc (last grp)]
+        (println nc)))))
+
+
+(defn sto-intersect
+  ([sto1 sto2]
+     (let [s1-ncs (->> (read-seqs sto1 :info :names)
+                       (map #(first (entry-parts %)))
+                       set)
+           s2-ncs (->> (read-seqs sto2 :info :names)
+                       (map #(first (entry-parts %)))
+                       set)]
+       (set/intersection s1-ncs s2-ncs)))
+  ([sto1 sto2 & stos]
+     (reduce (fn[S s]
+               (let [s-ncs (->> (read-seqs s :info :names)
+                                (map #(first (entry-parts %)))
+                                set)]
+                 (set/intersection S s-ncs)))
+             #{} (conj stos sto1 sto2))))
 
 
 (comment
+  (sto-intersect "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00006.sto"
+                 "/home/kaila/Bio/Tests/JSA/RNA_00012.sto")
+
+  (sto-intersect "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00010.sto"
+                 "/home/kaila/Bio/Tests/JSA/RNA_00013.sto")
+
   (count-genomes "Firmicutes")
   (count-genomes "Bacteria")
   (count-genomes "Vibrionales")
   (count-genomes "Enterobacteriales")
   (count-genomes "endosymbiont")
+  (get-genomes "endosymbiont")
+  (count (get-genomes "Firmicutes"))
+  (count (get-genomes "Bacteria"))
 
-  (count-genomes "Firmicutes" :new-rnas true)
+  (count (get-genomes "Firmicutes" :new-rnas "rna_00013"))
+  (count (->> (get-ncs-by-taxon-rna-gene "Firmicutes" :rna "rna_00013")
+              first third (#(% "rplT"))))
   (count-genomes "Bacteria" :new-rnas true)
   (count-genomes "Vibrionales" :new-rnas true)
   (count-genomes "Enterobacteriales" :new-rnas true)
@@ -341,25 +550,17 @@
 
 
 
+
 #_(doseq [[gn cnt] (map #(do [% (-> % count-genomes  first vals first)])
-                        bacterial-taxons-of-note)]
+                        sorted-bacterial-taxons-of-note)]
     (println (str gn ", " cnt)))
 
 
 #_(doseq [[gn cnt] (map #(do [% (-> % (count-genomes :new-rnas true)
                                     first vals first)])
-                        bacterial-taxons-of-note)]
+                        sorted-bacterial-taxons-of-note)]
     (println (str gn ", " cnt)))
 
-
-#_(doseq [grp (for [rna (map :name (sql-query "select name from rnahit"))
-                    taxon bacterial-taxons-of-note
-                    :let [fullcnt (-> taxon count-genomes first vals first)
-                          cnt (-> taxon (count-genomes :new-rnas rna)
-                                  first vals first)]
-                    :when (and (> cnt 0) (> fullcnt 0))]
-                [rna taxon cnt (double (* 100.0 (/ cnt fullcnt)))])]
-    (println (str/join ", " grp)))
 
 
 #_(sort-by
@@ -387,6 +588,14 @@
            and   an.ancestors regexp \"Leuconostoc\"
            and   be.name regexp \"^NC\"")
 
+#_(sql-query
+   "select be.name,an.ancestors
+           from bioentry as be, taxon as tx, ancestor as an
+           where be.taxon_id=tx.taxon_id
+           and   tx.ncbi_taxon_id=an.ncbi_taxon_id
+           and   an.ancestors regexp \"Firmicute\"
+           and   be.name regexp \"^NC\""))
+(count-genomes "Firmicute")
 
 
 #_(print-ncs-by-taxon
@@ -426,6 +635,12 @@
    (get-ncs-by-taxon-rna-gene
     " Thermus "
     :rna "rna_00009"))
+
+#_(print-ncs-by-taxon
+   (get-ncs-by-taxon-rna-gene
+    "Tenericutes"
+    :gene "rplA"))
+
 
 (insts-by-rank "Bacilus subtilis" "family")
 (count (insts-by-rank

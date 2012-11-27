@@ -303,7 +303,8 @@
                          [s e] (map #(Integer. %) (str/split #"-" range))
                          strand (if strand strand (if (> s e) "-1" "1"))
                          [s e] (if (< s e) [s e] [e s])
-                         [s e] [(- s ldelta) (+ e rdelta)]]
+                         [s e] [(- s ldelta) (+ e rdelta)]
+                         [s e] [(if (neg? s) 1 s) e]]
                      [s e strand]))]
     [name [s e] st]))
 
@@ -312,6 +313,14 @@
   (io/with-out-writer (io/file-str file)
     (doseq [e entries]
       (println e)))
+  file)
+
+(defn gen-entry-nv-file [entries file]
+  (io/with-out-writer (io/file-str file)
+    (doseq [e entries]
+      (if (coll? e)
+        (println (->> e (map str) (str/join ", ")))
+        (println e))))
   file)
 
 
@@ -579,7 +588,7 @@
 
           "gma" (raise :type :NYI :info "GMA format not yet implemented")
 
-          ("fna" "fa")
+          ("fna" "fa" "hitfna")
           (if (= info :data)
             second
             #(re-find #"[A-Za-z0-9._/-]+" (first %))))))
@@ -598,7 +607,7 @@
                     (io/read-lines filespec))
         sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
         sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
-        sqs (if (in type ["fna" "fa"]) (partition 2 sqs) sqs)
+        sqs (if (in type ["fna" "fa" "hitfna"]) (partition 2 sqs) sqs)
         sqs (if (= type "sto") (take-while #(re-find #"^[A-Z]" %) sqs) sqs)]
     (map f sqs)))
 

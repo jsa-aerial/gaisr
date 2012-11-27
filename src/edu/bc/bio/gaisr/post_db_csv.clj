@@ -119,8 +119,9 @@
 
 
 (defn canonical-entry-info [entries]
-  (map #(let [[nm [s e] sd] (entry-parts %) [s e] (if (= sd "1") [s e] [e s])]
-          [nm s e 0.0 0.0 :new "N/A"])
+  (map #(let [[nm [s e] sd] (entry-parts %)
+              [s e] (if (= sd "1") [s e] [e s])]
+          [nm s e 0.0 0.0 :new sd])
        entries))
 
 (defn sto-entries [stofile]
@@ -129,7 +130,14 @@
 
 (defn ent-entries [ent-file]
   (let [entries (io/read-lines ent-file)]
-    (canonical-entry-info entries)))
+    (if (> (->> entries first csv/parse-csv first count) 1)
+      (let [einfo (canonical-entry-info (map #(->> % (str/split #",") first)
+                                             entries))
+            entropy-scores (->> ent-file slurp csv/parse-csv
+                                butlast (map second))]
+        (map (fn[[nm s e _ _ x y] score] [nm s e score 0.0 x y])
+             einfo entropy-scores))
+      (canonical-entry-info entries))))
 
 
 (defn get-entries [csv-hit-file]
@@ -138,6 +146,7 @@
     (cond
      (= ftype "sto") (sto-entries file)
      (= ftype "ent") (ent-entries file)
+     ;;(= ftype "ffp") (ffp-entries file)
      :else
      (let [rows (csv/parse-csv (slurp file))
            head (first rows)]
@@ -242,29 +251,30 @@
    species or the database is missing the species (due to unloaded
    data source or some other anomaly)"
   [names]
-  (loop [prev-name (first names)
-         ns names
-         infos (base-info-query names)
-         ninfos []]
-    (if (empty? ns)
-      ninfos
-      (let [n (first ns)
-            n (subs n 1 (dec (count n)))
-            info-name (:name (first infos))
-            gbid      (:gbid (first infos))]
-        (if (not= n info-name)
-          (recur (twiddle-name n prev-name)
-                 (drop 1 ns)
-                 infos
-                 (conj ninfos {:name (twiddle-name n prev-name)
-                               :version 0 :description "NA"
-                               :bioentry_id (gen-kwuid) :gbid gbid
-                               :taxon_id 0 :taxname "NA" :ancestors "NA"
-                               :delta +start-delta+}))
-          (recur n
-                 (drop 1 ns)
-                 (drop 1 infos)
-                 (conj ninfos (first infos))))))))
+  (let [names (sort names)]
+    (loop [prev-name (first names)
+           ns names
+           infos (sort-by :name (base-info-query names))
+           ninfos []]
+      (if (empty? ns)
+        ninfos
+        (let [n (first ns)
+              n (subs n 1 (dec (count n)))
+              info-name (:name (first infos))
+              gbid      (:gbid (first infos))]
+          (if (not= n info-name)
+            (recur (twiddle-name n prev-name)
+                   (drop 1 ns)
+                   infos
+                   (conj ninfos {:name (twiddle-name n prev-name)
+                                 :version 0 :description "NA"
+                                 :bioentry_id (gen-kwuid) :gbid gbid
+                                 :taxon_id 0 :taxname "NA" :ancestors "NA"
+                                 :delta +start-delta+}))
+            (recur n
+                   (drop 1 ns)
+                   (drop 1 infos)
+                   (conj ninfos (first infos)))))))))
 ;;;
 ;;; END FUGLY HACK-----------------------------------------------------------
 
@@ -310,7 +320,7 @@
         hitseq (-> f get-entries filter-entries)]
     (if (empty? hitseq)
       {:error (cl-format nil "File '~A' has no nonredundant content" filespec)}
-      (gather-hit-features hitseq))))
+      (gather-hit-features (sort-by first hitseq)))))
 
 
 

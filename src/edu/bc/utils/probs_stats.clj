@@ -561,6 +561,9 @@
 
 
 
+(def ^{:doc "Default log function for entropy" :dynamic true}
+     *logfn* log2)
+
 (defn shannon-entropy
   "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
    where i ranges over the unique elements of S and pi is the
@@ -581,7 +584,7 @@
   "
   [dist & {logfn :logfn :or {logfn log2}}]
   (if (or (string? dist) (vector? dist))
-    (shannon-entropy dist)
+    (shannon-entropy dist :logfn logfn)
     (let [dist (if (map? dist) (vals dist) dist)]
       (- (sum (fn[v]
                 (let [v (double v)]
@@ -605,7 +608,7 @@
   ([combinator sym? coll1 coll2]
      (entropy (joint-probability combinator sym? coll1 coll2)))
   ([combinator sym? coll1 coll2 & colls]
-     (entropy (apply joint-probability combinator sym? coll1 coll2 colls))))
+     (entropy (apply joint-probability combinator sym? colls))))
 
 (defn HXY
   "Synonym for joint-entropy"

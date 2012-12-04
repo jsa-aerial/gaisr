@@ -42,8 +42,10 @@ if (@cmd == "-h" or @cmd == "--help")
   puts " * check-sto <stofile>+"
   puts " * get-seqs [sto|aln|fna|ent] {[+|-]prefix [+|-]suffix}"
   puts " * correct-sto-coordinates stofile"
+  puts " * embl-to-nc-sto embl-stofile"
   puts " * run-config config-file"
   puts " * check-job {all | jobid+}"
+  puts " * rna-taxon-info outfile rna-list taxon-list"
   puts " * name-taxonomy"
   puts " * sto-csv-matchup"
   puts ""
@@ -62,8 +64,10 @@ elsif (not ['list',
             'check-sto',
             'get-seqs',
             'correct-sto-coordinates',
+            'embl-to-nc-sto',
             'run-config',
-            'check-job'].include?(@cmd))
+            'check-job',
+            'rna-taxon-info'].include?(@cmd))
   puts "Unknown subcmd #{@cmd}"
   puts "use gaisr -h, for useage"
   exit(1)

@@ -34,26 +34,11 @@
   "Operon context matching for sequence 'hits'.  Data sets pulled from
    prebuilt operon tables in extended biosql database"
 
-  (:require [clojure.contrib.sql :as sql]
-            [org.bituf.clj-dbcp :as dbcp]
-            [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
-            [clojure.contrib.io :as io]
-            [clojure.contrib.math :as math]
-            [clojure.contrib.trace :as tr]
-            )
+  (:require [clojure.contrib.math :as math])
 
   (:use edu.bc.utils
         [edu.bc.bio.gaisr.db-actions
-         :only [operon-location-query]]
-
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+         :only [operon-location-query]])
 
   (:import javax.sql.DataSource
            com.mysql.jdbc.jdbc2.optional.MysqlConnectionPoolDataSource))

@@ -34,9 +34,6 @@
             [org.bituf.clj-dbcp :as dbcp]
             [clojure.contrib.string :as str]
             [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
-            [clojure.contrib.io :as io]
             [clojure.contrib.json :as json]
             [edu.bc.fs :as fs])
 
@@ -44,10 +41,8 @@
         edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
 
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+        [clojure.pprint
+         :only [cl-format]])
 
   (:import javax.sql.DataSource
            com.mysql.jdbc.jdbc2.optional.MysqlConnectionPoolDataSource
@@ -85,7 +80,7 @@
 ;;; -------------------- Operon Location Query ----------------------;;;
 
 
-(def *bogus-counts* (atom {}))
+(defparameter *bogus-counts* (atom {}))
 
 ;;; For a given bioentry (organism), fetch the operon location
 ;;; information that falls between start and end.
@@ -316,7 +311,7 @@
 ;;; changable per query type by rebinding in the handlers for the
 ;;; different queries.
 ;;;
-(def *ret-keys*
+(defparameter *ret-keys*
      (hash-set :taxname :taxon_id
                :bioentry_id :identifier :name :description
                :version :sfcount :ancestors))

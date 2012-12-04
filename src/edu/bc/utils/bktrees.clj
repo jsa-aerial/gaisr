@@ -46,10 +46,8 @@
         edu.bc.utils.trees
 
         clojure.contrib.math
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
         ))
 
 

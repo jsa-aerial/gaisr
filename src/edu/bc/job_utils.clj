@@ -102,7 +102,7 @@
   (results [jobs jid] "Return the results of all tasks and the job")
   (cancel [jobs jid] "cancel job with id JID.")
 
-  (del [jobs user jid & {:keys [force] :or {force false}}]
+  (del [jobs user jid force]
        "remove job with id JID from job set"))
 
 
@@ -139,7 +139,7 @@
   (deref (tid @(:results j))))
 
 
-(declare *jobs*)
+(def ^:dynamic  *jobs*)
 
 ;;; Main task set constructor.  Builds and compiles a function that is
 ;;; the body of each task taking into account status and result
@@ -328,7 +328,7 @@
           (with-base-chk jid
             (raise :type :nyi :msg "job cancel not yet implemented!")))
 
-  (del [_ user jid & {:keys [force] :or {force false}}]
+  (del [_ user jid force]
        (with-base-chk jid
          (when (not force)
            (assert (in (chk _ jid) [:new :waiting :done :cancelled :abort])))
@@ -353,7 +353,7 @@
 ;;; between them) to the overall processing".
 ;;;
 
-(def *jobs* (jobs. (atom {}) (atom {})))
+(defparameter *jobs* (jobs. (atom {}) (atom {})))
 
 
 
@@ -377,7 +377,7 @@
 
 
 (defn- delete-set [user jids force]
-  (map #(del *jobs* user %1 :force force) jids))
+  (map #(del *jobs* user %1 force) jids))
 
 (defn delete-done [user]
   (delete-set user (all *jobs* user :done) false))

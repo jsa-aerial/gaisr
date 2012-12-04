@@ -44,11 +44,8 @@
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
-        [clojure.contrib.condition
-         :only [raise handler-case *condition*
-                print-stack-trace stack-trace-info]]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]))
+        [clojure.pprint
+         :only [cl-format]]))
 
 
 ;;; -----------------------------------------------------------------

@@ -38,10 +38,6 @@
    pipeline invocations, etc."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
             [clojure.contrib.json :as json]
 
@@ -61,10 +57,8 @@
         [edu.bc.bio.gaisr.post-db-csv
          :only [efile-csvhits->names-and-matches process-hit-file]]
 
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]))
+        [clojure.pprint
+         :only [cl-format]]))
 
 
 ;;; Setup and run web based inspector.  This is pretty neat, but a bit
@@ -201,14 +195,14 @@
    Condition.
   "
   [& body]
-  `(try
+  `(handler-case
      (do ~@body)
-     (catch clojure.contrib.condition.Condition c#
-       {:body (json/json-str {:info (str (dissoc (meta c#) :stack-trace))
-                              :stat "error"})})
-     (catch Exception e#
-       {:body (json/json-str {:info (str {:err (with-out-str (print e#))})
-                              :stat "error"})})))
+     [map? c#
+      {:body (json/json-str {:info (str (:object ~'contextMap))
+                             :stat "error"})}]
+     [Exception e#
+      {:body (json/json-str {:info (str {:err (with-out-str (print e#))})
+                             :stat "error"})}]))
 
 (defn get-remote-cemap
   "Transform the condition/exception map to a list of strings.  Remove

@@ -40,12 +40,8 @@
    future."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
-            [clj-shell.shell :as sh]
             [incanter.core]
             [incanter.charts]
             [edu.bc.fs :as fs])
@@ -55,10 +51,8 @@
         edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         edu.bc.bio.sequtils.info-theory
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
         ))
 
 

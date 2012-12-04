@@ -37,21 +37,14 @@
    that should be factored as well."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
-            [clojure.contrib.math :as math]
             [edu.bc.fs :as fs])
 
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
         ))
 
 
@@ -320,7 +313,7 @@
         legal-ends (keep #(when (= (subs (first %1) 1 2) end) %1) di-nts)]
     (binding [shuffles (atom {})
               limit-counter limit-counter]
-      (handler-case :type
+      (handler-case
         (loop [_ limit
                base-starters (nts-map start)]
           (let [s (dint-shuffle
@@ -332,8 +325,8 @@
               (recur (dec _)
                      (concat (drop 1 base-starters)
                              (take 1 base-starters))))))
-        (handle :explode
-          (println :limit-reached)))
+        ([:type :explode] e
+           (println :limit-reached)))
         @shuffles)))
 
 

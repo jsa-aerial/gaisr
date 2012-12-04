@@ -1,3 +1,34 @@
+;;--------------------------------------------------------------------------;;
+;;                                                                          ;;
+;;                          L O G 4 C L J                                   ;;
+;;                                                                          ;;
+;;                                                                          ;;
+;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;;                                                                          ;;
+;; Permission is hereby granted, free of charge, to any person obtaining    ;;
+;; a copy of this software and associated documentation files (the          ;;
+;; "Software"), to deal in the Software without restriction, including      ;;
+;; without limitation the rights to use, copy, modify, merge, publish,      ;;
+;; distribute, sublicense, and/or sell copies of the Software, and to       ;;
+;; permit persons to whom the Software is furnished to do so, subject to    ;;
+;; the following conditions:                                                ;;
+;;                                                                          ;;
+;; The above copyright notice and this permission notice shall be           ;;
+;; included in all copies or substantial portions of the Software.          ;;
+;;                                                                          ;;
+;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,          ;;
+;; EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF       ;;
+;; MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND                    ;;
+;; NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE   ;;
+;; LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION   ;;
+;; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION    ;;
+;; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.          ;;
+;;                                                                          ;;
+;; Author: Jon Anthony                                                      ;;
+;;                                                                          ;;
+;;--------------------------------------------------------------------------;;
+;;
+
 (ns edu.bc.log4clj
   "Attempt to make some sort of reasonable abstraction over log4j.  Or
    maybe we will give up and just reimplement log4cl in clj.  Java
@@ -8,21 +39,14 @@
    would be reasonable to just use log4j, but the underlying lib
    complexity is nuts."
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
-            [clojure.contrib.io :as io]
             [clojure.contrib.properties :as prop]
-            [clojure.xml :as xml]
             [edu.bc.fs :as fs])
 
   (:use clojure.contrib.math
         edu.bc.utils
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+        [clojure.pprint
+         :only [cl-format]])
 
   (:import (java.util Properties Vector)
            ;; Useless... (org.apache.commons.logging Log)
@@ -39,7 +63,7 @@
 ;;; :ALL :TRACE :DEBUG :INFO :WARN :ERROR :FATAL :OFF
 
 
-(def *levels*
+(defparameter *levels*
      {:all   org.apache.log4j.Level/ALL
       :trace org.apache.log4j.Level/TRACE
       :debug org.apache.log4j.Level/DEBUG
@@ -49,12 +73,12 @@
       :fatal org.apache.log4j.Level/FATAL
       :off   org.apache.log4j.Level/OFF})
 
-(def *appenders*
+(defparameter *appenders*
      {:console "org.apache.log4j.ConsoleAppender"
       :file    "org.apache.log4j.FileAppender"
       :rolling "org.apache.log4j.RollingFileAppender"})
 
-(def *options*
+(defparameter *options*
      {:level       "Level" ; Don't need now, but will when reimpl
       :name        "Name"  ;     "
       :layout      "layout.ConversionPattern"

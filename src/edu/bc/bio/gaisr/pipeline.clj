@@ -34,19 +34,14 @@
   "Primary functions defining the overall pipeline of GAISR."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure-csv.core :as csv]
             [clojure.contrib.io :as io]
             [edu.bc.fs :as fs])
 
   (:use [clojure.contrib.math :as math]
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
 
         [edu.bc.log4clj :only [create-loggers log>]]
         edu.bc.utils
@@ -230,8 +225,8 @@
   (apply concat (map (fn[[k v]] v) clusters)))
 
 ;;; Debugging/Checking vars.
-(def *tmap* (atom {}))
-(def *tclusts* (atom ()))
+(defparameter *tmap* (atom {}))
+(defparameter *tclusts* (atom ()))
 
 (defn group-by-taxon [taxon-tuple-map & {cutoff :cutoff :or {cutoff 100}}]
   (loop [clusters ()
@@ -331,7 +326,7 @@
                    (rest todo))))))))
 
 
-(def *clusnr* "ClusNR")
+(defparameter *clusnr* "ClusNR")
 
 (defn get-candidates [hit-file & {:keys [cmpfn dir]
                                   :or {cmpfn cd-hit-est dir nil}}]

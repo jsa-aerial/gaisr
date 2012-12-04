@@ -38,20 +38,20 @@
   (:require [clojure.contrib.math :as math]
             [clojure.contrib.combinatorics :as comb]
             [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
             [clojure.contrib.io :as io]
             [clojure.contrib.properties :as prop]
             [edu.bc.fs :as fs])
 
-  (:use [clojure.contrib.condition
-         :only [raise handler-case *condition*
-                print-stack-trace stack-trace-info]]
+  (:use [slingshot.slingshot
+         :only [throw+ try+ get-throw-context]]
+        [clojure.stacktrace
+         :only [print-stack-trace]]
         [clj-shell.shell
          :only (sh)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+        [clojure.pprint
+         :only [cl-format]])
 
   (:import (java.util Date Calendar Locale)
            java.lang.Thread
@@ -67,6 +67,15 @@
 ;;; are either already in Clojure or in bits of contribs or probably
 ;;; _will_ be in future (at which point these can be retired...)
 
+
+(defmacro defparameter
+  "def with auto declaration of symbol SYM to be dynamic"
+  ([sym val]
+     `(def ~(with-meta sym (assoc (meta sym) :dynamic true)) ~val))
+  ([mmap sym val]
+    `(def ~(with-meta sym (assoc mmap :dynamic true)) ~val)))
+
+
 (defn timefn
   "Time the application of F (a function) to ARGS (any set of args as
    expected by f.  Returns a two element vector [ret time] where,
@@ -81,7 +90,8 @@
     [ret (/ (double (- (. java.lang.System (nanoTime)) start-time))
             1000000.0)]))
 
-(def ^{:private true} *uid* (atom (.getTime (Date.))))
+(defparameter {:private true} *uid* (atom (.getTime (Date.))))
+
 
 (defn gen-uid
   "Generates a unique integer ID based on universal time."
@@ -533,14 +543,14 @@
  ^{:doc
    "Named version of (logb 2).  Important enough to have a named top
     level function"
-   :arglists '[x]}
+   :arglists '([x])}
  log2 (logb 2))
 
 (def
  ^{:doc
    "Named version of (logb 10).  Important enough to have a named top
     level function"
-   :arglists '[x]}
+   :arglists '([x])}
  log10 (logb 10))
 
 
@@ -548,9 +558,7 @@
   "For positive integer N, compute N factorial."
   [n]
   {:pre [(integer? n) (> n -1)]}
-  (if (or (= n 0) (= n 1))
-    1
-    (reduce * (range 2 (inc n)))))
+  (reduce *' (range n 1 -1)))
 
 (defn n-k!
   "For positive integers N and K, compute (n-k)!"
@@ -558,7 +566,7 @@
   {:pre [(integer? n) (integer? k) (> n -1) (<= 0 k n)]}
   (if (= n k)
     1
-    (n! (- n k))))
+    (n! (-' n k))))
 
 (defn nCk
   "For positive integers N and K, compute N choose K (binomial
@@ -567,8 +575,18 @@
   {:pre [(integer? n) (integer? k) (> n -1) (<= 0 k)]}
   (if (< n k)
     0
-    (/ (reduce * (range n (- n k) -1))
+    (/ (reduce *' (range n (-' n k) -1))
        (n! k))))
+
+#_
+(defn nchoosek
+  "Shermin idea for much cooler implementation, but at present about
+   1/2 as fast...
+   "
+  [n k]
+  (let [f (fn[n k]
+            (reduce *' (take k (range n 1 -1))))]
+    (/ (f n k) (f k k))))
 
 
 (defn primes
@@ -577,21 +595,21 @@
   [n]
   (if (< n 2)
     ()
-    (let [n (int n)]
-      (let [root (int (Math/round (Math/floor (Math/sqrt n))))]
-        (loop [i (int 3)
+    (let [n (long n)]
+      (let [root (long (Math/round (Math/floor (Math/sqrt n))))]
+        (loop [i (long 3)
                a (int-array (inc n))
                result (list 2)]
           (if (> i n)
             (reverse result)
-            (recur (+ i (int 2))
+            (recur (+ i (long 2))
                    (if (<= i root)
                      (loop [arr a
                             inc (+ i i)
                             j (* i i)]
                        (if (> j n)
                          arr
-                         (recur (do (aset arr j (int 1)) arr)
+                         (recur (do (aset arr j (long 1)) arr)
                                 inc
                                 (+ j inc))))
                      a)
@@ -612,7 +630,7 @@
     num
     (do
       (when (> num (last @+prime-set+))
-        (swap! +prime-set+ (fn[_](primes (+ num (int (/ num 2)))))))
+        (swap! +prime-set+ (fn[_](primes (+ num (long (/ num 2)))))))
       (loop [ps (take-until #(> % num) @+prime-set+)
              factors []]
         (if (empty? ps)
@@ -846,26 +864,54 @@
 
 
 ;;; ----------------------------------------------------------------
-;;; Some helpers for running external programs.  In particular,
-;;; running them while ensuring they actually terminate normally.
+;;; Some helpers for enhanced / simpler exception raising and
+;;; handling.
 
 
-;;; The "odd" explicit use of list is the result of a toxic
-;;; interaction between syntax-quote not generating lists (but cons
-;;; cells) and handler-case not taking this into account.  The bug is
-;;; clearly in handler-case as it should account for this
+;;; All of this is based on the support in slingshot lib and
+;;; clojure.stacktrace.
 ;;;
+
+(defmacro raise
+  "Wraps throw+ for throwing a map object.  Ensures that (count args)
+   is even, then places pairs into a map which is given to throw+
+  "
+  [& args]
+  (let [m (into {} (map ensure-vec (partition 2 args)))]
+    `(throw+ ~m)))
+
+(defmacro handler-case
+  "Hide some try+ details.  Form is the expression that is exception
+   protected.  Cases are handler arms of the form [c e & body].  Where
+   c is the predicate for the case arm (with out preceding 'catch'), e
+   is the variable (symbol) to hold the exception object and body is
+   the set of forms to execute.  Within body, the captured symbol
+   contextMap is holds the exception context map.
+  "
+  [form & cases]
+  `(try+
+    ~form
+    ~@(map (fn [[c# e# & body#]]
+             `(catch ~c# ~e#
+                (let [~'contextMap ~'&throw-context]
+                  ~@body#)))
+           cases)))
+
+
 (defmacro with-handled
-  "Wraps FORM in a handler-case with handle case arms for each condition in
-   CONDITIONS. Each handle arm catches the condition C and prints a stack trace
-   for it.  Hence, while this catches the conditions, it stops execution.
-   For catch and continue see CATCH-ALL"
+  "Wraps FORM in a slingshot try+ with catch arms for each condition
+   in CONDITIONS. Each handle arm catches the condition C and prints a
+   stack trace for it.  Hence, while this catches the conditions, it
+   stops execution.  For catch and continue see CATCH-ALL
+  "
   [form & conditions]
-  `(handler-case :type
-     ~form
-     ~@(map (fn [c] (list 'handle c
-                           `(stack-trace-info *condition*)))
-            conditions)))
+  `(try+
+    ~form
+    ~@(map (fn [c]
+             `(catch [:type ~c] x#
+                (print-stack-trace
+                 (:throwable ~'&throw-context))))
+           conditions)))
 
 
 (defmacro with-ckd
@@ -873,13 +919,13 @@
    For conditions, the condition info meta data map is returned. For exceptions,
    the exception is converted to a string representation and that is returned."
   [& forms]
-  `(try
-     (do ~@forms)
-     (catch clojure.contrib.condition.Condition c#
-       (meta c#))
-     (catch Exception e#
-       (with-out-str
-         (print e#)))))
+  `(try+
+    (do ~@forms)
+    (catch #(or (map? %) (set? %)) c#
+      ~'&throw-context)
+    (catch Exception e#
+      (with-out-str
+        (print e#)))))
 
 
 (defmacro catch-all
@@ -889,6 +935,12 @@
   [& forms]
   `(with-ckd ~@forms))
 
+
+
+
+;;; ----------------------------------------------------------------
+;;; Some helpers for running external programs.  In particular,
+;;; running them while ensuring they actually terminate normally.
 
 
 (defn get-tool-path [toolset-type]

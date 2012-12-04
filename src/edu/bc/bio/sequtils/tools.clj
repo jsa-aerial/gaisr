@@ -37,23 +37,16 @@
    tools, but now may branch out to many others."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
             [clojure-csv.core :as csv]
-            [clj-shell.shell :as sh]
             [edu.bc.fs :as fs])
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
         [edu.bc.bio.seq-utils :only [norm-elements degap-seqs]]
         edu.bc.bio.sequtils.files
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
         ))
 
 

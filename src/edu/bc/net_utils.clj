@@ -36,24 +36,19 @@
    project that needs to talk http, ftp, etc."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
             [clojure.contrib.properties :as prop]
-            [clojure.xml :as xml]
-            [clj-http.client :as client]
+            ;;[clj-http.client :as client] ; No longer used??
             [net.cgrand.enlive-html :as html]
 
             [edu.bc.fs :as fs])
 
   (:use clojure.contrib.math
         edu.bc.utils
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+        [clojure.pprint
+         :only [cl-format]])
 
   (:import (org.apache.commons.net.ftp
             FTP FTPClient FTPFile FTPListParseEngine)

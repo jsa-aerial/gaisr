@@ -31,13 +31,9 @@
 
 (ns edu.bc.bio.rdb.new-rnas
   (:require [clojure.contrib.sql :as sql]
-            [org.bituf.clj-dbcp :as dbcp]
             [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
             [clojure.contrib.io :as io]
-            [clojure.zip :as zip]
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
@@ -45,10 +41,8 @@
          :only [entry-parts read-seqs]]
         [edu.bc.log4clj
          :only [create-loggers log>]]
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
         [edu.bc.bio.gaisr.db-actions
          :only [mysql-ds sql-query insts-by-rank]])
 
@@ -75,7 +69,7 @@
         (io/with-out-writer snapshot (prn gn-bid-map))
         gn-bid-map))))
 
-(def *name-id-map* (get-gname-bioid-map))
+(defparameter *name-id-map* (get-gname-bioid-map))
 
 
 (defmacro sql-update

@@ -36,12 +36,6 @@
    type service frontend, and the Ring (monad like) server framework."
 
   (:require [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
-            [clojure.contrib.io :as io]
-            [clojure.contrib.json :as json]
 
             [ring.util.response :as ring-resp]
             [compojure.route :as route]
@@ -55,10 +49,8 @@
         edu.bc.bio.gaisr.actions
 
         clojure.contrib.math
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [clojure.pprint
+         :only [cl-format]]
 
         [ring.middleware.cookies
          :only [wrap-cookies]]

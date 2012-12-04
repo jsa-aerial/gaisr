@@ -41,10 +41,10 @@
             [clojure.contrib.io :as io])
   (:use edu.bc.utils
         clojure.contrib.math
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)]
+        [slingshot.slingshot
+         :only [try+]]
+        [clojure.pprint
+         :only [cl-format]]
         ))
 
 ;;; *** NOTE: Getting Close, but still NOT TOTALLY COOKED YET!!! ***
@@ -84,7 +84,8 @@
       map-branch? :map
       nil))
 
-(def ^{:doc "Default kind of tree rep - :vec, :list, or :map"}
+(def ^{:dynamic true
+       :doc "Default kind of tree rep - :vec, :list, or :map"}
      *default-tree-kind* :vec)
 
 (defn tree-dispatch-fn [x]
@@ -232,19 +233,19 @@
 
 
 (defn tree-transact [tree zipfn & opers]
-  (try
-    (loop [ops opers
-           loc (zipfn tree)]
-      (if (empty? ops)
-        (zip/root loc)
-        (recur (rest ops)
-               ((first ops) loc))))
-    (catch clojure.contrib.condition.Condition c
-      (prn (meta c))
-      tree)
-    (catch Exception e
-      (print e)
-      tree)))
+  (try+
+   (loop [ops opers
+          loc (zipfn tree)]
+     (if (empty? ops)
+       (zip/root loc)
+       (recur (rest ops)
+              ((first ops) loc))))
+   (catch #(or (map? %) (set? %)) c
+     (prn (:message &throw-context))
+     tree)
+   (catch Exception e
+     (print e)
+     tree)))
 
 
 

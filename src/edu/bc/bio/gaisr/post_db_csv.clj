@@ -35,17 +35,11 @@
    output (remove duplicates, ev cutoffs, etc) as well as formatting
    to DB table (and corresponding CSV) formats"
 
-  (:require [clojure.contrib.sql :as sql]
-            [org.bituf.clj-dbcp :as dbcp]
-            [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
+  (:require [clojure.contrib.string :as str]
             [clojure-csv.core :as csv]
-            [clojure.contrib.json :as json]
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
-            [clojure.zip :as zip]
             [clojure.contrib.io :as io]
-            [clojure.xml :as xml]
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
@@ -58,15 +52,8 @@
         [edu.bc.bio.gaisr.db-actions
          :only [+start-delta+ base-info-query hit-features-query]]
 
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
-
-  (:import javax.sql.DataSource
-           com.mysql.jdbc.jdbc2.optional.MysqlConnectionPoolDataSource
-           [java.util StringTokenizer]
-           [java.io StreamTokenizer]))
+        [clojure.pprint
+         :only [cl-format]]))
 
 
 (def test-file

@@ -42,10 +42,11 @@ if (@cmd == "-h" or @cmd == "--help")
   puts " * check-sto <stofile>+"
   puts " * get-seqs [sto|aln|fna|ent] {[+|-]prefix [+|-]suffix}"
   puts " * correct-sto-coordinates stofile"
-  puts " * embl-to-nc-sto embl-stofile"
+  puts " * embl-to-nc embl-file"
+  puts " * entry-file-intersect {'with-seqs'} file1 file2 & files"
   puts " * run-config config-file"
   puts " * check-job {all | jobid+}"
-  puts " * rna-taxon-info outfile rna-list taxon-list"
+  puts " * rna-taxon-info outfile [rnas | -f rna-file] [taxons | -f taxon-file]"
   puts " * name-taxonomy"
   puts " * sto-csv-matchup"
   puts ""
@@ -64,7 +65,8 @@ elsif (not ['list',
             'check-sto',
             'get-seqs',
             'correct-sto-coordinates',
-            'embl-to-nc-sto',
+            'embl-to-nc',
+            'entry-file-intersect',
             'run-config',
             'check-job',
             'rna-taxon-info'].include?(@cmd))
@@ -78,16 +80,39 @@ end
 ### out as separate commands as well.
 
 
+def test_file (f, *msg)
+  if File.exists?(f)
+    true
+  else
+    if msg.empty?
+      puts "Error: file '#{f}' does not exist"
+    else
+      puts msg
+    end
+    exit(1)
+  end
+end
+
+
 def remote_cmd (upload_type, infile, *misc)
   server = "http://roz.bc.edu:8080"
   base_url = server + "/mlab/upld"
+
+  if infile.is_a?(Array)
+    infile = infile.map do |f| File.new(f) end
+  else
+    infile = File.new(infile)
+  end
+
   return RestClient.post(base_url,
                          {"upload-type" => upload_type,
                            :subtype => "remote",
                            :user => ENV['LOGNAME'].downcase,
                            :host => ENV["HOST"],
-                           :file => File.new(infile),
-                           :misc => misc},
+                           :file => infile, ##File.new(infile),
+                           :misc => misc,
+                           :multipart => true ##NECESSARY when vec of files!
+                         },
                          {:cookies => {:user => ENV['LOGNAME'].downcase}})
 end
 
@@ -157,6 +182,23 @@ def correct_sto_finish (file, info)
   end
 end
 
+def embl_to_nc_finish(file, info)
+  basedir = File.dirname(file)
+  filename = File.basename(file)
+  filetype = "\.#{filename.split(".").last}"
+  puts "Finished EMB to NC conversion for #{file}", "Results in #{basedir}"
+  fname = filename.sub(/#{filetype}/, "-NC#{filetype}")
+  lines = info[1]
+  if (!lines.empty?)
+    outFile = File.new(File.join(basedir, fname), "w")
+    if outFile
+      outFile.syswrite(lines)
+      outFile.close
+    else
+      puts "Unable to open file #{fname}"
+    end
+  end
+end
 
 def check_finish (jobidfile, data, result)
   jobid, cmd, file = data
@@ -165,6 +207,7 @@ def check_finish (jobidfile, data, result)
     result = report_result("", result)
     info = result["info"]
     jstat = info[0]
+
   elsif (cmd == "correct-sto-coordinates")
     result = JSON.parse(result.body)
     info = result["info"]
@@ -177,7 +220,21 @@ def check_finish (jobidfile, data, result)
     else
       correct_sto_finish(file, info[2..info_len])
     end
+
+  elsif (cmd == "embl-to-nc")
+    result = JSON.parse(result.body)
+    info = result["info"]
+    info_len = info.length
+    jstat = info[0]
+    if (jstat != "done")
+      report_result("", result)
+    elsif ((rstat = info[1]) != "good")
+      report_result("ERROR:", result)
+    else
+      embl_to_nc_finish(file, info[2..info_len])
+    end
   end
+
   if ((jstat == "done") and File.exist?(jobidfile))
     filename = File.basename(jobidfile)
     File.rename(jobidfile, File.join(@doneDir, filename))
@@ -188,16 +245,13 @@ end
 def check_job (args)
   if (args == [])
     jobidfile = File.join(@gaisrDir, "last-job.txt")
-    if (!File.exists?(jobidfile))
-      puts "Error - you have no jobs"
-      exit(1)
-    end
+    test_file(jobidfile, "Error - you have no jobs")
   else
     jobid = args[0]
     jobidfile = "job"+jobid
     jobidfile = File.join(@gaisrDir, jobidfile)
   end
-  if File.exists?(jobidfile)
+  if test_file(jobidfile, "No job with id #{jobid} found")
     data = IO.readlines(jobidfile).map do |x| x.chomp end
     jobid = data[0]
     tempfile = File.join(Dir.tmpdir, jobid)
@@ -209,8 +263,6 @@ def check_job (args)
     ## Make sure we pass in the actual jobidfile (not default last-job.txt!!)
     jobidfile = File.join(@gaisrDir, "job"+jobid)
     check_finish(jobidfile, data, result)
-  else
-    puts "No job with id #{jobid} found"
   end
 end
 
@@ -229,6 +281,15 @@ def correct_sto (args)
     jobid = result["info"][3]
     jobidfile = create_jobid_file("#{jobid}", [@cmd, infile])
   end
+end
+
+
+def embl_to_nc (args)
+  infile = File.expand_path(args[0])
+  result = remote_cmd(@cmd, infile)
+  result = report_result("", result)
+  jobid = result["info"][3]
+  jobidfile = create_jobid_file("#{jobid}", [@cmd, infile])
 end
 
 
@@ -280,6 +341,96 @@ def get_seqs (args)
   end
 end
 
+
+def entry_file_intersect(args)
+  wsqs = (args[0] == "with-seqs")
+  if ((wsqs and args.length < 3) or (not wsqs and args.length < 2))
+    puts "entry-file-intersect needs at least two input files"
+    exit(1)
+  end
+  files = if (wsqs) then args[1..args.length] else args end
+  result = remote_cmd(@cmd, files, wsqs)
+  result = JSON.parse(result.body)
+  if (result["stat"] != "success")
+    report_result("ERROR:", result)
+  else
+    info = result["info"][2] # first two are not used remote job status
+    basedir = File.dirname(files[0])
+    filename, ext = File.basename(files[0]).split(".")
+    newfilename = "#{filename}-INTERSECT.#{ext}"
+    newfullspec = File.join(basedir, newfilename)
+    outFile = File.new(newfullspec, "w")
+    sto = (ext == "sto")
+    if (!outFile)
+      puts "Unable to open file #{newfullspec}"
+    else
+      info.each do |x|
+        if wsqs
+          ent, sq = x
+          if sto
+            outFile.printf("%-35s %-1s\n" % x)
+          else
+            outFile.printf(">#{ent}\n")
+            outFile.printf("#{sq}\n")
+          end
+        else
+          outFile.printf("#{x}\n")
+        end
+      end
+      outFile.close
+      puts "Intersection output in #{newfullspec}"
+    end
+  end
+end
+
+
+def rna_taxon_info (args)
+  i = 0
+  outname = args[i]
+
+  if (args[i += 1] == "-f")
+    if test_file(args[i += 1])
+      rnas = IO.readlines(args[i])
+    end
+  else
+    rnas = args[i].split(/ *, */)
+  end
+  rnas = rnas.map do |r| bits = r.split(/( |\.|-)/); [bits[0], bits[2]] end
+
+  if (args[i += 1] == "-f")
+    if test_file(args[i += 1])
+      taxons = IO.readlines(args[i])
+    end
+  else
+    taxons = args[i].split(/ *, */)
+  end
+
+  time = Time.now
+  tempfile = File.join(Dir.tmpdir,
+                       ["rnatxinfo", time.hour, time.min, time.sec].join("-"))
+  tempFile = File.new(tempfile, "w")
+  rnas.each do |(r, v)| tempFile.puts("#{r}-#{v}") end
+  tempFile.puts(";;;")
+  taxons.each do |t| tempFile.puts(t) end
+  tempFile.close
+  result = remote_cmd(@cmd, tempfile)
+  result = JSON.parse(result.body)
+  File.delete(tempfile)
+
+  if (result["stat"] != "success")
+    report_result("ERROR:", result)
+  else
+    outFile = File.new(outname, "w")
+    if (!outFile)
+      puts "Unable to open file #{outname}"
+    else
+      info = result["info"][2] # first two are not used remote job status
+      outFile.syswrite(info)
+      outFile.close
+      puts "Taxon group information in #{outname}"
+    end
+  end
+end
 
 
 
@@ -361,6 +512,58 @@ def display_help (cmd)
     puts "will not exist, however there is always a new version file with the"
     puts "original renamed to old."
 
+  when "embl-to-nc"
+    puts "Takes an input file with EMBL entry names and converts it to one"
+    puts "with NCBI NC names.  Maintains sequence information.  EMBL-FILE is"
+    puts "either a sto or fna file with entries named with EMBL accensions."
+    puts "The result file name is the input name with '-NC' appended.  The"
+    puts "result file is a corresponding sto or fna with the same sequence"
+    puts "(and alignment if sto) with NCBI NC accensions replacing EMBL names."
+    puts ""
+    puts "Because embl-to-nc may take considerable time (many minutes), it is"
+    puts "always run as a job, and so will immediately return the job id for"
+    puts "the run.  This may then be checked and results fetched by use of"
+    puts "check-job."
+
+  when "entry-file-intersect"
+    puts "Intersects two or more sto, aln, fasta, or 'entry' files and writes"
+    puts "the result to an output file in the same directory as input and with"
+    puts "a filename that is the input name with -INTERSECT appended."
+    puts ""
+    puts "If 'with-seqs' is given (preceding all input files), the output also"
+    puts "has the corresponding sequences for the result entry set.  In this"
+    puts "case all input files must be of the same type (all stos, all fnas,"
+    puts "etc.) and the file type of the output is the same."
+    puts "***NOTE: for sto files, all # lines are removed!"
+    puts ""
+    puts "If 'with-seqs' is not given, the output is simply an entry file (a"
+    puts ".ent file) with entries listed one per line."
+
+  when "rna-taxon-info"
+    puts "Perform a 'new rna' taxon grouping information analysis on the given"
+    puts "rnas and taxons and place resulting information in the given output"
+    puts "file."
+    puts ""
+    puts "rnas can be given as either a string of comma separated rnas or by"
+    puts "using the -f option, can be listed, one per line, in the given file."
+    puts "In either case, an rna must be in the format rnaname[.|-| ]version."
+    puts "rnaname is a Meyer lab convention name for new rnas, for example,"
+    puts "rna_00011.  Version is a positive integer denoting the version of"
+    puts "interest.  So, a full example could be rna_00011.2"
+    puts ""
+    puts "taxons can be given as either a string of comma separated taxon names"
+    puts "or by using the -f option, can be listed one per line, in the given"
+    puts "file.  The set of default taxons can be denoted by the special name"
+    puts "'default-taxons'."
+    puts ""
+    puts "Examples:"
+    puts "gaisr rna-taxon-info rna_11-2-txinfo.txt rna_00011.2 default-taxons"
+    puts "gaisr rna-taxon-info taxon-info.txt -f rnas.txt -f taxons.txt"
+    puts ""
+    puts "Output format:"
+    puts "rna-name, version, taxon-name, rna cnt in taxon, total cnt, percent"
+    puts "list of genomes (by NC name)"
+
   when "run-config"
     puts "Takes a job configuration (job config or simply config) file and"
     puts "submits it for running as a background job.  The config file is"
@@ -416,6 +619,15 @@ elsif (@cmd == "get-seqs")
 
 elsif (@cmd == "correct-sto-coordinates")
   correct_sto(args)
+
+elsif (@cmd == "embl-to-nc")
+  embl_to_nc(args)
+
+elsif (@cmd == "entry-file-intersect")
+  entry_file_intersect(args)
+
+elsif (@cmd == "rna-taxon-info")
+  rna_taxon_info(args)
 
 elsif (@cmd == "check-job")
   if ((args.length != 0) and (args[0] == "all"))

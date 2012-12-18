@@ -73,7 +73,10 @@
   ([sym val]
      `(def ~(with-meta sym (assoc (meta sym) :dynamic true)) ~val))
   ([mmap sym val]
-    `(def ~(with-meta sym (assoc mmap :dynamic true)) ~val)))
+     (let [mmap (if (string? mmap)
+                  (assoc (meta sym) :doc mmap)
+                  (into (meta sym) mmap))]
+       `(def ~(with-meta sym (assoc mmap :dynamic true)) ~val))))
 
 
 (defn timefn

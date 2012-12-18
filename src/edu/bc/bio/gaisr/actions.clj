@@ -41,17 +41,19 @@
             [clojure.contrib.io :as io]
             [clojure.contrib.json :as json]
 
-            [edu.bc.fs :as fs])
+            [edu.bc.fs :as fs]
+            [edu.bc.bio.sequtils.tools :as tools])
 
   (:use clojure.contrib.math
         edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
         [edu.bc.bio.seq-utils :only [gap-count]]
         edu.bc.bio.sequtils.files
-        [edu.bc.bio.sequtils.tools :only [correct-sto-coordinates]]
 
         [edu.bc.bio.gaisr.db-actions
          :only [seq-query feature-query names->tax]]
+        [edu.bc.bio.gaisr.new-rnas
+         :only [rna-taxon-info sorted-bacterial-taxons-of-note]]
         [edu.bc.bio.gaisr.pipeline
          :only [run-config-job-checked]]
         [edu.bc.bio.gaisr.post-db-csv
@@ -208,16 +210,22 @@
   "Transform the condition/exception map to a list of strings.  Remove
    stack-trace and err key/vals, place the :err value as first
    element, all others are strings of key and value as (str k \" \" v)
+   and readable stack trace causes are placed at end.
   "
   [cemap]
-  (prn :*** cemap)
-  (let [emsg (if-let [em (cemap :err)] em "Error, see below...")]
-    (cons emsg
-          (keep (fn[[k v]]
-                  (when (not (in k [:err :stack-trace]))
-                    (let [v (if (coll? v) (doall v) v)]
-                      (str k " " v))))
-                cemap))))
+  ;;(prn :*** cemap)
+  (let [emsg (if-let [em (cemap :message)] em "Error, see below...")
+        stktrc (with-out-str
+                 (clojure.stacktrace/print-cause-trace (cemap :throwable)))]
+    (concat
+     (list emsg)
+     (keep (fn[[k v]]
+             (when (in k [:cause :environment])
+               (let [v (if (coll? v) (doall v) v)
+                     v (if v v "Not Available")]
+                 (str k " " v))))
+           cemap)
+     (list stktrc))))
 
 
 (defn remote-check-sto
@@ -384,7 +392,7 @@
               (cons :good (map #(if (fs/exists? %) (slurp %) []) res))))
           jobid (add *jobs* user
                      `[(print-str ~filename)
-                       (correct-sto-coordinates ~upload-file)]
+                       (tools/correct-sto-coordinates ~upload-file)]
                      resultfn)]
       (start *jobs* jobid)
       {:body (json/json-str
@@ -392,6 +400,77 @@
                       (str filename " coordinate correction started, jobid ")
                       (str jobid)]
                :stat "success"})})))
+
+
+(defn remote-embl-to-nc
+  "Run an embl-to-nc for user on uploaded file upload-file.  Spun off
+   as a job that requires check-job to obtain results remotely in
+   gaisr.rb
+  "
+  [user filename upload-file]
+  (remote-try
+   (let [resultfn
+         (fn[[file res]]
+           (if (map? res)
+             (cons :error (cons file (get-remote-cemap res)))
+             (list :good (if (fs/exists? res) (slurp res) []))))
+         jobid (add *jobs* user
+                    `[(print-str ~filename)
+                      (tools/embl-to-nc ~upload-file)]
+                    resultfn)]
+     (start *jobs* jobid)
+     {:body (json/json-str
+             {:info [:started :started
+                     (str filename " EMBL to NCBI NC started, jobid ")
+                     (str jobid)]
+              :stat "success"})})))
+
+
+(defn remote-entry-file-intersect
+  "Remote entry file intersection.  If with-seqs is true return
+   entries with their sequences.  This option requires all files to be
+   of the same type.  fs is a vector of file paths of the
+   uploaded-files after renaming for corresponding originating file
+   extensions.
+  "
+  [fs with-seqs]
+  (remote-try
+   (when with-seqs
+     (let [x (->> fs
+                  (reduce (fn[M f] (assoc M (fs/ftype f) f)) {})
+                  (#(= (count %) 1)))]
+       (when (not x)
+         (raise :type :not-same-ftype :msg "Not all files have same type"))))
+   (let [res (if with-seqs
+               (apply tools/entry-file-intersect-with-seqs fs)
+               (apply tools/entry-file-intersect false fs))]
+     {:body (json/json-str
+             {:info [:NA :NA (vec res)]
+              :stat "success"})})))
+
+
+(defn remote-rna-taxon-info
+  "Perform a new rna taxon grouping information analysis on the rnas
+   and taxons given in upload-file.  upload-file format is a list of
+   rnas (with versions in rna-version format) one per line.  Followed
+   by separator ';;;', followed by a list of taxon names, one per
+   line.  Returns the output as a string (slurped from rna-taxon-info
+   temp output file).
+  "
+  [upload-file]
+  (remote-try
+   (let [tempfile (fs/tempfile "remote-rna-taxon-info-" ".txt")
+         lines (io/read-lines upload-file)
+         rnas (take-until #(= % ";;;") lines)
+         taxons (->> lines (drop-until #(= % ";;;")) (drop 1))
+         default? (= (first taxons) "default-taxons")
+         taxons (if default?
+                  (concat sorted-bacterial-taxons-of-note (drop 1 taxons))
+                  taxons)]
+     {:body (json/json-str
+             {:info [:NA :NA (slurp (rna-taxon-info
+                                     tempfile :rnas rnas :taxons taxons))]
+              :stat "success"})})))
 
 
 (defn remote-run-config
@@ -439,6 +518,14 @@
               :stat "success"})})))
 
 
+(defn- get-fileinfo [fileinfo gfn]
+  (if (vector? fileinfo) (map gfn fileinfo) (gfn fileinfo)))
+
+(defn- chk-fileinfo [fileinfo chkfn]
+  (if (vector? fileinfo)
+    (reduce (fn[v nxt] (or v (chkfn nxt))) false fileinfo)
+    (chkfn fileinfo)))
+
 (defn upload-file
   "Dispatch function for upload posts.  ARGS contains a map of
    subcommand information, including the primary function to perform
@@ -449,14 +536,15 @@
   (let [user (get-in reqmap [:cookies "user" :value])
         upload-type (args :upload-type)
         fileinfo (args :file)
-        upload-file (fileinfo :tempfile)
-        filename (fileinfo :filename)
-        local-out (fs/fullpath (str "/data2/Bio/Work/" filename))]
+        upload-file (get-fileinfo fileinfo :tempfile)
+        filename (get-fileinfo fileinfo :filename)
+        local-out (get-fileinfo
+                   filename #(fs/fullpath (str "/data2/Bio/Work/" %)))]
     (cond
-     (= filename "")
+     (chk-fileinfo filename #(= % ""))
      {:body (json/json-str {:error "No file specified"})}
 
-     (= (fileinfo :size) 0)
+     (chk-fileinfo fileinfo #(= (% :size) 0))
      {:body (json/json-str
              {:error (cl-format nil "File '~A' has no content" filename)})}
 
@@ -480,6 +568,27 @@
             tmp-file (fs/replace-type (.getPath upload-file) (str "." ftype))]
         (fs/rename (.getPath upload-file) tmp-file)
         (remote-gen-name-seqs user filename tmp-file deltas))
+
+      (= upload-type "embl-to-nc")
+      (let [upload-path (.getPath upload-file)
+            ftype (fs/ftype filename)
+            tmp-file (fs/replace-type upload-path (str "." ftype))]
+        (fs/rename upload-path tmp-file)
+        (remote-embl-to-nc user filename tmp-file))
+
+      (= upload-type "entry-file-intersect")
+      (remote-entry-file-intersect
+       (->> upload-file
+            (map #(.getPath %))
+            (map #(let [ft (fs/ftype %1)
+                        nf (fs/replace-type %2 (str "." ft))]
+                    (fs/rename %2 nf)
+                    nf)
+                 filename))
+       (read-string (first (args :misc))))
+
+      (= upload-type "rna-taxon-info")
+      (remote-rna-taxon-info upload-file)
 
       (= upload-type "run-config")
       (remote-run-config user filename (.getPath upload-file))

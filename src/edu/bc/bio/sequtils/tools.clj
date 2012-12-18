@@ -36,7 +36,8 @@
    with (NCBI) Blast+, CMFINDER (and associated utils) and Infernal
    tools, but now may branch out to many others."
 
-  (:require [clojure.contrib.string :as str]
+  (:require [clojure.set :as set]
+            [clojure.contrib.string :as str]
             [clojure.contrib.io :as io]
             [clojure-csv.core :as csv]
             [edu.bc.fs :as fs])
@@ -368,6 +369,14 @@
 
 
 (defn get-embl-blast-candidates
+  "Takes an ncbi blast csv output file result from blasting an embl
+   entry input and returns an embl-id to ncbi-ids map.  The csv has
+   fields:
+
+     qseqid qstart qend evalue sseqid start send
+
+   The return map has entries: [embl-id [vec-of-best-ncbi-entries]].
+  "
   [blast-output-file]
   (reduce
    (fn[m x]
@@ -388,7 +397,16 @@
    {} (butlast (csv/parse-csv (slurp blast-output-file)))))
 
 
-(defn embl-sto->nc-sto [stoin & {:keys [blastout]}]
+(defn embl-sto->nc-sto
+  "Convert EMBL entry names to NCBI entry names while maintaining
+   alignment information.  STOIN is a sto file with entries named with
+   EMBL accesions.  Result is an output sto file with the alignments
+   of STOIN with NCBI NC accensions replacing the EMBL names.  Assumes
+   a nucleotide alphabet (no AA support yet).  Uses blast with 100%
+   identity match over full database and selects the hits with exact
+   size and content match.  If multiple candidates, selects randomly.
+  "
+  [stoin & {:keys [blastout]}]
   (let [fna (fs/replace-type stoin ".fna")
         ncsto (fs/replace-type stoin "-NC.sto")
         misc (str "-perc_identity 100.0")
@@ -410,7 +428,97 @@
       (doseq [gcline gc-lines]
         (let [[gc kind v] (str/split #"\s+" 3 gcline)]
           (cl-format true "~A~40T~A~%" (str gc " " kind) v)))
-      (println "//"))))
+      (println "//"))
+    ncsto))
+
+
+(defn embl-to-nc
+  "Convert EMBL entry names to NCBI entry names while maintaining
+   sequence information.  FIN is either a sto or fna file with entries
+   named with EMBL accesions.  Result is a corresponding output sto or
+   fna file with the same sequence (and alignment if sto) with NCBI NC
+   accensions replacing the EMBL names.  Assumes a nucleotide
+   alphabet (no AA support yet).  Uses blast with 100% identity match
+   over full database and selects the hits with exact size and content
+   match.  If multiple candidates, selects randomly.
+  "
+  [fin]
+  {:pre [(in (fs/ftype fin) ["sto" "fna"])]}
+  (if (= (fs/ftype fin) "sto")
+    (embl-sto->nc-sto fin)
+    (let [fna (fs/fullpath fin)
+          ncfna (fs/replace-type fna "-NC.fna")
+          misc (str "-perc_identity 100.0")
+          blastout (blast :blastn fna :strand :both :misc misc)
+          embl-seq-pairs (->> fna (#(read-seqs % :info :both)) (into {}))
+          nc-seq-pairs (reduce
+                        (fn[V [id v]]
+                          (conj V [(rand-nth v) (embl-seq-pairs id)]))
+                        [] (get-embl-blast-candidates blastout))]
+      (io/with-out-writer ncfna
+        (doseq [[nc sq] nc-seq-pairs] (cl-format true ">~A~%~A~%" nc sq)))
+      ncfna)))
+
+
+
+
+;;; ----------------------------------------------------------------------
+;;;
+
+(defn entry-file-intersect
+  "Intersect the entry sets in the files f1 and f2 or f1, f2 and
+   remaining fs.  Full is true or false.  If true, entries must fully
+   match (name, start, end and strand) to be included in intersection.
+   If false, only the names are used to match.  Returns the resulting
+   set of entries sans sequences.  See entry-file-intersect-with-seqs
+   to include sequences as well.  File types may be fasta (fna,
+   hitfna), sto, aln, and gaisr csv.
+  "
+  ([full f1 f2]
+     (let [f1-ncs (read-seqs f1 :info :names)
+           f1-ncs (if full
+                    (set f1-ncs)
+                    (->> f1-ncs
+                         (map #(first (entry-parts %)))
+                         set))
+           f2-ncs (read-seqs f2 :info :names)
+           f2-ncs (if full
+                    (set f2-ncs)
+                    (->> f2-ncs
+                         (map #(first (entry-parts %)))
+                         set))]
+       (set/intersection f1-ncs f2-ncs)))
+  ([full f1 f2 & fs]
+     (reduce (fn[S f]
+               (let [f-ncs (read-seqs f :info :names)
+                     f-ncs (if full
+                             (set f-ncs)
+                             (->> f-ncs
+                                  (map #(first (entry-parts %)))
+                                  set))]
+                 (set/intersection S f-ncs)))
+             #{} (conj fs f1 f2))))
+
+
+(defn entry-file-intersect-with-seqs
+  "Like entry-file-intersect, but returns corresponding sqs for the
+   result entry set as well.  Uses the full entry (full is true for
+   entry-file-intersect).  Intersect the entries in files f1 f2, and
+   if non empty those in fs as well.  Take the result set and create
+   the set of pairs [entry sq] for each entry in the set.  Returns the
+   resulting sequence of pairs.
+  "
+  [f1 f2 & fs]
+  (let [efi-set (apply entry-file-intersect true f1 f2 fs)
+        sqf (->> [f1 f2]
+                 (filter #(not (in (fs/ftype %) ["ent" "csv"])))
+                 first)
+        id-sq-map (when sqf (->> sqf (#(read-seqs % :info :both)) (into {})))]
+    (reduce (fn[V entry]
+              (conj V [entry (if id-sq-map
+                               (id-sq-map entry)
+                               (gen-name-seq entry))]))
+            [] efi-set)))
 
 
 

@@ -5,17 +5,6 @@
    libsvm, etc.
    *** CURRENTLY JUST PROOF OF CONCEPT AND EXAMPLES ***"
 
-  (:require [clojure.contrib.math :as math]
-            [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
-            [clojure.contrib.io :as io]
-            [clojure.contrib.properties :as prop]
-            ;;[clojure.contrib.java-utils :as ju]
-            ;;[edu.bc.fs :as fs]
-            )
-
   (:import ;;[java.lang.reflect AccessibleObject]
            [com.sun.jna Native Pointer])
 
@@ -42,7 +31,7 @@
      [(Pointer. nptr) nptr]))
 
 
-(jna-invoke Integer c/printf "Hello there, %s\n" "Clojure")
+#_(jna-invoke Integer c/printf "Hello there, %s\n" "Clojure")
 
 
 ;;; Test out getting Disk stat information by calling stdlib statvfs.

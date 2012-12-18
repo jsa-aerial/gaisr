@@ -821,174 +821,28 @@
 
 (comment
 
-(def jsa
-     (compute-candidate-info
-     "/home/jsa/Bio/FreqDicts/New/L20-4-101512.sto"
-     "/home/jsa/Bio/FreqDicts/New/L20-4-101512.sto.Assortprot1.fna.cmsearch.csv"
-      0 40/100
-      :cmp-ents "/home/jsa/Bio/FreqDicts/New/L20-5-101612.ent"
-      :refn DX||Y :res 6 :xlate +RY-XLATE+
+(def bigrun2-info
+     (compute-candidate-sets
+      "/home/kaila/Bio/Tests/JSA/RNA_00012.sto"
+      "/home/kaila/Bio/Tests/RNA_00012.sto.Assortprots2.fna.cmsearch.csv"
+      "/home/kaila/Bio/Tests/RNA_00012.sto.Assortprots2-hitonly.ent"
+      "/home/kaila/Bio/Tests/RNA_00012.sto.Assortprots2-final.ent"
+      (hit-context-delta "/home/kaila/Bio/Tests/RNA_00012.sto" :gene "rpsO")
+      :refn jensen-shannon :xlate +RY-XLATE+ :alpha ["R" "Y"] :crecut 0.01 :limit 19
       :order :up :ends :low
-      :plot-cre false :plot-dists true))
-(->> (first jsa)
-     (map first)
-     (#(gen-entry-file % "/home/jsa/Bio/FreqDicts/New/L20-trial.ent")))
-(def jsa
-     (compute-candidate-info
-      "/home/jsa/Bio/FreqDicts/New/L20-4-101512.sto"
-      "/home/jsa/Bio/FreqDicts/New/L20-trial.ent"
-      900 100/100
-      :cmp-ents "/home/jsa/Bio/FreqDicts/New/L20-5-101612.ent"
-      :refn DX||Y :res 10 :xlate +RY-XLATE+
+      :plot-cre false :plot-dists true :cutoff 33/100))
+
+(def rfam-00504-AP2-test
+     (compute-candidate-sets
+      "/home/jsa/Bio/FreqDicts/NewRFAM/STOS/RF00504-seed-NC.sto"
+      "/home/jsa/Bio/FreqDicts/NewRFAM/STOS/CSV/RF00504-seed-NC.sto.Assortprots2.fna.cmsearch.csv"
+      "/home/jsa/Bio/FreqDicts/NewRFAM/STOS/RF00504-AP2-hitonly.ent"
+      "/home/jsa/Bio/FreqDicts/NewRFAM/STOS/RF00504-AP2-final.ent"
+      (hit-context-delta "/home/jsa/Bio/FreqDicts/NewRFAM/STOS/RF00504-seed-NC.sto" :gene "gcvT")
+      :refn jensen-shannon :xlate +RY-XLATE+ :alpha ["R" "Y"] :crecut 0.01 :limit 19
       :order :up :ends :low
-      :plot-cre false :plot-dists true))
-(third jsa)
-(count
- (set/intersection
-  (->> (first jsa)
-       (map (fn[[e entropy]]
-              [e entropy (->> e entry-parts second (#(abs (apply - %))))]))
-       (map first) (take 150)
-       ;;(#(gen-entry-file % "/home/jsa/Bio/FreqDicts/New/L20-test.ent")))
-       set)
-  (set (get-entries "/home/jsa/Bio/FreqDicts/New/L20-5-101612.ent"))))
+      :plot-cre false :plot-dists true :cutoff 37/100))
 
-
-(def jsa
-     (compute-candidate-info
-      "/home/jsa/Bio/FreqDicts/S4_0712.sto"
-      "/home/jsa/Bio/FreqDicts/S4_0712comb2.ent"
-      0 40/100
-      :cmp-ents "/home/jsa/Bio/FreqDicts/S4_072612-final.ent"
-      :refn DX||Y :res 6 :xlate +RY-XLATE+
-      :order :up :ends :low
-      :plot-cre false :plot-dists true))
-
-(->> (first jsa)
-     (map first)
-     (#(gen-entry-file % "/home/jsa/Bio/FreqDicts/trial.ent")))
-
-
-(count
- (set/intersection
-  (->> (first jsa)
-       (map (fn[[e entropy]]
-              [e entropy (->> e entry-parts second (#(abs (apply - %))))]))
-       (map first) (take 2) last)
-       set)
- (set (get-entries "/home/jsa/Bio/FreqDicts/S4_072612-final.ent")))
-
-
-(->> (read-seqs "/home/jsa/Bio/FreqDicts/S4_0712comb.ent" :info :name)
-     (map (fn[e] [e entropy
-                  (->> e entry-parts second
-                       (#(abs (apply - %))))]))
-     (filter #(> (third %) 70)) count)
-
-
-(->> (first S4-2-2ltr)
-     (map (fn[[e entropy]]
-            [e entropy (->> e entry-parts second (#(abs (apply - %))))]))
-     (filter #(> (third %) 70))
-     (reduce (fn[m [entry entropy len]]
-               (let [[nm [s e] sd] (entry-parts entry)
-                     [x y l :as all] (m nm)]
-                 (if (or (not all) (< l len))
-                   (assoc m nm [entry entropy len])
-                   m)))
-             {})
-     vals (sort-by second <)
-     (map first) (take 20)
-     (#(gen-entry-file % "/home/jsa/Bio/FreqDicts/outexample.ent")))
-
-
-(count (set/intersection
-        (->> (first S4-1-2ltr)
-             (map (fn[[e entropy]]
-                    [e entropy
-                     (->> e entry-parts second
-                          (#(abs (apply - %))))]))
-             (filter #(> (third %) 70))
-             (map first) (take 363) set)
-        (set (get-entries "/home/jsa/Bio/FreqDicts/S4_072612-final.ent"))))
-
-
-;;; Correct version...
-(->> (map #(reduce (fn[m e]
-                     (let [nm (first (entry-parts e))]
-                       (assoc m nm (conj (get m nm #{}) e))))
-                   {} (get-entries %))
-  ["/home/jsa/Bio/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv"
-   "/home/jsa/Bio/FreqDicts/S4_0712b.sto.S10regionprots.fna.cmsearch.csv"])
-     (#(let [bnms (vals (second %))
-             abad (apply dissoc (first %) bnms)]
-         (apply dissoc (first %) (vals abad))))
-     (reduce (fn[m [k v]]
-               (assoc m k (first
-                           (reduce (fn[x ent]
-                                     (let [[nm [s e] sd] (entry-parts ent)
-                                           l (abs (- e s))
-                                           [xent len] (if x x ["" 0])]
-                                       (if (< len l) [ent l] x)))
-                                   nil v))))
-             {})
-     vals (#(gen-entry-file % "/home/jsa/Bio/FreqDicts/S4_0712comb2.ent")))
-
-
-
-(let [sets (map #(reduce (fn[m e]
-                           (let [nm (first (entry-parts e))]
-                             (assoc m nm (conj (get m nm #{}) e))))
-                         {} (get-entries %))
-      ["/home/jsa/Bio/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv"
-       "/home/jsa/Bio/FreqDicts/S4_0712b.sto.S10regionprots.fna.cmsearch.csv"])]
-  (->> (reduce (fn[m [k v]]
-                 (if (m k) (assoc m k (set/union (m k) v)) m))
-               (first sets)
-               (second sets))
-       vals (apply set/union)
-       (map (fn[e]
-              [e (->> e entry-parts second (#(abs (apply - %))))]))
-       vec (reduce (fn[m [entry len]]
-                     (let [[nm [s e] sd] (entry-parts entry)
-                           [x l :as all] (m nm)]
-                       (if (or (not all) (< l len))
-                         (assoc m nm [entry len])
-                         m)))
-                   {})
-       vals (sort-by second <)
-       (map first)
-       (#(gen-entry-file % "/home/jsa/Bio/FreqDicts/S4_0712comb2.ent"))))
-
-
-(def s4-candidates
-     (compute-candidate-info
-      "/home/jsa/Bio/FreqDicts/S4_0712.sto"
-      "/home/jsa/Bio/FreqDicts/S4_0712.sto.S10regionprots.fna.cmsearch.csv"
-      1800 95/100
-      :cmp-ents "/home/jsa/Bio/FreqDicts/S4_072612a.ent"
-      :plot-cre false :plot-dists true))
-
-(let [basedir "/home/jsa/Bio/FreqDicts"
-      triples (apply map #(do [%1 %2 %3])
-                     [(sort (fs/directory-files basedir "sto"))
-                      (sort (fs/directory-files basedir "csv"))
-                      (sort (fs/directory-files basedir "ent"))])]
-  (for [[sto csv ent] triples]
-    [(fs/basename sto)
-     (compute-candidate-info
-      sto csv   1800 95/100 :cmp-ents ent
-      :plot-cre false :plot-dists true)]))
-
-(select-cutpoint (map second *sto-hybrid-s15-0712b-wctx*))
-(map #(select-cutpoint (map second %))
-     [*sto-hybrid-s1-0712-wctx*
-      *sto-hybrid-s15-0712-wctx*
-      *sto-hybrid-s15-0712b-wctx*
-      *sto-hybrid-s2-0712-wctx*
-      *sto-hybrid-s2-0712b-wctx*
-      *sto-hybrid-s4-0712-wctx*
-      *sto-hybrid-s4-0712b-wctx*])
 )
 
 

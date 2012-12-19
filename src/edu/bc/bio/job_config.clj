@@ -36,7 +36,7 @@
   (:require [clojure.contrib.string :as str]
             [clojure.contrib.io :as io]
             [edu.bc.fs :as fs])
-  
+
   (:use clojure.contrib.math
         edu.bc.utils
         ))
@@ -72,7 +72,7 @@
 
 (defn process-hit-files [m l]
   (let [hfg (m :hitfile)
-        [cm hfs] (str/split #" *, *" l)
+        [cm hfs] (str/split #"\s*,\s*" l)
         hitfile (or hfg hfs)]
     (assert (not (and hfg hfs)))
     (let [hitdir (m :hitfile-dir)
@@ -87,7 +87,7 @@
 
 (defn parse-config-file [filespec]
   (let [lseq (filter #(not (or (= "" (str/trim %))
-                               (re-find #"^ *#+" %)))
+                               (re-find #"^\s*#+" %)))
                      (io/read-lines filespec))
         add-comment (fn [m l]
                       (assoc m :comments
@@ -96,63 +96,63 @@
                     (assoc m :directive d))
         getf (fn[m k l]
                (assoc m k (str/trim
-                           (second (str/split #": *" l)))))]
+                           (second (str/split #":\s*" l)))))]
 
     ;; Basically a simple state machine.  Not quite an FSA as there is
     ;; some memory involved. But no stack either.
     (reduce
      (fn[m l]
        (condp #(re-find %1 %2) l
-         #"^ *#+" ; NOTE: need to remove re-find from lseq filter
+         #"^\s*#+" ; NOTE: need to remove re-find from lseq filter
          (add-comment m l)
 
-         #"^Hitfile-Dir *:"
+         #"^Hitfile-Dir\s*:"
          (getf m :hitfile-dir l)
 
-         #"^CM-Dir *:"
+         #"^CM-Dir\s*:"
          (getf m :cmdir l)
 
-         #"^STO-Dir *:"
+         #"^STO-Dir\s*:"
          (getf m :stodir l)
 
-         #"^CM-Build[ :]*"
+         #"^CM-Build[\s:]*"
          (directive (assoc m :cmbuild (m :cmdir)) :cmbuild)
 
-         #"^CM-Calibrate[ :]*"
+         #"^CM-Calibrate[\s:]*"
          (directive (assoc m :cmcalibrate (m :cmdir)) :calibrate)
 
 
          ;; NEEDS TO BE FIXED: This clause must come before other
          ;; cmsearch clauses to ensure both eval and hitfile inclusion.
-         #"^CM-Search +eval *: *[0-9]+[.0-9]*, *hitfile *:"
+         #"^CM-Search\s+eval\s*:\s*[0-9]+[.0-9]*,\s*hitfile\s*:"
          (let [x (str/split #"," l)
-               [ev hf] (map #(second (str/split #": *" %)) x)]
+               [ev hf] (map #(second (str/split #":\s*" %)) x)]
            (directive
             (assoc (assoc m :eval (Double. ev)) :hitfile hf)
             :cmsearch))
 
-         #"^CM-Search +hitfile *:"
+         #"^CM-Search\s+hitfile\s*:"
          (directive
-          (assoc m :hitfile (second (str/split #": *" l)))
+          (assoc m :hitfile (second (str/split #":\s*" l)))
           :cmsearch)
 
-         #"^CM-Search +eval *:"
+         #"^CM-Search\s+eval\s*:"
          (directive
-          (assoc m :eval (Double. (second (str/split #": *" l))))
+          (assoc m :eval (Double. (second (str/split #":\s*" l))))
           :cmsearch)
 
-         #"^CM-Search *:"
+         #"^CM-Search\s*:"
          (directive (assoc m :hitfile nil) :cmsearch)
 
 
-         #"^Gen-CSVs +spread *:*"
+         #"^Gen-CSVs\s+spread\s*:*"
          (let [x (str/split #"," l)
-               [sp dir] (map #(str/trim (second (str/split #": *" %))) x)]
+               [sp dir] (map #(str/trim (second (str/split #":\s*" %))) x)]
            (directive
             (assoc (assoc m :spread (Integer. sp)) :gen-csvs dir)
             :gen-csv))
 
-         #"^Gen-CSVs[ :]*"
+         #"^Gen-CSVs[\s:]*"
          (directive
           (assoc m :gen-csvs
                  (get (getf m :csvdir l)

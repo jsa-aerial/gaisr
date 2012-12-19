@@ -229,6 +229,8 @@
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA")
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/V2")
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00003.sto")
+;;;
+;;;(update-rnahit "/home/kaila/Bio/Tests/RNA_00011-3.sto")
 
 (def rnaname-id-map
      (reduce (fn[M m]
@@ -256,6 +258,7 @@
 ;;;(update-verified-info "/home/kaila/Bio/Tests/JSA/NewRNAs")
 ;;;(update-verified-info "/home/kaila/Bio/Tests/JSA")
 ;;;(update-verified-info "/home/kaila/Bio/Tests/JSA/V2/")
+;;;(update-verified-info "/home/kaila/Bio/Tests/RNA_00011-3.sto")
 
 
 (defn- insert-genome-rnahits
@@ -290,6 +293,7 @@
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00006.sto")
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA")
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA/V2/RNA_00012-2.sto")
+;;; (update-genome-rnahit "/home/kaila/Bio/Tests/RNA_00011-3.sto")
 
 
 (def new-rna-genome-counts

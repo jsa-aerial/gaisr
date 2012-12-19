@@ -904,12 +904,22 @@
       (raise :type :badsto :chk-info chk-info))))
 
 
-(defn do-cmbuild-calibrate [stofiles]
-  (doall (mostos->calibrated-cms stofiles)))
+(defn- place-cms-in-cmdir [stofiles cmdir]
+  (doseq [sf stofiles]
+    (let [fname (fs/basename sf)
+          sfdir (fs/dirname sf)
+          cmdir (->> cmdir fs/split (apply fs/join))]
+      (when (not= sfdir cmdir)
+        (fs/rename (str sf ".cm") (fs/join cmdir (str fname ".cm")))))))
 
-(defn do-cmbuild [stofiles]
+(defn do-cmbuild-calibrate [stofiles cmdir]
+  (doall (mostos->calibrated-cms stofiles))
+  (place-cms-in-cmdir stofiles cmdir))
+
+(defn do-cmbuild [stofiles cmdir]
   {:pre [(seq stofiles)]}
-  (doall (map #(cmbuild %) stofiles)))
+  (doall (map #(cmbuild %) stofiles))
+  (place-cms-in-cmdir stofiles cmdir))
 
 (defn do-calibrate [cms cmdir]
   {:pre [(seq cms)]}
@@ -945,10 +955,10 @@
 
     (cond
      (and (config :cmbuild) (config :cmcalibrate))
-     (do-cmbuild-calibrate stos)
+     (do-cmbuild-calibrate stos cmdir)
 
      (config :cmbuild)
-     (do-cmbuild stos)
+     (do-cmbuild stos cmdir)
 
      ;; Note, can't get here unless we have _only_ calibrate directive
      ;; (no build), and so cms can't legitimately be nil.  That is a

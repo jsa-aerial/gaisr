@@ -610,18 +610,92 @@
      (count sqs)]))
 
 
+(defn compute-relative-entropy-cut
+  ""
+  [re-points & {:keys [percent] :or {percent 0.8}}]
+  (let [low (first re-points)
+        high (last re-points)
+        _ (println low :& high)
+        re (+ (* percent (- high low)) low)
+        _ (println :!!! re)
+        pt (first (keep-indexed #(when (> %2 re) %1) re-points))
+        _ (println :*** pt)
+        pt (->> re-points (keep-indexed #(when (>= (- %2 re) 0.01) %1)) first)]
+    (println :>>> pt)
+    (if pt pt (dec (count re-points)))))
+
+(defn nm-res-dist [nm-res]
+  (let [frq (reduce (fn[m [nm re]]
+                      (let [re (-> re (* 1000) (+ 0.1) round (/ 1000.0))]
+                        (assoc m re (conj (get m re []) nm))))
+                    {} nm-res)
+        cnt (double (count nm-res))]
+    (map (fn[[re nms]] [re (double (/ (count nms) cnt)) nms]) frq)))
+
+(defn nm-res-cdf [nm-res]
+  (let [re-dist (nm-res-dist nm-res)
+        re-sorted (sort-by first re-dist)
+        pre-sq (map (fn[[re p nms]] [p re]) re-sorted)]
+    (fn[x]
+      (reduce (fn[y [p re]]
+                (if (<= re x) (+ y p) y))
+              0.0 pre-sq))))
+
+(defn re-cdf-cut [nm-res & {:keys [Dy] :or {Dy 0.0}}]
+  (let [res (sort (map first (nm-res-dist nm-res))) ; only the SET of res
+        Fx (nm-res-cdf nm-res)
+        pts (sort (map second nm-res))
+        cdf-cut (+ Dy 0.5) ; 0.5 = median of Fx by definition
+        re-cutoff (reduce (fn[v re] (if (<= (Fx re) cdf-cut) re v))
+                          0.0 res)
+        ;; Round to nearest thousandth
+        re-cutoff (/ (round (* 1000 re-cutoff)) 1000.0)]
+    #_(println re-cutoff)
+    (reduce (fn[cutpt re] (if (<= re re-cutoff) (inc cutpt) cutpt))
+            0 (map second nm-res))))
+
+
+(defn plot-re-pmf [nm-res]
+  (let [pmf-info (map (fn[[re p v]] [re (count v)]) (nm-res-dist nm-res))
+        pmf-dist (into {} pmf-info)
+        xs (sort (map first pmf-info))
+        chart (incanter.charts/scatter-plot
+               xs (map #(get pmf-dist % 0.0) xs)
+               :x-label "RE value"
+               :y-label "Sq/RE count"
+               :title "Sq RE distribution"
+               :series-label "sq/hbrid JSD PMF"
+               :legend true)]
+    (incanter.core/view chart)))
+
+(defn plot-re-cdf [nm-res]
+  (let [Fx (nm-res-cdf nm-res)
+        step 0.005
+        xs (for [i (range 200)] (* i step))
+        chart (incanter.charts/scatter-plot
+               xs (map Fx xs)
+               :x-label "JSD RE"
+               :y-label "Fre-dist(x)"
+               :title "FFP CDF plot"
+               :series-label "sq/hbrid JSD CDF"
+               :legend true)]
+    (incanter.core/view chart)))
+
+
 (defn select-cutpoint
-  [re-points & {:keys [area ends] :or {area 7/10}}]
-  (let [s (* (sum re-points) area)]
-    (if (= ends :both)
-      (reducem + #(cond (number? %1) [2 (+ %1 %2)]
-                        (> (second %1) s) %1
-                        :else [(inc (first %1)) (+ (second %1) %2)])
-               :|| re-points (reverse re-points))
-      (reduce (fn[[x v] re]
-                (if (< v s) [(inc x) (+ v re)] [x v]))
-              [0 0]
-              re-points))))
+  [re-points & {:keys [area ends crec] :or {area 7/10}}]
+  (if crec
+    (list (compute-relative-entropy-cut re-points :percent crec))
+    (let [s (* (sum re-points) area)]
+      (if (= ends :both)
+        (reducem + #(cond (number? %1) [2 (+ %1 %2)]
+                          (> (second %1) s) %1
+                          :else [(inc (first %1)) (+ (second %1) %2)])
+                 :|| re-points (reverse re-points))
+        (reduce (fn[[x v] re]
+                  (if (< v s) [(inc x) (+ v re)] [x v]))
+                [0 0]
+                re-points)))))
 
 (defn get-good-candidates
   [nm-re-coll cutpoint & {:keys [ends] :or {ends :low}}]
@@ -699,7 +773,7 @@
 (defn compute-candidate-info
   ""
   [sto-file candidate-file delta cutoff
-   & {:keys [refn xlate alpha crecut limit res order ends
+   & {:keys [refn xlate alpha crecut crec limit res order ends
              plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15
            order :up :ends :low}}]
@@ -719,7 +793,7 @@
                                         :refn refn :xlate xlate
                                         :delta delta :order order)
         cutpt (first (select-cutpoint (map second nm-re-sq)
-                                      :area cutoff :ends ends))
+                                      :area cutoff :ends ends :crec crec))
         [good bad] (get-good-candidates nm-re-sq cutpt :ends ends)]
     (when plot-cre (plot-cres cres))
     (when plot-dists (plot-sto-dists pnm sz delta res cutpt nm-re-sq))
@@ -729,7 +803,7 @@
 (defn compute-candidate-sets
   ""
   [sto-file candidate-file first-phase-entry-file final-entry-file delta
-   & {:keys [refn xlate alpha crecut limit
+   & {:keys [refn xlate alpha crecut crec limit
              res order ends hit-cutoff cutoff
              cmp-ents plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10
@@ -742,14 +816,14 @@
         [rna-only-good
          rna-only-bad
          cutpt1
-         nm-re-sq] (compute-candidate-info
-                    sto-file candidate-file 0 hit-cutoff
-                    :refn refn :xlate +RY-XLATE+ :alpha alpha
-                    :limit limit :res 6 :order order :ends ends
-                    :plot-cre plot-cre :plot-dists plot-dists)
+         rna-nm-re-sq] (compute-candidate-info
+                        sto-file candidate-file 0 hit-cutoff
+                        :crec crec :refn refn :xlate +RY-XLATE+ :alpha alpha
+                        :limit limit :res 6 :order order :ends ends
+                        :plot-cre plot-cre :plot-dists plot-dists)
         rna-only-perf-stats (when cmp-ents
                               (selection-perf
-                               nm-re-sq cmp-ents cutpt1
+                               rna-nm-re-sq cmp-ents cutpt1
                                :ends ends :good rna-only-good))
         _ (->> rna-only-good (map first)
                (#(gen-entry-file % first-phase-entry-file)))
@@ -758,7 +832,7 @@
          cutpt2
          nm-re-sq] (compute-candidate-info
                     sto-file first-phase-entry-file delta cutoff
-                    :refn refn :xlate xlate :alpha alpha
+                    :crec crec :refn refn :xlate xlate :alpha alpha
                     :crecut crecut :limit limit :order order :ends ends
                     :plot-cre plot-cre :plot-dists plot-dists)
         perf-stats (when cmp-ents
@@ -767,7 +841,10 @@
 
     (->> good (#(gen-entry-nv-file % final-entry-file)))
     (->> bad (#(gen-entry-nv-file % final-bad-entry-file)))
-    [[good bad cutpt2] [rna-only-good rna-only-bad cutpt1]]))
+    [[good bad cutpt2]
+     [rna-only-good rna-only-bad cutpt1]
+     rna-nm-re-sq
+     nm-re-sq]))
 
 
 

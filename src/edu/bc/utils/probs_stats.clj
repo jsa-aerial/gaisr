@@ -271,6 +271,38 @@
   (cc-freqs&probs n colls combins-freqs-probs :par par))
 
 
+(defn mean
+  "Compute the expectaion of the collection COLL.  If coll is a map
+   use (vals coll).  The values of coll can be either single numbers
+   or pairs of number [w n], where w is the weight to assign to n.  If
+   single numbers are given, their weight is taken as simply 1.
+
+   Returns (/ (sum (map (fn[v] (if (sequential? v) (let [[w n] v] (* w n)) v))
+                        coll))
+              (count coll))
+  "
+  [coll]
+  (let [coll (if (map? coll) (vals coll) coll)]
+    (double (/ (sum (map (fn[v] (if (sequential? v) (let [[w n] v] (* w n)) v))
+                         coll))
+               (count coll)))))
+
+(defn median
+  "Compute the median of the given collection COLL.  If coll is a map
+   uses (vals coll).
+  "
+  [coll]
+  (let [coll (if (map? coll) (vals coll) coll)
+        cnt (count coll)
+        cnt2 (/ cnt 2)
+        v (vec (sort coll))]
+    (if (even? cnt)
+      (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
+      (v (math/floor cnt2)))))
+
+
+
+
 (defn joint-prob-x
   "Xperimental.  Not sure how to make this work in general while still
    being useful.  Intent would be to supply sample space, random

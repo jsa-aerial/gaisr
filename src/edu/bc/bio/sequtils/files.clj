@@ -479,12 +479,14 @@
 
 
 (defn entry-file->fasta-file
-  [efile]
+  [efile & {:keys [names-only]}]
   (let [efile (fs/fullpath efile)
         fasta-filespec (fs/fullpath (fs/replace-type efile ".fna"))
-        entries (io/read-lines efile)]
+        entseqs (if names-only
+                  (read-seqs efile :info :both)
+                  (gen-name-seq-pairs (io/read-lines efile)))]
     (io/with-out-writer fasta-filespec
-      (doseq [[entry sq] (gen-name-seq-pairs entries)]
+      (doseq [[entry sq] entseqs]
         (println (str ">" entry))
         (println sq)))
     fasta-filespec))
@@ -576,13 +578,13 @@
 
           "sto"
           (if (= info :data)
-            #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)\s+" "" %)
-            #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)\s+" %)))
+            #(str/replace-re #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)[,\s]+" "" %)
+            #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)[,\s]+" %)))
 
           "ent"
           (if (= info :data)
             #(second (gen-name-seq %))
-            #(->> (str/split #"( |/)" %) (str/join "/")))
+            #(->> (str/split #"([\s,]|/)" %) (take 3) (str/join "/")))
           ;;#(first (gen-name-seq %)))
 
           "gma" (raise :type :NYI :info "GMA format not yet implemented")

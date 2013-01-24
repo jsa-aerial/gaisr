@@ -526,6 +526,7 @@
                 directed true cnt 5 limit 14 par 10}}]
   {:pre [(or delta (and (not directed) ldelta rdelta))]}
   (let [entries (if (coll? seqs) seqs (get-entries seqs))
+        cnt (min cnt (count entries))
         ldelta (if delta delta ldelta)
         rdelta (if delta delta rdelta)
         name-seq-pairs (if directed
@@ -560,9 +561,29 @@
                     " Fmax: " (round (ln cnt))))))))
 
 
+(defn get-adjusted-seqs
+  ""
+  [file xlate delta par]
+  (->> (if (= 0 delta)
+         (map (fn[[e sq]]
+                (let [sq (->> sq norm-elements degap-seqs)]
+                  [e sq]))
+              (read-seqs file :info :both))
+         (->> file
+              get-entries
+              (pxmap #(let [+? (= 1 (->> % (pos \-) count))
+                            ldel (if +? 100 delta)
+                            rdel (if +? delta 100)]
+                        (gen-name-seq % :ldelta ldel :rdelta rdel))
+                     par)))
+       (map second)
+       (#(if xlate (seqXlate % :xmap xlate) %))))
+
 (defn sto-re-dists
-  [l candidate-file sto-file & {:keys [refn delta order xlate par]
-                                :or {refn DX||Y delta 5000 order :down par 10}}]
+  ""
+  [l candidate-file sto-file
+   & {:keys [refn delta order xlate par]
+      :or {refn DX||Y delta 5000 order :up par 10}}]
   (let [comp (if (= order :up) < >)
         cfile (fs/fullpath candidate-file)
         ctype (fs/ftype cfile)
@@ -610,20 +631,6 @@
      (count sqs)]))
 
 
-(defn compute-relative-entropy-cut
-  ""
-  [re-points & {:keys [percent] :or {percent 0.8}}]
-  (let [low (first re-points)
-        high (last re-points)
-        _ (println low :& high)
-        re (+ (* percent (- high low)) low)
-        _ (println :!!! re)
-        pt (first (keep-indexed #(when (> %2 re) %1) re-points))
-        _ (println :*** pt)
-        pt (->> re-points (keep-indexed #(when (>= (- %2 re) 0.01) %1)) first)]
-    (println :>>> pt)
-    (if pt pt (dec (count re-points)))))
-
 (defn nm-res-dist [nm-res]
   (let [frq (reduce (fn[m [nm re]]
                       (let [re (-> re (* 1000) (+ 0.1) round (/ 1000.0))]
@@ -649,7 +656,7 @@
         re-cutoff (reduce (fn[v re] (if (<= (Fx re) cdf-cut) re v))
                           0.0 res)
         ;; Round to nearest thousandth
-        re-cutoff (/ (round (* 1000 re-cutoff)) 1000.0)]
+        re-cutoff (/ (round (* 1000 (+ re-cutoff 0.001))) 1000.0)]
     #_(println re-cutoff)
     (reduce (fn[cutpt re] (if (<= re re-cutoff) (inc cutpt) cutpt))
             0 (map second nm-res))))
@@ -683,19 +690,15 @@
 
 
 (defn select-cutpoint
-  [re-points & {:keys [area ends crec] :or {area 7/10}}]
-  (if crec
-    (list (compute-relative-entropy-cut re-points :percent crec))
+  [re-points & {:keys [area Dy]}]
+  (if Dy
+    (re-cdf-cut re-points :Dy Dy)
     (let [s (* (sum re-points) area)]
-      (if (= ends :both)
-        (reducem + #(cond (number? %1) [2 (+ %1 %2)]
-                          (> (second %1) s) %1
-                          :else [(inc (first %1)) (+ (second %1) %2)])
-                 :|| re-points (reverse re-points))
-        (reduce (fn[[x v] re]
-                  (if (< v s) [(inc x) (+ v re)] [x v]))
-                [0 0]
-                re-points)))))
+      (first
+       (reduce (fn[[x v] re]
+                 (if (< v s) [(inc x) (+ v re)] [x v]))
+               [0 0]
+               re-points)))))
 
 (defn get-good-candidates
   [nm-re-coll cutpoint & {:keys [ends] :or {ends :low}}]
@@ -772,15 +775,16 @@
 
 (defn compute-candidate-info
   ""
-  [sto-file candidate-file delta cutoff
-   & {:keys [refn xlate alpha crecut crec limit res order ends
+  [sto-file candidate-file delta run
+   & {:keys [refn xlate alpha crecut limit res order
              plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15
-           order :up :ends :low}}]
+           order :up}}]
 
   (let [cres (when (not res)
                (cre-samples sto-file :delta delta
-                            :xlate xlate :alpha alpha :limit limit :cnt 3))
+                            :xlate xlate :alpha alpha
+                            :limit limit :cnt 5))
         res (if res
               res
               (reduce (fn[res v]
@@ -792,9 +796,9 @@
         [nm-re-sq pnm sz] (sto-re-dists res candidate-file sto-file
                                         :refn refn :xlate xlate
                                         :delta delta :order order)
-        cutpt (first (select-cutpoint (map second nm-re-sq)
-                                      :area cutoff :ends ends :crec crec))
-        [good bad] (get-good-candidates nm-re-sq cutpt :ends ends)]
+        Dy (case run 1 0.1, 2 0.0, -0.1)
+        cutpt (select-cutpoint nm-re-sq :Dy Dy)
+        [good bad] (get-good-candidates nm-re-sq cutpt)]
     (when plot-cre (plot-cres cres))
     (when plot-dists (plot-sto-dists pnm sz delta res cutpt nm-re-sq))
     [good bad cutpt nm-re-sq]))
@@ -802,14 +806,16 @@
 
 (defn compute-candidate-sets
   ""
-  [sto-file candidate-file first-phase-entry-file final-entry-file delta
-   & {:keys [refn xlate alpha crecut crec limit
-             res order ends hit-cutoff cutoff
+  [sto-file candidate-file run delta
+   & {:keys [refn xlate alpha crecut limit res order
              cmp-ents plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10
-           limit 15 order :up :ends :low hit-cutoff 40/100 cutoff 19/100}}]
+           limit 15 order :up}}]
 
-  (let [final-entry-file (fs/fullpath final-entry-file)
+  (let [[first-phase-entry-file final-entry-file]
+        (get-hitonly-final-names candidate-file)
+
+        final-entry-file (fs/fullpath final-entry-file)
         final-bad-entry-file (fs/replace-type
                               final-entry-file
                               (str "-bad." (fs/ftype final-entry-file)))
@@ -817,40 +823,80 @@
          rna-only-bad
          cutpt1
          rna-nm-re-sq] (compute-candidate-info
-                        sto-file candidate-file 0 hit-cutoff
-                        :crec crec :refn refn :xlate +RY-XLATE+ :alpha alpha
-                        :limit limit :res 6 :order order :ends ends
+                        sto-file candidate-file 0 run
+                        :refn refn :xlate +RY-XLATE+ :alpha alpha
+                        :limit limit :res 6 :order order
                         :plot-cre plot-cre :plot-dists plot-dists)
         rna-only-perf-stats (when cmp-ents
                               (selection-perf
                                rna-nm-re-sq cmp-ents cutpt1
-                               :ends ends :good rna-only-good))
+                               :good rna-only-good))
         _ (->> rna-only-good (map first)
                (#(gen-entry-file % first-phase-entry-file)))
 
         [good bad
          cutpt2
          nm-re-sq] (compute-candidate-info
-                    sto-file first-phase-entry-file delta cutoff
-                    :crec crec :refn refn :xlate xlate :alpha alpha
-                    :crecut crecut :limit limit :order order :ends ends
+                    sto-file first-phase-entry-file delta run
+                    :refn refn :xlate xlate :alpha alpha
+                    :crecut crecut :limit limit :order order
                     :plot-cre plot-cre :plot-dists plot-dists)
         perf-stats (when cmp-ents
                      (selection-perf
-                      nm-re-sq cmp-ents cutpt2 :ends ends :good good))]
+                      nm-re-sq cmp-ents cutpt2 :good good))]
 
     (->> good (#(gen-entry-nv-file % final-entry-file)))
     (->> bad (#(gen-entry-nv-file % final-bad-entry-file)))
+    (entry-file->fasta-file final-entry-file)
+
     [[good bad cutpt2]
      [rna-only-good rna-only-bad cutpt1]
      rna-nm-re-sq
      nm-re-sq]))
 
 
+(defn get-hitonly-final-names
+  "Generate the canonical names for the output first phase 'hitonly',
+   and 'final' entry files resulting from an FFP
+   compute-candidate-sets selection from cmsearch targets.  CF is the
+   candidate file name of the filtered results of the base cmsearch
+   output.  Typically the csv file matching a cmsearch.out.
+  "
+  [cf]
+  (let [suffix (first (re-find #"\.[a-z]+\.cmsearch\.(csv|out|ent)$" cf))
+        suffix-re (re-pattern suffix)
+        hitonly (str/replace-re suffix-re "-hitonly.ent" cf)
+        final (str/replace-re suffix-re "-final.ent" cf)]
+    [hitonly final]))
 
-(defn hit-context-delta [sto & {:keys [gene cnt margin]
-                                :or {cnt 5 margin 0}}]
+(defn hit-context-delta
+  [sto & {:keys [plot]}]
+  (let [pts (xfold (fn[i]
+		     (->> (compute-candidate-info 
+			   sto sto
+			   (+ 400 (* i 20)) 1 
+			   :refn jensen-shannon 
+			   ;;:xlate +RY-XLATE+ :alpha ["R" "Y"] 
+			   :crecut 0.01 :limit 19
+			   :plot-dists false)
+			  first (map second) mean))
+		   (range 81))
+	ms (map #(min %1 %2) pts (drop 1 pts))
+	chart (incanter.charts/scatter-plot
+	       (map #(+ 400 (* 20 %)) (range (count ms))) ms
+	       :x-label "Size X 20"
+	       :y-label "RE/JSD"
+	       :title "RE to subseq"
+	       :series-label "Sub Seq Size"
+	       :legend true)]
+    (when plot (incanter.core/view chart))
+    (+ 400 (* 20 (first (pos (apply min pts) pts))))))
+
+(defn hit-context-delta-db
+  ""
+  [sto & {:keys [gene cnt margin] :or {cnt 5 margin 0}}]
   {:pre [(string? gene)]}
+
   (let [sample (random-subset (read-seqs sto :info :name) cnt)
         nms-loci (map #(let [[nm [s e] sd] (entry-parts %)] [nm s e sd]) sample)
         features (map (fn[[nm s e sd]]

@@ -633,10 +633,10 @@
 
 
 
-(defnk cmfinder [seqin canda-file motif-out cm-out
-                 :initial-cm nil
-                 :candf-output nil
-                 :stdout nil]
+(defn cmfinder
+  [seqin canda-file motif-out cm-out
+   & {:keys [initial-cm candf-output stdout]}]
+
   (let [cmf-stdout   (and stdout (fs/fullpath stdout))
         initial-cm   (and initial-cm (fs/fullpath initial-cm))
         candf-output (and candf-output (fs/fullpath candf-output))
@@ -658,23 +658,36 @@
 
 
 
-(defnk cmfinder* [in
-                  :blastpgm nil
-                  :blastdb nil
-                  :initial-cm nil
-                  :strand :plus
-                  :word-size 8
-                  :max-cand-seq 40
-                  :min-len-cand 30
-                  :max-len-cand 100
-                  :max-out-motifs 3
-                  :expected-motif-freq 0.80
-                  :min-stem-loops 1
-                  :max-stem-loops 1
-                  :del-files true]
+(defn cmfinder*
+  "Perform a full run of cmfinder sub pipeline.  Basically:
+
+   (-> in-fna (candf options)
+       (#(if blastpgm) (blast options))
+       (cands options)
+       (map #(-> % (canda in-fna) (cmfinder in-fna))))
+
+   Where options are the given set of optional keys and values (with
+   noted defaults).
+  "
+  [in & {:keys [blastpgm blastdb initial-cm
+                strand word-size max-cand-seq
+                min-len-cand max-len-cand
+                max-out-motifs
+                expected-motif-freq
+                min-stem-loops max-stem-loops
+                del-files]
+         :or {strand :plus
+              word-size 8
+              max-cand-seq 40
+              min-len-cand 30
+              max-len-cand 100
+              max-out-motifs 3
+              expected-motif-freq 0.80
+              min-stem-loops 1
+              max-stem-loops 1
+              del-files true}}]
 
   (let [seqin        (fs/fullpath in)
-
         stem-loops   (if (= max-stem-loops min-stem-loops)
                         (str min-stem-loops)
                         (str min-stem-loops "." max-stem-loops))
@@ -731,8 +744,20 @@
 
 
 
-(defn cmalign [cm seqfile outfile
-               & {opts :opts par :par :or {opts ["-q" "-1"] par 3}}]
+(defn cmalign
+  "Run an automated parallelized cmalign on originating covariant
+   model CM (presumably obtained by some prior cmbuild/calibrate) and
+   fasta file SEQFILE.  Place new output sto in OUTFILE.  Return
+   outfile.  OPTS is any set of k/v pairs (as a vector) that are legal
+   for cmalign.
+
+   This is mostly (only?) used when building the next version of an
+   input sto that has gone through a complete cmbuild through cmsearch
+   through FFP and/or Scribl process yielding a new set of candidate
+   targets that have been placed in seqfile.
+  "
+  [cm seqfile outfile
+   & {opts :opts par :par :or {opts ["-q" "-1"] par 3}}]
   (let [infernal-path (get-tool-path :infernal)
         cmaligncmd (str infernal-path "cmalign")
         cmfile (fs/fullpath cm)

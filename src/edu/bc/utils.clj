@@ -35,7 +35,8 @@
    are fairly general and intended to be usable on most any part of
    most any project"
 
-  (:require [clojure.contrib.math :as math]
+  (:require [clojure.core.reducers :as r]
+            [clojure.contrib.math :as math]
             [clojure.contrib.combinatorics :as comb]
             [clojure.contrib.string :as str]
             [clojure.set :as set]
@@ -133,6 +134,22 @@
 (defn take-until
   "Complement of take-while"
   [pred coll] (take-while (complement pred) coll))
+
+
+(defn take-until-nochange
+  "Eagerly takes from SQ until consecutive elements are the same.  So,
+   take until and up to element Ei, where Ei=Ei+1.  Equality of
+   elements is determined by elt=, which defaults to =.
+  "
+  [sq & {:keys [elt=] :or {elt= =}}]
+  (loop [rsq (rest sq)
+         prev (first sq)
+         res [prev]]
+    (if (elt= prev (first rsq))
+      res
+      (recur (rest rsq)
+             (first rsq)
+             (conj res (first rsq))))))
 
 
 (defn ensure-vec
@@ -253,6 +270,29 @@
               (fr r (apply reducem (fn[& args] (apply f xr args)) fr
                            (rest colls)))))
           :ignore (first colls))))))
+
+
+
+(defn xfold
+  ""
+  ([f coll]
+     (let [cores (.. Runtime getRuntime availableProcessors)
+           workers (int (math/floor (* 3/4 cores)))
+           base (* 8 cores)
+           n (max 2 (int (math/floor (/ (count coll) (* 2 workers)))))
+           n (min base n)]
+       #_(println :>>N n)
+       (xfold f n coll)))
+  ([f n coll]
+     (r/fold n
+             (fn([] [])
+               ([l r] (apply conj l r)))
+             (fn[v x] (conj v (f x)))
+             (vec coll)))
+  ([f n coll & colls]
+     (xfold (fn[v] (apply f v)) n (apply transpose coll colls))))
+
+(defn foldx [& args] (apply xfold args))
 
 
 (defn pxmap
@@ -495,6 +535,34 @@
           0 (first colls))))))
 
 
+(defn cumsum
+  "Cumulative sum of values in COLL.  If COLL is a map, return the
+   cumulative sum of the (presumed all numbers) in (vals coll).  For
+   function F versions, return the cumulative sum of x in COLL (f x)
+   or the cumulative sum of x1 in COLL1, x2 in COLL2, ... xn in
+   COLLn (f x1 ... xn).
+
+   The cumulative sum is the seq of partial sums across COLL treated
+   as a vector for each (i (range (count COLL))), effectively:
+
+   [(coll 0) (sum (subvec coll 0 2)) .. (sum (subvec coll 0 (count coll)))]
+
+   Except actual computational time is linear.
+  "
+  ([coll]
+     (let [cv (vec (if (map? coll) (vals coll) coll))
+           c0 (cv 0)]
+       (first
+        (reduce (fn[[v s] x]
+                  (let [s (+ s x)]
+                    [(conj v s) s]))
+                [[c0] c0] (rest cv)))))
+  ([f coll]
+     (cumsum (map f coll)))
+  ([f coll1 coll2 & colls]
+     (cumsum (apply map f coll1 coll2 colls))))
+
+
 (defn prod
   "Return the product of the numbers in COLL.  If COLL is a map,
    return the product of the (presumed all numbers) in (vals coll).
@@ -524,6 +592,12 @@
   ([f coll1 coll2 & colls]
      (let [colls (cons coll2 colls)]
        (apply reducem f * coll1 colls))))
+
+
+(defn sqr
+  "Square x, i.e., returns (* x x)"
+  [x]
+  (*' x x))
 
 
 (defn logb
@@ -657,7 +731,7 @@
 
 
 (defn dot [v1 v2]
-  (reduce #(+ %1 %2) 0 (map #(* %1 %2) v1 v2)))
+  (double (reduce + 0.0 (map * v1 v2))))
 
 (defn norm [v]
   (math/sqrt (dot v v)))
@@ -672,7 +746,15 @@
   (math/abs (dec (cos-vangle v1 v2))))
 
 (defn vecdist [v1 v2]
-  (let [v (vec (map #(- %1 %2) v1 v2))] (dot v v)))
+  (let [v (map - v1 v2)] (math/sqrt (dot v v))))
+
+(defn vecmean
+  ([v1 v2]
+     (map #(/ (+ %1 %2) 2) v1 v2))
+  ([vs]
+     (let [d (count vs)]
+       (map (fn[xs] (/ (apply + xs) d))
+            (transpose vs)))))
 
 
 

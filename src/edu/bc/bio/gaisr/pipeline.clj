@@ -940,7 +940,45 @@
               hfs-cmss)))
 
 
-(defn run-config-job [job-config-file & {:keys [eval] :or {eval 100.0}}]
+(defn next-sto
+  "Take an originating input sto that was put through a run of
+   pipeline from cmbuild through cmsearch through to FFP (and or
+   Scribl), it's corresponding CM (from the build and calibrate
+   portion of the run), and the resulting entry file output ENT and
+   creates the next version of the sto, isto'.
+
+   Uses cmalign to generate the new combined alignment, but also
+   automatically generates next version canonical name for isto',
+   ensures various #GF commentary lines are preserved and places a
+   marker in the output indicating start of new aligned sequences.
+  "
+  [isto cm ent]
+  (let [fna (entry-file->fasta-file ent :names-only true)
+        oldext (->> isto (re-find #"[0-9]+\.sto$"))
+        nxtver (->> oldext (re-find #"[0-9]+") (Integer.) inc (str))
+        osto (str/replace-re #"[0-9]+\.sto" (str nxtver ".sto") isto)
+        gc-lines (first (join-sto-fasta-lines isto ""))
+        _ (cmalign cm fna osto :opts ["--withali" isto "-q" "-1"])
+        [_ seq-lines cons-lines] (join-sto-fasta-lines osto "")]
+    (io/with-out-writer osto
+      (doseq [gcl gc-lines] (println gcl))
+      (println)
+      (doseq [[nm [_ sq]] seq-lines] (cl-format true "~A~40T~A~%" nm sq))
+      (doseq [[nm [_ sq]] cons-lines] (cl-format true "~A~40T~A~%" nm sq)))
+    osto))
+
+
+(defn run-config-job
+  "Run the tasks specified in the configuratin given in
+   JOB-CONFIG-FILE (see edu.bc.bio.job-config ns).  Optional eval key
+   supports configs not specifying eval on cmsearch (obsolete).
+
+   THIS NEEDS TO BE SPLIT INTO PROPER JOB LEVEL TASKS.  As it
+   currently is, it runs the multiple tasks specified in the config
+   file as a _single_ task, i.e., this function.
+  "
+  [job-config-file &
+  {:keys [eval] :or {eval 100.0}}]
   (let [config (parse-config-file job-config-file)
         stodir (config :stodir)
         cmdir (config :cmdir)
@@ -976,7 +1014,7 @@
 
       ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
       ;; csvdir does not exist, generate it.  Place all generated csvs
-      ;; in to csvdir
+      ;; into csvdir
       (when-let [csvdir (config :gen-csvs)]
         (when (not (fs/exists? csvdir)) (fs/mkdir csvdir))
         (when (seq cmouts)

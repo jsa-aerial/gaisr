@@ -280,42 +280,60 @@
                       [0 0] m)]
     (/ n d)))
 
-(defn mean
-  "Compute the expectaion of the collection COLL.  If coll is a map
-   use (vals coll).  The values of coll can be either single numbers
-   or pairs of number [n w], where w is the weight to assign to n.  If
-   single numbers are given, their weight is taken as simply 1.
+(defn num-key-freq-map?
+  "Returns true if X a number keyed frequency map"
+  [x]
+  (and (map? x) (number? (ffirst x))))
 
-   Returns (/ (sum (map (fn[v] (if (sequential? v) (let [[n w] v] (* w n)) v))
-                        coll))
-              (count coll))
+(defn pair-coll?
+  "Returns true if X is a collection of number pairs."
+  [x]
+  (or (num-key-freq-map? x)
+      (and (sequential? (first x))
+	   (number? (ffirst x)))))
+
+
+(defn mean
+  "Compute the expectaion of the collection COLL.  If coll is a number
+   keyed frequency map, computes as if seq of expansion of keys
+   weighted by frequency.  If coll is a simple map use (vals coll).
+   Also coll can be a collection of pairs [n w], where w is the weight
+   to assign to n.  Lastly, if single numbers are given, their weight
+   is taken as simply 1.  Effectively returns:
+
+     let c* (flattened-weighted-seq coll)
+         cnt (count c*)
+       (/ (sum c*) cnt)
+
+   But without computing actual weighted sequence c*.
   "
   ([coll]
      (double
-      (cond
-       (and (map? coll) (number? (ffirst coll))) (mean-freq-map coll)
-
-       (sequential? (first coll)) (->> (into {} coll) mean-freq-map)
-
-       :else
-       (let [coll (if (map? coll) (vals coll) coll)]
-                 (/ (sum coll)
-                    (count coll))))))
+      (if (pair-coll? coll)
+        (mean-freq-map coll)
+        (let [coll (if (map? coll) (vals coll) coll)]
+          (/ (sum coll)
+             (count coll))))))
   ([x & xs]
      (mean (cons x xs))))
 
-(defn flatten-freq-map
-  "Helper for median when it is passed a frequency map with number keys"
-  [m] ;m {4 1 2 1 3 1 1 1}
-  (flatten (map (fn[[x n]] (repeat n x)) m)))
+
+(defn flatten-pair-coll
+  "Helper for functions dealing with collections of pairs [v w] where
+   v is a value and w its weight
+  "
+  [coll] ;m {4 1 2 1 3 1 1 1}
+  (mapcat (fn[[v w]] (repeat w v)) coll))
 
 (defn median
-  "Compute the median of the given collection COLL.  If coll is a map
+  "Compute the median of the given collection COLL.  If coll is a
+   number keyed frequency map, effectively computes based on expansion
+   of keys weighted by frequency.  Or If coll is a simple map
    uses (vals coll).
   "
   ([coll]
-     (if (and (map? coll) (number? (ffirst coll)))
-       (median (flatten-freq-map coll))
+     (if (num-key-freq-map? coll)
+       (median (flatten-pair-coll coll))
        (let [coll (if (map? coll) (vals coll) coll)
              cnt (count coll)
              cnt2 (/ cnt 2)
@@ -335,9 +353,11 @@
    uses '-' as distfn and 'mean' as avgfn.
   "
   ([coll]
-     (let [coll (if (map? coll) (vals coll) coll)
-           m (mean coll)]
-       (mean (map #(sqr (- % m)) coll))))
+     ;; Uses Var(X) = E(sqr X) - (sqr E(X))
+     (- (if (pair-coll? coll)
+	  (mean (reduce (fn [m [v w]] (assoc m (sqr v) w)) {} coll))
+	  (mean (map sqr coll)))
+	(sqr (mean coll))))
   ([coll & {:keys [distfn avgfn m] :or {distfn - avgfn mean}}]
      (let [coll (if (map? coll) (vals coll) coll)
            m (if m m (avgfn coll))]

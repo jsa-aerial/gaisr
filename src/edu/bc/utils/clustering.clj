@@ -112,7 +112,7 @@
 
 
 (defn ith-sum-sqr-err
-  "Sum of Squared Error for cluster Ci.  Ci is a map entry with key
+  "Sum of Squares Error for cluster Ci.  Ci is a map entry with key
    the mean mi of Ci and val the points assigned to Ci.  distfn is the
    distance function for the err (and must be the same as the distance
    function assigning the points to Ci).
@@ -122,7 +122,7 @@
     (sum #(sqr (distfn mi %)) xs)))
 
 (defn sum-sqr-err
-  "Sum of Squared Error for a set of clusters (result of single loyd
+  "Sum of Squares Error for a set of clusters (result of single loyd
    step or end of k-means or ...).  distfn is the distance function
    used to form the clusters (in a loyd step) and is also the distance
    function for computing the errors.
@@ -171,7 +171,7 @@
   (let [vclus (ensure-vec clusters)
         errs (sort-by second > (map #(do [%1 (ith-sum-sqr-err distfn %2)])
                                     (iterate inc 0) vclus))
-        worst2best (map #(vclus(first %)) errs)
+        worst2best (map #(vclus (first %)) errs)
         [wmi wxs] (first (drop-until #(> (count (second %)) 1) worst2best))
         newclusters (dissoc clusters wmi)
         ranked-wxs (sort-by #(distfn wmi %) > wxs)
@@ -224,8 +224,7 @@
   (->> (iterate (partial loyd-step distfn avgfn coll) initial-centers)
        take-until-nochange
        last
-       (clusters distfn coll)
-       (#(do [% (sum-sqr-err distfn %)]))))
+       (clusters distfn coll)))
 
 
 ;;; (km++init 3 [0, 1, 2, 3, 4] edist)
@@ -253,8 +252,8 @@
    2. convergence to clusters much closer to real clusters
   "
   [k distfn coll]
-  (let [coll (ensure-vec coll)]
-    (loop [Cs [(rand-nth coll)]]
+  (let [coll (ensure-vec (set coll))]
+    (loop [Cs #{(rand-nth coll)}]
       (if (= (count Cs) k)
         Cs
         (let [D2s (map (fn[x] (apply min (map #(sqr (distfn % x)) Cs))) coll)
@@ -280,13 +279,315 @@
 
 
 
+;;; --------------- Clustering Distance and Validity Measures --------------;;;
+
+
+(defn center-distances
+  "Pairwise distances of centers of clusters Ci in CLUSTERING by means
+   of distance function DISTFN.
+  "
+  [distfn clustering]
+  (map (fn[[[ci _] [cj _]]] (distfn ci cj)) (combins 2 clustering)))
+
+(defn center-dist-expect
+  "The expectation of all center distances of clusters in CLUSTERING.
+   Distances are computed by DISTFN.  Expectation is computed by AVGFN
+   which defaults to the mean.
+  "
+  [distfn clustering & {:keys [avgfn] :or {avgfn mean}}]
+  (avgfn (center-distances distfn clustering)))
+
+
+(defn intra-distances
+  "Pairwise distances of points in a cluster CLUSTER as given by
+   DISTFN.  CLUSTER is either an element of a result of (clusters
+   ...), i.e., a map entry with center key and points val, or the
+   point collection of such cluster.
+  "
+  [distfn cluster]
+  (let [clu (if (map-entry? cluster) (val cluster) cluster)]
+    (map (fn[[x y]] (distfn x y)) (combins 2 clu))))
+
+(defn intra-dist-expect
+  "The expectation of all pairwise point distances in cluster CLUSTER.
+   Distances are computed by DISTFN and expectation by AVGFN, which
+   defaults to mean. CLUSTER is either an element of a result
+   of (clusters ...), i.e., a map entry with center key and points
+   val, or the point collection of such cluster.
+  "
+  [distfn cluster & {:keys [avgfn] :or {avgfn mean}}]
+  (avgfn (intra-distances distfn cluster)))
+
+
+(defn cluster-distances
+  "Given a clustering CLUSTERS and its distance function DISTFN,
+   returns a set of scores/measures of the quality of the clustering,
+   a map with keys [:global, :each, :inter-m-xs, inter-xs, ...].
+   Where,
+
+   * global gives a global intra cluster cohesion, uses SSE
+
+   * each gives intra cluster cohesion for each cluster, uses SSE
+
+   * inter a global inter cluster cohesion (sum of sqrs of center
+     distances)
+
+   * inter-ms gives pairwise inter cluster cohesion (center distances)
+
+   * inter-m-xs gives pairwise inter cluster cohesion by min distances
+     over points xis in Ci to center mj of Cj and vice versa.
+
+   * inter-xs gives pairwise inter cluster cohesion by min distance
+     over all [xi, xj] pairs, xi in Ci, xj in Cj
+  "
+  [distfn clusters]
+  (let [cpairs (vec (combins 2 clusters))
+        ms (sort-by second
+                    (map (fn[l [[mi xis] [mj xjs]]] [l (distfn mi mj)])
+                         (iterate inc 0) cpairs))
+        mDs (sort-by second
+                     (map (fn[l [[mi xis] [mj xjs]]]
+                            [l
+                             (apply min (map #(distfn mi %) xjs))
+                             (apply min (map #(distfn mj %) xis))])
+                          (iterate inc 0) cpairs))
+        xDs (sort-by second
+                     (map (fn[l [[mi xis] [mj xjs]]]
+                            [l (apply min (reducem #(do [(distfn %1 %2)])
+                                                   concat
+                                                   xis xjs))])
+                          (iterate inc 0) cpairs))]
+    {:global (sum-sqr-err distfn clusters)
+     :each (map #(do [((partial ith-sum-sqr-err distfn) %) %]) clusters)
+     :inter (sum #(sqr (second %)) ms)
+     :inter-ms (map (fn[[i d]] [d (cpairs i)]) ms)
+     :inter-m-xs (map (fn[[i d1 d2]] [d1 d2 (cpairs i)]) mDs)
+     :inter-xs (map (fn[[i d]] [d (cpairs i)]) xDs)}))
+
+
+(defn DBI-Si
+  "The Davies Bouldin Index of the compactness (aka 'scatter' or Si)
+   of cluster CLUSTER.
+
+   Si is the expectation of pairwise distances of points in CLUSTER
+   with its center ci.  Distances are given by DISTFN. The expectation
+   is AVGFN of these distances.  AVGFN defaults to mean:
+
+   Si = (avgnf (sum (fn[xj] (distfn ci xj)) (val cluster)))
+
+   CLUSTER must be an element of a result of (clusters ...), i.e., a
+   map entry with center key and points val.
+  "
+  [distfn cluster & {:keys [avgfn] :or {avgfn mean}}]
+  (let [ci (key cluster)]
+    ;; Penalize singleton clusters.  Bit of a hack, would be better
+    ;; overall if took the largest so far, but that requires global
+    ;; knowledge.  Maybe DBI-Rij could do this???
+    (if (< (count (val cluster)) 2)
+      (double 10.0)
+      #_(math/sqrt (avgfn (map (fn[xj] (sqr (distfn xj ci))) (val cluster))))
+      (avgfn (map (fn[xj] (distfn xj ci)) (val cluster)))
+      )))
+
+(defn DBI-Rij
+  "Rij is a similarity measure between two clusters of a clustering
+   based on DBI-Si compactness and center point distance dij.  The
+   important aspects are that it is postive definite and symmetric.
+   Additionally, 'triangle like' aspects hold:
+
+   * if Sj > Sk and dij = dik, then Rij > Rik
+
+   * if Sj = Sk and dij < dik, then Rij > Rik
+
+   Rij = (/ (+ Si Sj) (distfn ci cj))
+
+   Returns the collection of Rij for all pairwise clusters of
+   clustering as a map indexed by i in (range n), n = (count
+   clusterings).  The value of an entry is the n-1 set of Ri,i/=j for
+   cluster Ci.  Note since Rij=Rji there are duplicate values across
+   the entries, but they are computed only once.
+  "
+  [distfn clustering  & {:keys [avgfn] :or {avgfn mean}}]
+  (let [indices (combins 2 (range (count clustering)))
+        vclus (vec clustering)]
+    (reduce (fn[M [i j :as p]]
+              (let [[Ci Cj] [(vclus i) (vclus j)]
+                    [ci cj] [(first Ci) (first Cj)]
+                    Rij (/ (+ (DBI-Si distfn Ci) (DBI-Si distfn Cj))
+                           (distfn ci cj))
+                    M (assoc M i (conj (get M i []) Rij))
+                    M (assoc M j (conj (get M j []) Rij))]
+                M))
+            {} indices)))
+
+(defn davies-bouldin-index
+  "Computes the Davies Bouldin Index of cluster validity.  This is a
+   cluster validity measure which is the average of the maximal Rij
+   over all not equal pairwise clusters (see DBI-Rij).
+  "
+  [distfn clustering & {:keys
+  [avgfn] :or {avgfn mean}}]
+  (let [Ds (map (fn[[i Rijs]] (apply max Rijs)) ;(median Rijs))
+                (DBI-Rij distfn clustering :avgfn avgfn))]
+    (mean Ds)))
+
+
+(defn- ||x|| [v]
+  (if (not (coll? v)) v (norm v)))
+
+(defn cluster-stdev
+  "Compute the average standard deviation of the spread of clusters in
+   CLUSTERING, the result of a (clusters ...) call.  This is not as
+   obvious as it may see, and is basically (avg-std-deviation
+   clustering) except we cheat a bit as we already have the
+   means (centers).
+  "
+  [distfn avgfn clustering]
+  (math/sqrt
+   (/ (sum (fn[[mi xis]]
+             (* (dec (count xis))
+                (variance xis :distfn distfn :avgfn avgfn :m mi)))
+           clustering)
+      (- (sum count clustering) (count clustering)))))
+
+(defn density
+  "Computes the 'density' of points in COLL relative to u (typically a
+   'center' or 'mid point' of some sort) as determined by counts
+   within 1 STDEV of u.  Distances are given by distance function
+   DISTFN.
+  "
+  [distfn stdev u coll]
+  (let [f (fn[x mi] (if (<= (distfn x mi) stdev) 1 0))]
+    (sum #(f % u) coll)))
+
+(defn intercluster-density
+  "Compute the inter cluster point density.  This is the density
+   between clusters as determined by point counts 1 cluster-stdev from
+   midpoints between cluster centers.
+
+   Note: if (= 1 (count clustering)), simply returns the density of
+   the single cluster.
+
+   Returns floating point density score of separation - the smaller
+   the better.
+  "
+  [distfn avgfn clustering & {:keys [stdev]}]
+  (let [stdev (if stdev stdev (cluster-stdev distfn avgfn clustering))
+        c (count clustering)]
+    #_(prn :stdev stdev)
+    (if (= c 1)
+      (let [[m1 x1s] (first clustering)]
+        (density distfn stdev m1 x1s))
+      (/ (sum (fn[[mi xis]]
+                (sum (fn[[mj xjs]]
+                       (if (= mi mj)
+                         0
+                         (let [u (avgfn mi mj)
+                               C (set/union (set xis) (set xjs))]
+                           (/ (density distfn stdev u C)
+                              (max (density distfn stdev mi xis)
+                                   (density distfn stdev mj xjs)
+                                   1)))))
+                     clustering))
+              clustering)
+         (* c (dec c))))))
+
+(defn scatt
+  "Compute the compactness of a clustering by means of 'density'
+   measure.  This is the averaged ratio of variance of clusters in
+   clustering to the overall variance of the data set:
+
+   let S all data points
+       n (count clustering)
+     (* 1/n (sum (fn[Ci] (/ (variance Ci) (variance S))) clustering))
+
+   Returns a floating point density score of compactness - the smaller
+   the better.
+  "
+  [distfn avgfn clustering]
+  (let [S (apply set/union (map #(set (second %)) clustering))
+        Svar (variance S :distfn distfn :avgfn avgfn)
+        Cvars (map (fn[[mi xis]] (variance xis :m mi)) clustering)]
+    (mean (map #(/ % Svar) Cvars))))
+
+(defn S-Dbw-index
+  "Compute the 'SDbw' cluster validity index.  By several
+   accounts (IEEE 2010 ICDM paper 'Understanding Internal Clustering
+   Validity Measures', in particular) this is the most robust general
+   internal validity measure across both data sets and clustering
+   algorithms.  It is the default used by FIND-CLUSTERS.
+
+   It accounts for both compactness of clusters and cluster
+   separation.  It does this with a dual density measure:
+
+   1. Scattering (see SCATT), which computes the average variance in
+      clusters to the overall variance of the data set.
+
+   2. Intercluster density (so called 'Dens_bw', see
+      INTERCLUSTER-DENSITY), which computes an averaged density in the
+      space between all cluster pairs.
+
+   Note in particular that for convex sets, it is proved that the
+   clustering which minimizes Scatt + Dens_bw, is the optimal
+   clustering for the data set and algorithm pair (see Halkidi &
+   Vazirgiannis, Clustering Validity Assesment: Finding Optimal
+   partitioning of a Data Set, Proc ICDM 2001, pp187-194).
+
+   DISTFN is the distance function for the data and AVGFN the 'mean'
+   for the data.
+
+   Returns a floating point number as score.  The smaller the better.
+  "
+  [distfn clustering & {:keys [avgfn] :or {avgfn mean}}]
+   (+ (scatt distfn avgfn clustering)
+      (intercluster-density distfn avgfn clustering)))
+
+
+
+(defn find-clusters
+  "Computes the 'best' clustering of the data in collection COLL whose
+   distances are given by DISTFN and means by AVGFN, as produced by
+   ALGO and measured by VINDEX.  ALGO is the clustering algorithm,
+   defaults to kmeans++, and VINDEX is the validity index measure,
+   defaults to S-Dbw-index.
+
+   'Best', here is as determined by vindex.  If the data has
+   convex (natural/true) clusters, and is not skewed, the default
+   kmeans++ with S-Dbw-index will return the optimal
+   clustering (indeed, it will be or be extremely close to the
+   natural/true clustering).
+
+   If the data are not convex, kmeans++ is invalid (can only find
+   convex clusters...).  If the data is heavily skewed, kmeans will
+   not find the optimal (true) clusters (as it always tends to find
+   'equal area' clusters.
+  "
+  [coll & {:keys [distfn avgfn algo vindex]
+           :or {algo kmeans++ vindex S-Dbw-index
+                distfn edist avgfn mean}}]
+  (let [data (set coll)]
+    (loop [k 2
+           prev-info [(double Integer/MAX_VALUE) []]]
+      (let [[prev-score prev-clustering] prev-info
+            clustering (algo k data :distfn distfn :avgfn avgfn)
+            score (vindex distfn clustering :avgfn avgfn)]
+        (if (> score prev-score)
+          [(dec k) prev-score prev-clustering]
+          (recur (inc k)
+                 [score clustering]))))))
+
+
 
 ;;; ----------------- Ad Hoc Testing Stuff -------------------------------
 
 (comment
 
 (def data1 [2 3 5 6 10 11 100 101 102])
-(def data (for [i (range 50)] (int (rand 100))))
+(def data (flatten (for [i (range 5)]
+                     (let [j (int (rand 1000))
+                           k (int (rand 10))]
+                       (for [h (range k)]
+                         (+ j (rand)))))))
 
 (->> (iterate (partial loyd-step edist #(double (/ (sum %) (count %))) data)
               (km++init 6 edist data))
@@ -320,5 +621,10 @@
   (for [k (range (dec (count data)) 0 -1)]
     [k (kmeans++ k data)]))
 
+(variance [[1 2 3] [3 2 1] [100 200 300] [300 200 100] [50 50 50]]
+          :distfn vecdist :avgfn vecmean)
+
+(std-deviation [[1 2 3] [3 2 1] [100 200 300] [300 200 100] [50 50 50]]
+               :distfn vecdist :avgfn vecmean)
 
 )

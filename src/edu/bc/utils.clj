@@ -160,7 +160,7 @@
   (cond
    (vector? x) x
    (seq? x) (vec x)
-   (map? x) (vec x)
+   (or (map? x) (set? x)) (vec x)
    true [x]))
 
 
@@ -285,7 +285,8 @@
        (xfold f n coll)))
   ([f n coll]
      (r/fold n
-             (fn([] [])
+             (fn
+               ([] [])
                ([l r] (apply conj l r)))
              (fn[v x] (conj v (f x)))
              (vec coll)))

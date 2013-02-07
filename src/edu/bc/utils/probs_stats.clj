@@ -3,7 +3,7 @@
 ;;                 U T I L S . P R O B S - S T A T S                        ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -281,26 +281,106 @@
                         coll))
               (count coll))
   "
-  [coll]
-  (let [coll (if (map? coll) (vals coll) coll)]
-    (double (/ (sum (map (fn[v] (if (sequential? v) (let [[w n] v] (* w n)) v))
-                         coll))
-               (count coll)))))
+  ([coll]
+     (let [coll (if (map? coll) (vals coll) coll)]
+       (double (/ (sum (map (fn[v]
+                              (if (sequential? v)
+                                (let [[w n] v] (* w n))
+                                v))
+                            coll))
+                  (count coll)))))
+  ([x & xs]
+     (mean (cons x xs))))
 
 (defn median
   "Compute the median of the given collection COLL.  If coll is a map
    uses (vals coll).
   "
-  [coll]
-  (let [coll (if (map? coll) (vals coll) coll)
-        cnt (count coll)
-        cnt2 (/ cnt 2)
-        v (vec (sort coll))]
-    (if (even? cnt)
-      (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
-      (v (math/floor cnt2)))))
+  ([coll]
+     (let [coll (if (map? coll) (vals coll) coll)
+           cnt (count coll)
+           cnt2 (/ cnt 2)
+           v (vec (sort coll))]
+       (if (even? cnt)
+         (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
+         (v (math/floor cnt2)))))
+  ([x & xs]
+     (median (cons x xs))))
 
+(defn variance
+  "Compute the variance of the collection COLL.  If coll is a map
+   use (vals coll).  Returns average of squared differences of xs in
+   coll with 'mean' of coll.  The functions distfn and avgfn are used
+   for distances of points in coll and the averaging function.  Or,
+   the 'mean' can be given explicitly as M.  The single parameter case
+   uses '-' as distfn and 'mean' as avgfn.
+  "
+  ([coll]
+     (let [coll (if (map? coll) (vals coll) coll)
+           m (mean coll)]
+       (mean (map #(sqr (- % m)) coll))))
+  ([coll & {:keys [distfn avgfn m] :or {distfn - avgfn mean}}]
+     (let [coll (if (map? coll) (vals coll) coll)
+           m (if m m (avgfn coll))]
+       (mean (map #(sqr (distfn % m)) coll)))))
 
+(defn avg-variance
+  "Compute the average of the n variances for the n samples in
+   SAMPLE-SET.  This is not as obvious as it may at first seem.  It is
+   _not_ the mean of the variances of each sample.  The correct
+   averaging is the average of the weighted variances of each sample,
+   where the weighting is the sample size:
+
+   (/ (sum (fn[Si] (dec (count Si)) (variance Si)) sample-set)
+      (- (sum count sample-set) (count sample-set)))
+
+   This does reduce to the mean of the variances if the samples are
+   all of the same size, but this is often (typically?) not the case.
+
+   DISTFN and AVGFN are as for the function variance (for which, see)
+  "
+  ([sample-set]
+     (/ (sum (fn[Si]
+               (* (dec (count Si))
+                  (variance Si)))
+             sample-set)
+        (- (sum count sample-set) (count sample-set))))
+  ([sample-set & {:keys [distfn avgfn m] :or {distfn - avgfn mean}}]
+     (/ (sum (fn[Si]
+               (* (dec (count Si))
+                  (variance Si :distfn distfn :avgfn avgfn)))
+             sample-set)
+        (- (sum count sample-set) (count sample-set)))))
+
+(defn std-deviation
+  "Compute the standard deviation of collection COLL.  If coll is a
+   map uses (vals coll).  Returns the sqrt of the variance of
+   coll. The functions distfn and avgfn are used for distances of
+   points in coll and the averaging function for the mean of
+   coll. These are used to compute the variance, or if V is given it
+   is taken as the variance and variance computation is skipped.  For
+   the single parameter case, distfn is '-' and avgfn is 'mean'.
+  "
+  ([coll]
+     (math/sqrt (variance coll)))
+  ([coll & {:keys [distfn avgfn v] :or {distfn - avgfn mean}}]
+     (math/sqrt (if v v (variance coll :distfn distfn :avgfn avgfn)))))
+
+(defn avg-std-deviation
+  "Compute the average of the n standard deviations for the n samples
+   in SAMPLE-SET.  This is not as obvious as it may at first seem.  It
+   is _not_ the mean of the stdevs of each sample.  The correct
+   averaging is the sqrt of the average of the weighted variances of
+   each sample, where the weighting is the sample size.  This latter
+   is given by avg-variance (see its documentation for details).  So,
+   we return:
+
+   (sqrt (avg-variance sample-set))
+   "
+  ([sample-set]
+     (math/sqrt (avg-variance sample-set)))
+  ([sample-set {:keys [distfn avgfn v] :or {distfn - avgfn mean}}]
+     (math/sqrt (avg-variance sample-set :distfn distfn :avgfn avgfn))))
 
 
 (defn joint-prob-x

@@ -563,7 +563,7 @@
    and data.
 
    Impl Note: while this almost begs for multimethods, that would
-   actually increase the complexity as it would mean 8 methods to
+   actually increase the complexity as it would mean 14 methods to
    cover the cases...
   "
   [type info]
@@ -595,9 +595,9 @@
             #(re-find #"[A-Za-z0-9._/-]+" (first %))))))
 
 (defn read-seqs
-  "Read the sequences in FILESPEC and return set as a lazy
-  (Clojure!) seq.  Filespec can denote either a fna, aln, sto, or gma
-  file format file.
+  "Read the sequences in FILESPEC and return set as a lazy (Clojure!)
+   seq.  Filespec can denote either a fna, fa, hitfna, aln, sto, or
+   gma file format file.
   "
   [filespec & {info :info :or {info :data}}]
   (let [type (fs/ftype filespec)

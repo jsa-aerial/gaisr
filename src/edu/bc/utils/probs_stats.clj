@@ -24,7 +24,7 @@
 ;; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION    ;;
 ;; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.          ;;
 ;;                                                                          ;;
-;; Author: Jon Anthony                                                      ;;
+;; Author: Jon Anthony & Shermin Pei                                        ;;
 ;;                                                                          ;;
 ;;--------------------------------------------------------------------------;;
 ;;
@@ -271,39 +271,63 @@
   (cc-freqs&probs n colls combins-freqs-probs :par par))
 
 
+(defn- mean-freq-map
+  "Helper for mean when it is passed a frequency map with keys numbers"
+  [m]
+  (let [[n d] (reduce (fn [v [val n]]
+                        [(+ (first v) (* val n))
+                         (+ (second v) n)])
+                      [0 0] m)]
+    (/ n d)))
+
 (defn mean
   "Compute the expectaion of the collection COLL.  If coll is a map
    use (vals coll).  The values of coll can be either single numbers
-   or pairs of number [w n], where w is the weight to assign to n.  If
+   or pairs of number [n w], where w is the weight to assign to n.  If
    single numbers are given, their weight is taken as simply 1.
 
-   Returns (/ (sum (map (fn[v] (if (sequential? v) (let [[w n] v] (* w n)) v))
+   Returns (/ (sum (map (fn[v] (if (sequential? v) (let [[n w] v] (* w n)) v))
                         coll))
               (count coll))
   "
   ([coll]
-     (let [coll (if (map? coll) (vals coll) coll)]
-       (double (/ (sum (map (fn[v]
-                              (if (sequential? v)
-                                (let [[w n] v] (* w n))
-                                v))
-                            coll))
-                  (count coll)))))
+     (double (if (and (map? coll) (number? (ffirst coll)))
+	       (mean-freq-map coll)
+	       (let [coll (if (map? coll) (vals coll) coll)]
+		 (/ (sum (map (fn[v]
+				(if (sequential? v)
+				  (let [[n w] v] (* w n))
+				  v))
+			      coll))
+		    (count coll))))))
   ([x & xs]
      (mean (cons x xs))))
+
+(defn- median-freq-map
+  "Helper for median when it is passed a frequency map with keys numbers"
+  [m] ;m {4 1 2 1 3 1 1 1}
+  (let [flatten-map (fn[m] (flatten (map (fn[[x n]] (repeat n x)) m)))
+        m (->> m flatten-map sort vec)
+        c (count m)]
+    (if (odd? c)
+      (m (int (/ c 2)))
+      (mean [[(m (int (dec (/ c 2)))) 1]
+             [(m (int (/ c 2))) 1]]))))
 
 (defn median
   "Compute the median of the given collection COLL.  If coll is a map
    uses (vals coll).
   "
   ([coll]
-     (let [coll (if (map? coll) (vals coll) coll)
-           cnt (count coll)
-           cnt2 (/ cnt 2)
-           v (vec (sort coll))]
-       (if (even? cnt)
-         (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
-         (v (math/floor cnt2)))))
+     (if (and (map? coll) (number? (ffirst coll)))
+       (median-freq-map coll)
+       (let [coll (if (map? coll) (vals coll) coll)
+	     cnt (count coll)
+	     cnt2 (/ cnt 2)
+	     v (vec (sort coll))]
+	 (if (even? cnt)
+	   (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
+	   (v (math/floor cnt2))))))
   ([x & xs]
      (median (cons x xs))))
 

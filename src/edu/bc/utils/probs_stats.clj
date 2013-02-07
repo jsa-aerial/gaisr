@@ -291,28 +291,23 @@
               (count coll))
   "
   ([coll]
-     (double (if (and (map? coll) (number? (ffirst coll)))
-	       (mean-freq-map coll)
-	       (let [coll (if (map? coll) (vals coll) coll)]
-		 (/ (sum (map (fn[v]
-				(if (sequential? v)
-				  (let [[n w] v] (* w n))
-				  v))
-			      coll))
-		    (count coll))))))
+     (double
+      (cond
+       (and (map? coll) (number? (ffirst coll))) (mean-freq-map coll)
+
+       (sequential? (first coll)) (->> (into {} coll) mean-freq-map)
+
+       :else
+       (let [coll (if (map? coll) (vals coll) coll)]
+                 (/ (sum coll)
+                    (count coll))))))
   ([x & xs]
      (mean (cons x xs))))
 
-(defn- median-freq-map
-  "Helper for median when it is passed a frequency map with keys numbers"
+(defn flatten-freq-map
+  "Helper for median when it is passed a frequency map with number keys"
   [m] ;m {4 1 2 1 3 1 1 1}
-  (let [flatten-map (fn[m] (flatten (map (fn[[x n]] (repeat n x)) m)))
-        m (->> m flatten-map sort vec)
-        c (count m)]
-    (if (odd? c)
-      (m (int (/ c 2)))
-      (mean [[(m (int (dec (/ c 2)))) 1]
-             [(m (int (/ c 2))) 1]]))))
+  (flatten (map (fn[[x n]] (repeat n x)) m)))
 
 (defn median
   "Compute the median of the given collection COLL.  If coll is a map
@@ -320,14 +315,14 @@
   "
   ([coll]
      (if (and (map? coll) (number? (ffirst coll)))
-       (median-freq-map coll)
+       (median (flatten-freq-map coll))
        (let [coll (if (map? coll) (vals coll) coll)
-	     cnt (count coll)
-	     cnt2 (/ cnt 2)
-	     v (vec (sort coll))]
-	 (if (even? cnt)
-	   (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
-	   (v (math/floor cnt2))))))
+             cnt (count coll)
+             cnt2 (/ cnt 2)
+             v (vec (sort coll))]
+         (if (even? cnt)
+           (/ (+ (v (dec cnt2)) (v cnt2)) 2.0)
+           (v (math/floor cnt2))))))
   ([x & xs]
      (median (cons x xs))))
 

@@ -37,6 +37,7 @@
 
   (:require [clojure.contrib.math :as math]
             [clojure.contrib.string :as str]
+            [clojure.set :as set]
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils

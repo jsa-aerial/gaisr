@@ -290,7 +290,16 @@
   [x]
   (or (num-key-freq-map? x)
       (and (sequential? (first x))
-	   (number? (ffirst x)))))
+           (number? (ffirst x)))))
+
+(defn flatten-pair-coll
+  "COLL is a collection of pairs [v w] where v is a value and w its
+   weight. For maps, keys are vs and values are ws.  Returns a lazy
+   seq of of the expansions as a single collection, with w repetitions
+   of v for each such [v w] pair.
+  "
+  [coll] ;m {4 1 2 1 3 1 1 1}
+  (mapcat (fn[[v w]] (repeat w v)) coll))
 
 
 (defn mean
@@ -317,22 +326,16 @@
   ([x & xs]
      (mean (cons x xs))))
 
-
-(defn flatten-pair-coll
-  "Helper for functions dealing with collections of pairs [v w] where
-   v is a value and w its weight
-  "
-  [coll] ;m {4 1 2 1 3 1 1 1}
-  (mapcat (fn[[v w]] (repeat w v)) coll))
-
 (defn median
   "Compute the median of the given collection COLL.  If coll is a
-   number keyed frequency map, effectively computes based on expansion
-   of keys weighted by frequency.  Or If coll is a simple map
-   uses (vals coll).
+   collection of number pairs [v w], where w is the weight for v,
+   effectively computes its median based on expansion of keys weighted
+   by frequency.  This includes frequency maps where keys are numbers
+   and values are their weights.  If coll is a simple map computes the
+   median of (vals coll).
   "
   ([coll]
-     (if (num-key-freq-map? coll)
+     (if (pair-coll? coll)
        (median (flatten-pair-coll coll))
        (let [coll (if (map? coll) (vals coll) coll)
              cnt (count coll)
@@ -343,6 +346,7 @@
            (v (math/floor cnt2))))))
   ([x & xs]
      (median (cons x xs))))
+
 
 (defn variance
   "Compute the variance of the collection COLL.  If coll is a map
@@ -355,9 +359,9 @@
   ([coll]
      ;; Uses Var(X) = E(sqr X) - (sqr E(X))
      (- (if (pair-coll? coll)
-	  (mean (reduce (fn [m [v w]] (assoc m (sqr v) w)) {} coll))
-	  (mean (map sqr coll)))
-	(sqr (mean coll))))
+          (mean (reduce (fn [m [v w]] (assoc m (sqr v) w)) {} coll))
+          (mean (map sqr coll)))
+        (sqr (mean coll))))
   ([coll & {:keys [distfn avgfn m] :or {distfn - avgfn mean}}]
      (let [coll (if (map? coll) (vals coll) coll)
            m (if m m (avgfn coll))]
@@ -383,13 +387,36 @@
                (* (dec (count Si))
                   (variance Si)))
              sample-set)
-        (- (sum count sample-set) (count sample-set))))
+        (- (sum count sample-set)
+           (count sample-set))))
   ([sample-set & {:keys [distfn avgfn m] :or {distfn - avgfn mean}}]
      (/ (sum (fn[Si]
                (* (dec (count Si))
                   (variance Si :distfn distfn :avgfn avgfn)))
              sample-set)
-        (- (sum count sample-set) (count sample-set)))))
+        (- (sum count sample-set)
+           (count sample-set)))))
+
+(defn covariance
+  "" [PX PY]
+  (let [getvs (fn[X] (cond (pair-coll? X) (flatten-pair-coll X)
+                           (map? X) (vals X)
+                           :else X))
+        xs (getvs PX)
+        ys (getvs PY)
+        cnt (count xs)]
+    (if (not= cnt (count ys))
+      (raise :type :invalid-oper
+             :msg "Covariance of X & Y requires = size sample sets"
+             :X PX :Y PY)
+      (let [mux (mean xs)
+            muy (mean ys)]
+        (double (/ (sum (fn[xi yi] (* (- xi mux) (- yi muy)))
+                        :|| xs ys)
+                   cnt))))))
+
+
+
 
 (defn std-deviation
   "Compute the standard deviation of collection COLL.  If coll is a

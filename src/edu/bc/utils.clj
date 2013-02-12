@@ -72,11 +72,12 @@
 (defmacro defparameter
   "def with auto declaration of symbol SYM to be dynamic"
   ([sym val]
-     `(def ~(with-meta sym (assoc (meta sym) :dynamic true)) ~val))
+     `(def ~(with-meta sym (assoc (or (meta sym) {}) :dynamic true)) ~val))
   ([mmap sym val]
-     (let [mmap (if (string? mmap)
-                  (assoc (meta sym) :doc mmap)
-                  (into (meta sym) mmap))]
+     (let [sym-meta (or (meta sym) {})
+           mmap (if (string? mmap)
+                  (assoc sym-meta :doc mmap)
+                  (into sym-meta mmap))]
        `(def ~(with-meta sym (assoc mmap :dynamic true)) ~val))))
 
 

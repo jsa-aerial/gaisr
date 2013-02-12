@@ -759,6 +759,8 @@
     [good bad cutpt nm-re-sq]))
 
 
+(declare get-hitonly-final-names)
+
 (defn compute-candidate-sets
   ""
   [sto-file candidate-file run delta

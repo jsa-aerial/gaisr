@@ -271,15 +271,6 @@
   (cc-freqs&probs n colls combins-freqs-probs :par par))
 
 
-(defn- mean-freq-map
-  "Helper for mean when it is passed a frequency map with keys numbers"
-  [m]
-  (let [[n d] (reduce (fn [v [val n]]
-                        [(+ (first v) (* val n))
-                         (+ (second v) n)])
-                      [0 0] m)]
-    (/ n d)))
-
 (defn num-key-freq-map?
   "Returns true if X a number keyed frequency map"
   [x]
@@ -301,6 +292,15 @@
   [coll] ;m {4 1 2 1 3 1 1 1}
   (mapcat (fn[[v w]] (repeat w v)) coll))
 
+
+(defn- mean-freq-map
+  "Helper for mean when it is passed a frequency map with keys numbers"
+  [m]
+  (let [[n d] (reduce (fn [v [val n]]
+                        [(+ (first v) (* val n))
+                         (+ (second v) n)])
+                      [0 0] m)]
+    (/ n d)))
 
 (defn mean
   "Compute the expectaion of the collection COLL.  If coll is a number
@@ -398,24 +398,92 @@
            (count sample-set)))))
 
 (defn covariance
-  "" [PX PY]
+  "For populations/sample sets X and Y, compute the covariance of X and Y,
+   cov(X,Y). The size of X and Y must be the same. Provides a
+   'measure' of how X and Y 'follow' one another or change together.
+   Do they both go up and down together, vice versa, or something in
+   between.
+
+     let N (count X)
+         mux (mean X)
+         muy (mean Y)
+      (sum (fn[xi yi] (/ (- xi mux) (- yi muy) (dec N))) X Y)
+
+      which, by some algebra, is E(XY) - E(X)E(Y).
+
+   Note: If X and Y are independent, E(XY) = E(X)E(Y) and so
+   covariance must be 0.  If X=Y, cov(X,X) = E(X^2)-E(X)^2 = var(X).
+
+   Note: a particular useful application is for the variance of a
+   linear combination of X & Y:
+
+    var(aX + bY) = a^2*E(X^2)+2ab*E(XY)+b^2*E(Y^2) -
+                   a^2*E(X)^2+2ab*E(X)E(Y)+b^2*E(Y)^2
+
+                 = a^2*(E(X^2)-E(X)^2) +
+                   b^2*(E(Y^2)-E(Y)^2) +
+                   2ab*(E(XY)-E(X)E(Y))
+
+                 = a^2*var(X)+b^2*var(Y)+2ab*cov(X,Y)
+
+   Note: cov is very dependent on the sample matching of X and Y, so
+   be sure X and Y are in the correct order on call:
+
+    (covariance [1 2 3 4 5] [1 2 3 4 5])
+    => 2.0
+    (covariance [1 2 3 4 5] [2 1 4 3 5])
+    => 1.6
+    (covariance [1 2 3 4 5] [5 4 3 2 1])
+    => -2.0
+
+   Bugs: not an unbiased estimator of population variance.
+  "
+  [X Y]
   (let [getvs (fn[X] (cond (pair-coll? X) (flatten-pair-coll X)
                            (map? X) (vals X)
                            :else X))
-        xs (getvs PX)
-        ys (getvs PY)
-        cnt (count xs)]
-    (if (not= cnt (count ys))
+        xs (getvs X)
+        ys (getvs Y)]
+    (if (not= (count xs) (count ys))
       (raise :type :invalid-oper
              :msg "Covariance of X & Y requires = size sample sets"
-             :X PX :Y PY)
-      (let [mux (mean xs)
-            muy (mean ys)]
-        (double (/ (sum (fn[xi yi] (* (- xi mux) (- yi muy)))
-                        :|| xs ys)
-                   cnt))))))
+             :X X :Y Y)
+      (- (mean (map * xs ys))
+         (* (mean xs) (mean ys))))))
 
+(defn correlation
+  "For population/sample sets X and Y, compute the correlation between
+   X and Y, cor(X,Y).  The size of X and Y must be the same.  Provides
+   a 'measure' of the strength and connection of a linear relationship
+   beween X and Y.  Bounded by -1 (anti correlation) and 1 (perfect
+   correlation), i.e., cor(X,Y) in [-1, 1].  A value of zero indicates
+   no linear correlation, but does not mean independence, however
+   independence will produce a zero value.
 
+     cor(X,Y) = (/ cov(X,Y) (* (std-deviation X) (std-deviation Y)))
+
+   Defined only if both standard deviations are nonzero.
+
+   Also known as Pearson correlation coefficient, Pearson
+   product-moment correlation, or simply Pearson correlation.
+
+   Correlation is a normalized covariance.
+  "
+  [X Y]
+  (let [prod-stdevs (* (std-deviation X) (std-deviation Y))]
+    (if (= 0 prod-stdevs)
+      (raise :type :invalid-operation
+             :msg "Correlation only defined for finite nonzero stdevs"
+             :X X :Y Y
+             :stdevX (std-deviation X)
+             :stdevY (std-deviation Y))
+      (/ (covariance X Y)
+         prod-stdevs))))
+
+(defn pearson-correlation
+  "Often used synonym of correlation.  See correlation for details."
+  [X Y]
+  (correlation X Y))
 
 
 (defn std-deviation
@@ -514,9 +582,9 @@
 (defn JPxy
   "Joint Probability non symmetric: joint-probability with sym? false"
   ([combinator coll]
-     (joint-probability combinator true coll))
+     (joint-probability combinator false coll))
   ([combinator coll & colls]
-     (apply joint-probability combinator true (cons coll colls))))
+     (apply joint-probability combinator false (cons coll colls))))
 
 
 (defn cond-probability
@@ -723,7 +791,7 @@
 
 
 (defn pdsum
-  ""
+  "NOT CURRENTLY USED.  REVISIT AND POSSIBLY ELIMINATE"
   [f pdf1 pdf2 & pdfs]
   (let [parallel (= pdf1 :||)
         pdfs (cons pdf2 pdfs)
@@ -735,9 +803,6 @@
            pdfs)))
 
 
-
-(def ^{:doc "Default log function for entropy" :dynamic true}
-     *logfn* log2)
 
 (defn shannon-entropy
   "Returns the Shannon entropy of a sequence: -sum(* pi (log pi)),
@@ -776,14 +841,18 @@
 
    -sum(* px1..xn (log2 px1..xn))
 
-   If sym?, treat [x y] and [y x] as equal.
+   OPTS is a map of options, currently sym? and logfn.  The defaults
+   are false and log2.  If sym? is true, treat [x y] and [y x] as
+   equal.  logfn can be used to provide a log of a different base.
+   log2, the default, reports in bits.  If no options are required,
+   the empty map must be passed: (joint-entropy transpose {} my-coll)
   "
-  ([combinator sym? coll]
-     (entropy (joint-probability combinator sym? coll)))
-  ([combinator sym? coll1 coll2]
-     (entropy (joint-probability combinator sym? coll1 coll2)))
-  ([combinator sym? coll1 coll2 & colls]
-     (entropy (apply joint-probability combinator sym? colls))))
+  ([combinator opts coll]
+     (entropy (joint-probability combinator opts coll '())))
+  ([combinator opts coll & colls]
+     (let [{:keys [sym? logfn] :or {sym? false logfn log2}} opts]
+       (entropy (apply joint-probability combinator sym? coll colls)
+                :logfn logfn))))
 
 (defn HXY
   "Synonym for joint-entropy"
@@ -798,8 +867,13 @@
    Alternatively, given a set of collections c1, c2, c3, .. cn, and
    combinator, a function of n variables which generates joint
    occurances from {ci}, returns the multivariate conditional entropy
-   induced from the joint probability distributions.  If sym? is true
-   coalesce reversable element occurances in these distributions.
+   induced from the joint probability distributions.
+
+   OPTS is a map of options, currently sym? and logfn.  The defaults
+   are false and log2.  If sym? is true, treat [x y] and [y x] as
+   equal.  logfn can be used to provide a log of a different base.
+   log2, the default, reports in bits.  If no options are required,
+   the empty map must be passed: (cond-entropy transpose {} my-coll)
 
    For the case of i > 2, uses the recursive chain rule for
    conditional entropy (bottoming out in the two collection case):
@@ -809,13 +883,16 @@
   "
   ([PXY PY]
      (- (entropy PXY) (entropy PY)))
-  ([combinator sym? coll1 coll2]
-     (- (entropy (joint-probability combinator sym? coll1 coll2))
-        (entropy (probs 1 coll2))))
-  ([combinator sym? coll1 coll2 & colls]
-     ;; Apply chain rule...
-     (- (entropy (apply joint-probability combinator sym? coll1 coll2 colls))
-        (apply cond-entropy combinator sym? coll2 colls))))
+  ([combinator opts coll1 coll2]
+     (let [{:keys [sym? logfn] :or {sym? false logfn log2}} opts]
+       (- (entropy (joint-probability combinator sym? coll1 coll2) :logfn logfn)
+          (entropy (probs 1 coll2) :logfn logfn))))
+  ([combinator opts coll1 coll2 & colls]
+     (let [{:keys [sym? logfn] :or {sym? false logfn log2}} opts]
+       ;; Apply chain rule...
+       (- (entropy (apply joint-probability combinator sym? coll1 coll2 colls)
+                   :logfn logfn)
+          (apply cond-entropy combinator opts coll2 colls)))))
 
 (defn HX|Y
   "Synonym for cond-entropy"
@@ -825,19 +902,24 @@
 
 (defn combin-joint-entropy
   "Given a set of collections c1, c2, c3, .. cn, return the joint
-   entropy: - (sum (* px1..xn (log2 px1..xn))) all-pairs-over {ci}.
+   entropy: - (sum (* px1..xn (log2 px1..xn)) all-pairs-over {ci}).
    Where all-pairs-over is an exhaustive combination of elements of
    {ci} taken n at a time, where each n-tuple has exactly one element
-   from each ci (i.e., the cross product of {ci})
+   from each ci (i.e., the cross product of {ci}).
+
+   Reports in bits (logfn = log2) and treats [x y] [y x] elements as
+   the same.
   "
   ([coll1 coll2]
      (joint-entropy
-      (fn[s1 s2] (reducem (fn[x y] [[x y]]) concat s1 s2)) true coll1 coll2))
+      (fn[s1 s2] (reducem (fn[x y] [[x y]]) concat s1 s2))
+      {:sym? true}
+      coll1 coll2))
   ([coll1 coll2 & colls]
      (apply joint-entropy
             (fn[& cs]
               (apply reducem (fn[& args] [args]) concat cs))
-            true coll1 coll2 colls)))
+            {:sym? true} coll1 coll2 colls)))
 
 
 (defn seq-joint-entropy
@@ -861,7 +943,7 @@
    cc-freqs-probs, combins-freqs-probs, cc-combins-freqs-probs,
    et. al.  Or any map where the values are the probabilities of the
    occurance of the keys over some sample space.  Any summation term
-   where (or (= px 0) (= py )), is taken as 0.0.
+   where (or (= px 0) (= py 0)), is taken as 0.0.
 
    NOTE: maps should have same keys! If this is violated it is likely
    you will get a :negRE exception or worse, bogus results.  However,
@@ -874,7 +956,7 @@
 
    KLD >= 0.0 in all cases.
   "
-  [pdist1 pdist2]
+  [pdist1 pdist2 & {:keys [logfn] :or {logfn log2}}]
   ;; Actually, we try to 'normalize' maps to same sample space.
   (let [Omega (set/union (set (keys pdist1)) (set (keys pdist2)))
         KLD (sum (fn[k]
@@ -882,7 +964,7 @@
                          qi (get pdist2 k 0.0)]
                      (if (or (= pi 0.0) (= qi 0.0))
                        (double 0.0)
-                       (* pi (log2 (/ pi qi))))))
+                       (* pi (logfn (/ pi qi))))))
                  Omega)]
     (cond
      (>= KLD 0.0) KLD
@@ -892,15 +974,26 @@
       :type :negRE :KLD KLD :Pdist pdist1 :Qdist pdist2))))
 
 
-(defn KLD "Synonym for relative-entropy"[x y] (relative-entropy x y))
-(defn DX||Y "Synonym for relative-entropy" [x y] (relative-entropy x y))
+(defn KLD
+  "Synonym for relative-entropy.
+   args is [pd1 pd2 & {:keys [logfn] :or {logfn log2}}"
+  [& args] (apply relative-entropy args))
+(defn DX||Y
+  "Synonym for relative-entropy.
+   args is [pd1 pd2 & {:keys [logfn] :or {logfn log2}}"
+  [& args] (apply relative-entropy args))
 
 
 (defn mutual-information
   "Mutual information between the content of coll1 and coll2 as
    combined by combinator, a function of two variables, presumed to be
    over coll1 and coll2 returning a collection of combined elements.
-   If sym? is true, treat elements with reverses as equal.
+
+   OPTS is a map of options, currently sym? and logfn.  The defaults
+   are false and log2.  If sym? is true, treat [x y] and [y x] as
+   equal.  logfn can be used to provide a log of a different base.
+   log2, the default, reports in bits.  If no options are required,
+   the empty map must be passed: (mutual-information transpose {} my-coll)
 
    Mutual information is the relative entropy (KLD) of the joint
    probability distribution to the product distribution.  Here the
@@ -918,10 +1011,11 @@
 
    (<= 0.0 I(X,Y) (min [Hx Hy]))
   "
-  [combinator sym? coll1 coll2]
-  (let [HX  (shannon-entropy coll1)
-        HY  (shannon-entropy coll2)
-        HXY (joint-entropy combinator sym? coll1 coll2)
+  [combinator opts coll1 coll2]
+  (let [{:keys [sym? logfn] :or {sym? false logfn log2}} opts
+        HX  (shannon-entropy coll1 :logfn logfn)
+        HY  (shannon-entropy coll2 :logfn logfn)
+        HXY (joint-entropy combinator opts coll1 coll2)
         IXY (+ HX HY (- HXY))]
     (cond
      (>= IXY 0.0) IXY
@@ -931,8 +1025,8 @@
       :type :negIxy :Ixy IXY :Hxy HXY :Hx HX :Hy HY))))
 
 (defn IXY "Synonym for mutual information"
-  [combinator sym? coll1 coll2]
-  (mutual-information combinator sym? coll1 coll2))
+  [combinator opts coll1 coll2]
+  (mutual-information combinator opts coll1 coll2))
 
 
 (defn conditional-mutual-information

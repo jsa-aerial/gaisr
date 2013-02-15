@@ -212,14 +212,16 @@
    where cji is the ith element of the jth column of M.
   "
   ([colls]
-     {:pre [(coll? colls)
-            (every? #(or (coll? %) (string? %)) colls)]}
-     (if (empty? colls)
-       colls
-       (let [tm (apply map vector colls)]
-         (if (every? string? colls)
-           (map #(apply str %) tm)
-           tm))))
+     {:pre [(or (string? colls)
+                (and (coll? colls)
+                     (every? #(or (coll? %) (string? %)) colls)))]}
+     (let [colls (if (string? colls) [colls] colls)]
+       (if (empty? colls)
+         colls
+         (let [tm (apply map vector colls)]
+           (if (every? string? colls)
+             (map #(apply str %) tm)
+             tm)))))
 
   ([coll1 coll2 & colls]
      (transpose (cons coll1 (cons coll2 colls)))))

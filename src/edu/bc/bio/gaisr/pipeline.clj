@@ -945,7 +945,7 @@
    pipeline from cmbuild through cmsearch through to FFP (and or
    Scribl), it's corresponding CM (from the build and calibrate
    portion of the run), and the resulting entry file output ENT and
-   creates the next version of the sto, isto'.
+   create the next version of the sto, isto'.
 
    Uses cmalign to generate the new combined alignment, but also
    automatically generates next version canonical name for isto',

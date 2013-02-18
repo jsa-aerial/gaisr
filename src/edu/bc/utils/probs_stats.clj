@@ -459,6 +459,9 @@
       (- (mean (map * xs ys))
          (* (mean xs) (mean ys))))))
 
+
+(declare std-deviation)
+
 (defn correlation
   "For population/sample sets X and Y, compute the correlation between
    X and Y, cor(X,Y).  The size of X and Y must be the same.  Provides
@@ -794,6 +797,13 @@
         q (- 1.0  p)]
     (for [k (range N)]
       [k (* (math/expt q k) p)])))
+
+
+(defn p-value
+  "Compute p-value from distribution D and sample statistics x y
+  "
+  [d hits trials]
+  (raise :type :NYI :msg "p-value Not Yet Implemented"))
 
 
 

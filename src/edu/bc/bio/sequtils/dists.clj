@@ -567,9 +567,9 @@
 
         entries (get-entries cfile)
         sqs (->> entries
-		 (#(get-adjusted-seqs % delta))
-		 (map second)
-		 (#(if xlate (seqXlate % :xmap xlate) %)))
+                 (#(get-adjusted-seqs % delta))
+                 (map second)
+                 (#(if xlate (seqXlate % :xmap xlate) %)))
 
         refsqs (->> sto-file
                     get-entries
@@ -603,12 +603,19 @@
                 (if (<= re x) (+ y p) y))
               0.0 pre-sq))))
 
-(defn re-cdf-cut [nm-res & {:keys [Dy] :or {Dy 0.0}}]
+(defn re-cdf-cut [nm-res & {:keys [Dy Mre] :or {Dy 0.0 Mre 0.9}}]
   (let [res (sort (map first (nm-res-dist nm-res))) ; only the SET of res
         Fx (nm-res-cdf nm-res)
         pts (sort (map second nm-res))
         cdf-cut (+ Dy 0.5) ; 0.5 = median of Fx by definition
-        re-cutoff (reduce (fn[v re] (if (<= (Fx re) cdf-cut) re v))
+        re-cutoff (reduce (fn[v re]
+                            (if (>= Dy 0.0)
+                              ;; Straight CDF pick
+                              (if (<= (Fx re) cdf-cut) re v)
+                              ;; Add that re <= Max RE, to ensure late
+                              ;; runs don't derail with CDF picking
+                              ;; many bad, since nearly all are bad
+                              (if (and (<= re Mre) (<= (Fx re) cdf-cut)) re v)))
                           0.0 res)
         ;; Round to nearest thousandth
         re-cutoff (/ (round (* 1000 (+ re-cutoff 0.001))) 1000.0)]
@@ -645,9 +652,9 @@
 
 
 (defn select-cutpoint
-  [re-points & {:keys [area Dy]}]
+  [re-points & {:keys [area Dy Mre] :or {Mre 0.899}}]
   (if Dy
-    (re-cdf-cut re-points :Dy Dy)
+    (re-cdf-cut re-points :Dy Dy :Mre Mre)
     (let [s (* (sum re-points) area)]
       (first
        (reduce (fn[[x v] re]
@@ -827,11 +834,11 @@
     [hitonly final]))
 
 (defn hit-context-delta
-  [sto & {:keys [plot]}]
+  [sto & {:keys [plot mindelta] :or {mindelta 200}}]
   (let [pts (xfold (fn[i]
                      (->> (compute-candidate-info
                            sto sto
-                           (+ 400 (* i 20)) 1
+                           (+ mindelta (* i 20)) 1
                            :refn jensen-shannon
                            ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
                            :crecut 0.01 :limit 19
@@ -840,14 +847,14 @@
                    (range 81))
         ms (map #(min %1 %2) pts (drop 1 pts))
         chart (incanter.charts/scatter-plot
-               (map #(+ 400 (* 20 %)) (range (count ms))) ms
+               (map #(+ mindelta (* 20 %)) (range (count ms))) ms
                :x-label "Size X 20"
                :y-label "RE/JSD"
                :title "RE to subseq"
                :series-label "Sub Seq Size"
                :legend true)]
     (when plot (incanter.core/view chart))
-    (+ 400 (* 20 (first (pos (apply min pts) pts))))))
+    (+ mindelta (* 20 (first (pos (apply min pts) pts))))))
 
 (defn hit-context-delta-db
   ""
@@ -900,6 +907,19 @@
 
 
 (comment
+
+
+(def L20-auto-1
+     (compute-candidate-sets
+      "/home/kaila/Bio/STOfiles/031113/AUTO/L20-auto-0.sto"
+      "/home/kaila/Bio/STOfiles/031113/AUTO/CSV/L20-auto-0.sto.Assortprot1.fna.cmsearch.csv"
+      1 1080
+      :refn jensen-shannon
+      :xlate +RY-XLATE+ :alpha ["R" "Y"]
+      :crecut 0.01 :limit 19
+      :plot-dists true ))
+
+
 
 (def bigrun2-info
      (compute-candidate-sets

@@ -80,6 +80,12 @@
                   (into sym-meta mmap))]
        `(def ~(with-meta sym (assoc mmap :dynamic true)) ~val))))
 
+(defn add-meta
+  [x m]
+  (with-meta x (merge (or (meta x) {}) m)))
+
+
+
 
 (defn timefn
   "Time the application of F (a function) to ARGS (any set of args as
@@ -516,15 +522,15 @@
   ;; example, prod below...
   ([coll]
      (let [vs (if (map? coll) (vals coll) coll)]
-       (apply + vs)))
+       (apply +' vs)))
   ([f coll]
      (reduce (fn [x i]
-               (+ x (f i)))
+               (+' x (f i)))
              0 coll))
   ([f coll1 coll2]
      (reduce
       (fn[r c1i]
-        (+ r (sum #(f c1i %1) coll2)))
+        (+' r (sum #(f c1i %1) coll2)))
       0 coll1))
   ([f coll1 coll2 & colls]
      (let [colls (cons coll1 (cons coll2 colls))]
@@ -535,7 +541,7 @@
          ;; args into f
          (reduce
           (fn[r cxi]
-            (+ r (apply sum (fn[& args] (apply f cxi args)) (rest colls))))
+            (+' r (apply sum (fn[& args] (apply f cxi args)) (rest colls))))
           0 (first colls))))))
 
 
@@ -590,12 +596,12 @@
   "
   ([coll]
      (let [vs (if (map? coll) (vals coll) coll)]
-       (apply * vs)))
+       (apply *' vs)))
   ([f coll]
-     (reducem f * coll))
+     (reducem f *' coll))
   ([f coll1 coll2 & colls]
      (let [colls (cons coll2 colls)]
-       (apply reducem f * coll1 colls))))
+       (apply reducem f *' coll1 colls))))
 
 
 (defn sqr

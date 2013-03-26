@@ -545,7 +545,16 @@
 
 
 
-(defn find-clusters
+;;; (ns-unmap *ns* 'find-clusters)
+(defmulti
+  ^{:arglists
+    '([coll & {:keys [distfn avgfn algo vindex]
+             :or {algo kmeans++ vindex S-Dbw-index
+                  distfn edist avgfn mean}}]
+      [_ coll & {:keys [distfn avgfn algo vindex]
+                 :or {algo kmeans++ vindex S-Dbw-index
+                      distfn edist avgfn mean}}])}
+  find-clusters
   "Computes the 'best' clustering of the data in collection COLL whose
    distances are given by DISTFN and means by AVGFN, as produced by
    ALGO and measured by VINDEX.  ALGO is the clustering algorithm,
@@ -563,6 +572,10 @@
    not find the optimal (true) clusters (as it always tends to find
    'equal area' clusters.
   "
+  (fn [& args] (first args)))
+
+
+(defmethod find-clusters :default
   [coll & {:keys [distfn avgfn algo vindex]
            :or {algo kmeans++ vindex S-Dbw-index
                 distfn edist avgfn mean}}]
@@ -577,6 +590,32 @@
           (recur (inc k)
                  [score clustering]))))))
 
+
+(defmethod find-clusters :global
+  [_ coll & {:keys [distfn avgfn algo vindex]
+             :or {algo kmeans++ vindex S-Dbw-index
+                  distfn edist avgfn mean}}]
+  (let [data (set coll)]
+    (first
+     (sort-by
+      first <
+      (for [k (range 2 (int (/ (count coll) 3)))
+            :let [clustering (algo k data :distfn distfn :avgfn avgfn)
+                  score (vindex distfn clustering :avgfn avgfn)]]
+        [score clustering])))))
+
+
+(comment
+  (let [ents-seqs (->> "/home/jsa/Bio/FreqDicts/NewRFAM/RF00504-seed-NC.sto"
+                       (#(read-seqs %1 :info :names))
+                       (#(get-adjusted-seqs %1 700))
+                       (take 30)
+                       ((fn[[nm sq]] [(probs 7 sq) nm sq])) vec)
+        ??? (combins 2 (range 0 30))]
+    (clu/find-clusters :global xxx
+                       :distfn ???
+                       :avgfn ???))
+  )
 
 
 ;;; ----------------- Ad Hoc Testing Stuff -------------------------------

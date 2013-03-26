@@ -38,6 +38,7 @@
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
             [clojure.contrib.io :as io]
+	    [clojure-csv.core :as csv]
             [edu.bc.fs :as fs])
   (:use clojure.contrib.math
         edu.bc.utils
@@ -582,10 +583,11 @@
             #(second (re-find  #"^(N[CZ_0-9]+|[A-Za-z0-9._/-]+)[,\s]+" %)))
 
           "ent"
+          ;; This is a bit annoying as we need to account for ent
+          ;; files with csv annotation beyond entries
           (if (= info :data)
-            #(second (gen-name-seq %))
+            #(-> % csv/parse-csv ffirst gen-name-seq second)
             #(->> (str/split #"([\s,]|/)" %) (take 3) (str/join "/")))
-          ;;#(first (gen-name-seq %)))
 
           "gma" (raise :type :NYI :info "GMA format not yet implemented")
 
@@ -599,9 +601,8 @@
    seq.  Filespec can denote either a fna, fa, hitfna, aln, sto, or
    gma file format file.
   "
-  [filespec & {info :info :or {info :data}}]
-  (let [type (fs/ftype filespec)
-        f   (seqline-info-mapper type info)
+  [filespec & {:keys [info type] :or {info :data type (fs/ftype filespec)}}]
+  (let [f   (seqline-info-mapper type info)
         ;;sqs (str/split-lines (slurp filespec)) ; <-- NOT LAZY!!
         sqs (filter #(let [l (str/replace-re #"^\s+" "" %)]
                        (and (not= l "") (not (.startsWith l "#"))))

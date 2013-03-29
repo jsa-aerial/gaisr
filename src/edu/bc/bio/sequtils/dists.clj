@@ -461,15 +461,18 @@
 (defn hybrid-dictionary
   [l sqs]
   {:pre [(or (string? sqs) (coll? sqs))]}
-  (let [sqs (degap-seqs (if (coll? sqs) sqs (read-seqs sqs)))
+  (let [sqs (if (-> sqs first map?)
+              sqs
+              (degap-seqs (if (coll? sqs) sqs (read-seqs sqs))))
         cnt (count sqs)
         par (max (floor (/ cnt 10)) 2)
-        dicts (xfold #(probs l %) sqs)
+        dicts (if (-> sqs first map?) sqs (xfold #(probs l %) sqs))
         hybrid (apply merge-with +
                       (xfold (fn[subset] (apply merge-with + subset))
                              (partition-all (/ (count dicts) par) dicts)))]
     (reduce (fn[m [k v]] (assoc m k (double (/ v cnt))))
             {} hybrid)))
+
 
 ;;; (pxmap (fn[subset] (apply merge-with + subset))
 ;;;                              par (partition-all

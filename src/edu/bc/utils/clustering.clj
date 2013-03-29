@@ -137,8 +137,7 @@
    seq of these new centers.
   "
   [avgfn clusters]
-  (reduce (fn[S cl] (conj S (avgfn cl)))
-          [] clusters))
+  (xfold (fn[cl] (avgfn cl)) clusters))
 
 (defn clusters
   "Form and return a set of clusters.  Each cluster is the set of
@@ -148,7 +147,7 @@
   "
   [distfn coll centers]
   (reduce (fn[M [x c]] (assoc M c (conj (get M c []) x)))
-          {} (map #(do [% (nearest % distfn centers)]) coll)))
+          {} (xfold #(do [% (nearest % distfn centers)]) coll)))
 
 
 (defn split-worst-cluster
@@ -508,7 +507,9 @@
   [distfn avgfn clustering]
   (let [S (apply set/union (map #(set (second %)) clustering))
         Svar (variance S :distfn distfn :avgfn avgfn)
-        Cvars (map (fn[[mi xis]] (variance xis :m mi)) clustering)]
+        Cvars (map (fn[[mi xis]]
+                     (variance xis :distfn distfn :m mi))
+                   clustering)]
     (mean (map #(/ % Svar) Cvars))))
 
 (defn S-Dbw-index

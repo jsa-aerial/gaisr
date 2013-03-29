@@ -327,8 +327,8 @@
           (let [coll (if (map? coll) (vals coll) coll)]
             (/ (sum coll)
                (count coll)))))))
-     ([x & xs]
-        (mean (cons x xs))))
+  ([x & xs]
+     (mean (cons x xs))))
 
 (defn median
   "Compute the median of the given collection COLL.  If coll is a

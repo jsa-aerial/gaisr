@@ -459,19 +459,24 @@
 
 
 (defn hybrid-dictionary
-  [l sqs & {:keys [par] :or {par 1}}]
+  [l sqs]
   {:pre [(or (string? sqs) (coll? sqs))]}
   (let [sqs (degap-seqs (if (coll? sqs) sqs (read-seqs sqs)))
         cnt (count sqs)
-        dicts (pxmap #(probs l %) par sqs)
+        par (max (floor (/ cnt 10)) 2)
+        dicts (xfold #(probs l %) sqs)
         hybrid (apply merge-with +
-                      (pxmap (fn[subset] (apply merge-with + subset))
-                             par (partition-all
-                                  (/ (count dicts) par)
-                                  dicts)))]
+                      (xfold (fn[subset] (apply merge-with + subset))
+                             (partition-all (/ (count dicts) par) dicts)))]
     (reduce (fn[m [k v]] (assoc m k (double (/ v cnt))))
             {} hybrid)))
 
+;;; (pxmap (fn[subset] (apply merge-with + subset))
+;;;                              par (partition-all
+;;;                                   (/ (count dicts) par)
+;;;                                   dicts))
+;;; (xfold (fn[subset] (apply merge-with + subset))
+;;;                          (partition-all (/ (count dicts) par) dicts))
 
 ;;; 1774444 the number of keys!!
 
@@ -577,7 +582,7 @@
                     (map second)
                     (#(if xlate (seqXlate % :xmap xlate) %)))
 
-        sto-hd (hybrid-dictionary l refsqs :par par)
+        sto-hd (hybrid-dictionary l refsqs)
         dicts (xfold #(probs l %) sqs)
         stods (xfold #(refn % sto-hd) dicts)]
 

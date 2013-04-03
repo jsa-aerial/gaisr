@@ -186,9 +186,11 @@
 
 (comment
 
-  (def dm (let [coll (->> "/home/jsa/Bio/FreqDicts/NewRFAM/RF00504-seed-NC.sto"
+  (def dm (let [xlate +RY-XLATE+
+		coll (->> "/home/jsa/Bio/FreqDicts/NewRFAM/RF00504-seed-NC.sto"
                           (#(read-seqs % :info :name))
                           (#(get-adjusted-seqs % 1100))
+			  (map (fn[[e s]] [e (seqXlate s :xmap xlate)]))
                           (map (fn[i es] [i es]) (iterate inc 0)))
                 wz 16
                 distfn (fn[[_ [nx sx]] [_ [ny sy]]]
@@ -218,6 +220,7 @@
                              (map #(gr/tarjan (keys %) %))
                              ;;(#(do (prn :sccs %) %))
                              (apply gr/refoldin-outliers krnngrph)
+			     vec
                              (#(do (prn :final %) %)))
                ent-clus (let [coll (into {} coll)]
                           (map (fn[scc]

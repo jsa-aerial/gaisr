@@ -361,8 +361,16 @@
    use (vals coll).  Returns average of squared differences of xs in
    coll with 'mean' of coll.  The functions distfn and avgfn are used
    for distances of points in coll and the averaging function.  Or,
-   the 'mean' can be given explicitly as M.  The single parameter case
-   uses '-' as distfn and 'mean' as avgfn.
+   the 'mean' can be given explicitly as M.
+
+   The rfn function is the 'reducer' function to use for calculating
+   the set of squared differences.  It defaults to 'map', but the user
+   can change this to some variant of fold, most typically xfold, to
+   parallelize the computation for large collections and/or expensive
+   distfns (such as various RE functions).
+
+   The single parameter case uses '-' as distfn and 'mean' as avgfn
+   and 'map' as the reducer.
   "
   ([coll]
      ;; Uses Var(X) = E(sqr X) - (sqr E(X))
@@ -370,10 +378,10 @@
           (mean (reduce (fn [m [v w]] (assoc m (sqr v) w)) {} coll))
           (mean (map sqr coll)))
         (sqr (mean coll))))
-  ([coll & {:keys [distfn avgfn m] :or {distfn - avgfn mean}}]
+  ([coll & {:keys [distfn avgfn m rfn] :or {distfn - avgfn mean rfn map}}]
      (let [coll (if (map? coll) (vals coll) coll)
            m (if m m (avgfn coll))]
-       (mean (map #(sqr (distfn % m)) coll)))))
+       (mean (rfn #(sqr (distfn % m)) coll)))))
 
 (defn avg-variance
   "Compute the average of the n variances for the n samples in

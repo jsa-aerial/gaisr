@@ -517,9 +517,11 @@
         rdelta (or delta rdelta 0)]
     (if (not directed)
       (gen-name-seq entry :ldelta ldelta :rdelta rdelta)
-      (let [+? (= 1 (->> entry (pos \-) count))
-            ldelta (if +? 100 delta)
-            rdelta (if +? delta 100)]
+      (let [ddel (->> entry entry-parts second
+                      (#(apply - %)) abs (#(/ % 4)) ceil)
+            +? (= 1 (->> entry (pos \-) count))
+            ldelta (if +? ddel delta)
+            rdelta (if +? delta ddel)]
         (gen-name-seq entry :ldelta ldelta :rdelta rdelta)))))
 
 (defn get-adjusted-seqs
@@ -540,10 +542,10 @@
         ;;rdelta (or delta rdelta)
         name-seq-pairs (get-adjusted-seqs entries delta
                                           :ldelta ldelta :rdelta rdelta)]
-    (for [sq (random-subset name-seq-pairs cnt)
+    (for [[nm sq] (random-subset name-seq-pairs cnt)
           :let [sq (if xlate (seqXlate sq :xmap xlate) sq)]]
-      (xfold (fn[l] [l (CREl l (second sq) :alpha alpha)
-                     (-> sq second count) (first sq)])
+      (xfold (fn[l] [l (CREl l sq :alpha alpha)
+                     (count sq) nm])
              (range 3 (inc limit))))))
 
 (defn plot-cres

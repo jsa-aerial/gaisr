@@ -444,10 +444,12 @@
   "
   [distfn avgfn clustering]
   (math/sqrt
-   (/ (sum (fn[[mi xis]]
-             (* (dec (count xis))
-                (variance xis :distfn distfn :avgfn avgfn :m mi)))
-           clustering)
+   (/ (sum
+       (xfold
+        (fn[[mi xis]]
+          (* (dec (count xis))
+             (variance xis :distfn distfn :avgfn avgfn :m mi)))
+        1 clustering))
       (- (sum count clustering) (count clustering)))))
 
 (defn density
@@ -458,7 +460,7 @@
   "
   [distfn stdev u coll]
   (let [f (fn[x mi] (if (<= (distfn x mi) stdev) 1 0))]
-    (sum #(f % u) coll)))
+    (sum (xfold #(f % u) coll))))
 
 (defn intercluster-density
   "Compute the inter cluster point density.  This is the density
@@ -505,11 +507,11 @@
    the better.
   "
   [distfn avgfn clustering]
-  (let [S (apply set/union (map #(set (second %)) clustering))
-        Svar (variance S :distfn distfn :avgfn avgfn)
-        Cvars (map (fn[[mi xis]]
-                     (variance xis :distfn distfn :m mi))
-                   clustering)]
+  (let [S (apply set/union (xfold #(set (second %)) clustering))
+        Svar (variance S :distfn distfn :avgfn avgfn :rfn xfold)
+        Cvars (xfold (fn[[mi xis]]
+                       (variance xis :distfn distfn :m mi))
+                     1 clustering)]
     (mean (map #(/ % Svar) Cvars))))
 
 (defn S-Dbw-index

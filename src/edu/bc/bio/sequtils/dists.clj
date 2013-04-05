@@ -511,14 +511,15 @@
 
 
 (defn ctx-seq
-  [entry & {:keys [directed ldelta rdelta delta] :or {directed true}}]
+  [entry & {:keys [directed ldelta rdelta delta ddel] :or {directed true}}]
   {:pre [(or delta (and (not directed) (or ldelta rdelta)))]}
   (let [ldelta (or delta ldelta 0)
         rdelta (or delta rdelta 0)]
     (if (not directed)
       (gen-name-seq entry :ldelta ldelta :rdelta rdelta)
-      (let [ddel (->> entry entry-parts second
-                      (#(apply - %)) abs (#(/ % 4)) ceil)
+      (let [ddel (or ddel
+                     (->> entry entry-parts second
+                          (#(apply - %)) abs (#(/ % 4)) ceil))
             +? (= 1 (->> entry (pos \-) count))
             ldelta (if +? ddel delta)
             rdelta (if +? delta ddel)]
@@ -526,10 +527,11 @@
 
 (defn get-adjusted-seqs
   ""
-  [entries delta & {:keys [directed ldelta rdelta] :or {directed true}}]
-  (xfold #(ctx-seq % :directed directed
-                   :delta delta :ldelta ldelta :rdelta rdelta)
-       entries))
+  [entries delta & {:keys [directed ldelta rdelta ddel] :or {directed true}}]
+  (let [ddel (or ddel (if (= delta 0) 0 nil))]
+    (xfold #(ctx-seq % :directed directed
+                     :delta delta :ddel ddel :ldelta ldelta :rdelta rdelta)
+           entries)))
 
 (defn cre-samples
   [seqs & {:keys [alpha xlate directed ldelta rdelta delta cnt limit]
@@ -562,10 +564,25 @@
         :title (str "CRE(l, F/F^), len: " cnt
                     " Fmax: " (round (ln cnt))))))))
 
+(defn res-word-size
+  ""
+  [seqs & {:keys [alpha xlate directed ldelta rdelta delta cnt limit crecut]
+           :or {alpha (alphabet :rna)
+                directed true cnt 5 limit 14 crecut 0.10}}]
+  (let [cres (cre-samples seqs :delta delta
+                          :xlate xlate :alpha alpha
+                          :limit limit :cnt cnt)
+        wz (reduce (fn [res v]
+                     (/ (+ res
+                           (some #(when (< (second %) crecut) (first %)) v))
+                        2.0))
+                   0.0 cres)]
+    [(ceil wz) cres]))
+
 
 (defn sto-re-dists
   ""
-  [l candidate-file sto-file
+  [wz candidate-file sto-file
    & {:keys [refn delta order xlate par]
       :or {refn DX||Y delta 5000 order :up par 10}}]
   (let [comp (if (= order :up) < >)
@@ -577,18 +594,18 @@
 
         entries (get-entries cfile)
         sqs (->> entries
-                 (#(get-adjusted-seqs % delta))
+                 (#(get-adjusted-seqs % delta :ddel 0))
                  (map second)
                  (#(if xlate (seqXlate % :xmap xlate) %)))
 
         refsqs (->> sto-file
                     get-entries
-                    (#(get-adjusted-seqs % delta))
+                    (#(get-adjusted-seqs % delta :ddel 0))
                     (map second)
                     (#(if xlate (seqXlate % :xmap xlate) %)))
 
-        sto-hd (hybrid-dictionary l refsqs)
-        dicts (xfold #(probs l %) sqs)
+        sto-hd (hybrid-dictionary wz refsqs)
+        dicts (xfold #(probs wz %) sqs)
         stods (xfold #(refn % sto-hd) dicts)]
 
     [(sort-by second comp (set (map (fn[en d] [en d]) entries stods)))
@@ -748,31 +765,24 @@
 (defn compute-candidate-info
   ""
   [sto-file candidate-file delta run
-   & {:keys [refn xlate alpha crecut limit res order
+   & {:keys [refn xlate alpha crecut limit wz order
              plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15
            order :up}}]
 
-  (let [cres (when (not res)
-               (cre-samples sto-file :delta delta
-                            :xlate xlate :alpha alpha
-                            :limit limit :cnt 5))
-        res (if res
-              res
-              (reduce (fn[res v]
-                        (/ (+ res
-                              (some #(when (< (second %) crecut) (first %)) v))
-                           2.0))
-                      0.0 cres))
-        res (if res (Math/ceil res) (-> cres first last first))
-        [nm-re-sq pnm sz] (sto-re-dists res candidate-file sto-file
+  (let [[wz cres] (if wz
+                    [wz]
+                    (res-word-size sto-file :delta delta
+                                   :xlate xlate :alpha alpha
+                                   :limit limit :crecut crecut :cnt 5))
+        [nm-re-sq pnm sz] (sto-re-dists wz candidate-file sto-file
                                         :refn refn :xlate xlate
                                         :delta delta :order order)
         Dy (case run 1 0.1, 2 0.0, -0.1)
         cutpt (select-cutpoint nm-re-sq :Dy Dy)
         [good bad] (get-good-candidates nm-re-sq cutpt)]
-    (when plot-cre (plot-cres cres))
-    (when plot-dists (plot-sto-dists pnm sz delta res cutpt nm-re-sq))
+    (when (and plot-cre cres) (plot-cres cres))
+    (when plot-dists (plot-sto-dists pnm sz delta wz cutpt nm-re-sq))
     [good bad cutpt nm-re-sq]))
 
 
@@ -799,7 +809,7 @@
          rna-nm-re-sq] (compute-candidate-info
                         sto-file candidate-file 0 run
                         :refn refn :xlate +RY-XLATE+ :alpha alpha
-                        :limit limit :res 6 :order order
+                        :limit limit :wz 6 :order order
                         :plot-cre plot-cre :plot-dists plot-dists)
         rna-only-perf-stats (when cmp-ents
                               (selection-perf
@@ -912,6 +922,64 @@
     (* (floor (+ (/ base 100) 1)) 100)))
 
 
+
+
+(defn krnn-seqs-clust
+  ""
+  [seqents & {:keys [xlate alpha delta crecut limit kmax] :or {kmax 11}}]
+  (let [seqents (if (coll? seqents) seqents (read-seqs seqents :info :name))
+        entries  (map (fn[i es] [i es]) (iterate inc 0) seqents)
+        seqs (get-adjusted-seqs (map second entries) delta)
+        entries (into {} entries)
+        coll (->> seqs
+                  (map (fn[[e s]] [e (seqXlate s :xmap xlate)]))
+                  (map (fn[i es] [i es]) (iterate inc 0)))
+
+        [wz] (res-word-size (map first seqs) :delta delta
+                            :xlate xlate :alpha alpha
+                            :crecut crecut :limit limit)
+        distfn (fn[[_ [nx sx]] [_ [ny sy]]]
+                 (jensen-shannon (probs wz sx) (probs wz sy)))
+
+        keyfn first
+        kcoll (map keyfn coll)
+        dm (gr/dist-matrix distfn coll :keyfn keyfn)
+
+        distfn2 (fn[l r]
+                  (apply jensen-shannon
+                         (map #(if (map? %) % (probs wz %))
+                              [l r])))
+        avgfn (fn
+                ([sqs]
+                   (hybrid-dictionary wz sqs))
+                ([x & xs]
+                   (hybrid-dictionary wz (cons x xs))))]
+
+       (for [k (range 4 kmax)
+             :let [[krnngrph rnncntM knngrph]
+                   (gr/krnn-graph k #(get dm [%1 %2]) kcoll)]]
+         (let [clusters (->> (gr/split-krnn k krnngrph rnncntM knngrph)
+                             ;;(#(do (prn :G>k/G<k %) %))
+                             (map #(gr/tarjan (keys %) %))
+                             ;;(#(do (prn :sccs %) %))
+                             (apply gr/refoldin-outliers krnngrph)
+                             vec)
+               ent-clus (let [coll (into {} coll)]
+                          (map (fn[scc]
+                                 (map (fn[x]
+                                        [(entries x) (-> x coll first)])
+                                      scc))
+                               clusters))
+               seq-clus (let [coll (into {} coll)]
+                          (map (fn[scc]
+                                 (let [x (xfold
+                                          (fn[x]
+                                            (->> x coll second (probs wz)))
+                                          (vec scc))]
+                                   [(avgfn x) x]))
+                               clusters))]
+           [(clu/S-Dbw-index distfn2 (vec seq-clus) :avgfn avgfn)
+            ent-clus k]))))
 
 
 

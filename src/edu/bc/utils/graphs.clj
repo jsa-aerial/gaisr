@@ -181,27 +181,36 @@
 
 
 
-
-
-
 (comment
 
-  (def dm (let [xlate +RY-XLATE+
-		coll (->> "/home/jsa/Bio/FreqDicts/NewRFAM/RF00504-seed-NC.sto"
-                          (#(read-seqs % :info :name))
-                          (#(get-adjusted-seqs % 1100))
-			  (map (fn[[e s]] [e (seqXlate s :xmap xlate)]))
-                          (map (fn[i es] [i es]) (iterate inc 0)))
-                wz 16
-                distfn (fn[[_ [nx sx]] [_ [ny sy]]]
-                         (jensen-shannon (probs wz sx) (probs wz sy)))
-                keyfn first
-                dm (gr/dist-matrix distfn coll :keyfn keyfn)]
-            {:coll coll :wz wz :dm dm
-             :kcoll (map keyfn coll)
-             :distfn distfn :keyfn keyfn}))
+(def dm2
+     (let [xlate +RY-XLATE+
+           alpha ["R" "Y"]
+           delta 1100
+           crecut 0.01
+           limit 19
+           entries (->> "/home/jsa/Bio/FreqDicts/NewRFAM/RF00504-seed-NC.sto"
+                        (#(read-seqs % :info :name))
+                        (map (fn[i es] [i es]) (iterate inc 0)))
+           seqs (get-adjusted-seqs (map second entries) delta)
+           coll (->> seqs
+                     (map (fn[[e s]] [e (seqXlate s :xmap xlate)]))
+                     (map (fn[i es] [i es]) (iterate inc 0)))
+           [wz] (res-word-size (map first seqs) :delta delta
+                               :xlate xlate :alpha alpha
+                               :crecut crecut :limit limit)
+           distfn (fn[[_ [nx sx]] [_ [ny sy]]]
+                    (jensen-shannon (probs wz sx) (probs wz sy)))
+           keyfn first
+           dm (gr/dist-matrix distfn coll :keyfn keyfn)]
+       {:coll coll :wz wz :dm dm
+        :kcoll (map keyfn coll)
+        :entries (into {} entries)
+        :distfn distfn :keyfn keyfn}))
+
+
 (def clu-info
-     (let [{:keys [coll wz dm kcoll distfn keyfn]} dm
+     (let [{:keys [coll entries wz dm kcoll distfn keyfn]} dm2
            distfn2 (fn[l r]
                      (apply jensen-shannon
                             (map #(if (map? %) % (probs wz %))
@@ -212,7 +221,7 @@
                    ([x & xs]
                       (hybrid-dictionary wz (cons x xs))))
            ]
-       (for [k (range 4 16)
+       (for [k (range 4 11)
              :let [[krnngrph rnncntM knngrph]
                    (gr/krnn-graph k #(get dm [%1 %2]) kcoll)]]
          (let [clusters (->> (gr/split-krnn k krnngrph rnncntM knngrph)
@@ -220,23 +229,24 @@
                              (map #(gr/tarjan (keys %) %))
                              ;;(#(do (prn :sccs %) %))
                              (apply gr/refoldin-outliers krnngrph)
-			     vec
+                             vec
                              (#(do (prn :final %) %)))
                ent-clus (let [coll (into {} coll)]
                           (map (fn[scc]
-                                 (map (fn[x] (-> x coll first)) scc))
+                                 (map (fn[x]
+                                        [(entries x) (-> x coll first)])
+                                      scc))
                                clusters))
                seq-clus (let [coll (into {} coll)]
                           (map (fn[scc]
-                                 (let [x (xfold (fn[x]
-                                                  (->> x coll second
-                                                       (probs wz)))
-                                                scc)]
+                                 (let [x (xfold
+                                          (fn[x]
+                                            (->> x coll second (probs wz)))
+                                          (vec scc))]
                                    [(avgfn x) x]))
                                clusters))]
-           [k (clu/S-Dbw-index distfn2 seq-clus :avgfn avgfn) ent-clus]))))
-
-
+           [k (clu/S-Dbw-index distfn2 (vec seq-clus) :avgfn avgfn) ent-clus]
+           ))))
 
   )
 

@@ -42,6 +42,7 @@
    edu.bc.utils.probs-stats
    edu.bc.utils.trees
    edu.bc.utils.bktrees
+   edu.bc.utils.graphs
    edu.bc.job-utils
    edu.bc.net-utils
 

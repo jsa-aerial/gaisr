@@ -45,6 +45,7 @@
             [incanter.core]
             [incanter.charts]
             [edu.bc.fs :as fs]
+            [edu.bc.utils.graphs :as gr]
             [edu.bc.utils.clustering :as clu])
   (:use clojure.contrib.math
         edu.bc.utils
@@ -791,7 +792,7 @@
 (defn compute-candidate-sets
   ""
   [sto-file candidate-file run delta
-   & {:keys [refn xlate alpha crecut limit res order
+   & {:keys [refn xlate alpha crecut limit order
              cmp-ents plot-cre plot-dists]
       :or {refn DX||Y alpha (alphabet :rna) crecut 0.10
            limit 15 order :up}}]
@@ -981,21 +982,43 @@
            [(clu/S-Dbw-index distfn2 (vec seq-clus) :avgfn avgfn)
             ent-clus k]))))
 
+(defn split-sto
+  ""
+  [stofile & {:keys [delta xlate alpha crecut limit kmax] :or {kmax 11}}]
+  (let [basedir (fs/dirname stofile)
+        name (->> stofile fs/basename (str/split #"-") first)
+        clu-dir (fs/join basedir (str "CLU-" name))
+        _ (when (not (fs/exists? clu-dir)) (fs/mkdir clu-dir))
+        clu-info (->> (krnn-seqs-clust
+                       stofile
+                       :delta delta
+                       :xlate xlate :alpha alpha
+                       :crecut crecut :limit limit
+                       :kmax kmax)
+                      (sort-by first <))
+        fs (->> clu-info
+                first second (map #(map first %))
+                (map (fn[i ents]
+                       (gen-entry-file
+                        ents (fs/join clu-dir (str "clu-" i ".ent"))))
+                     (iterate inc 1))
+                doall)]
+    [(map (fn[[s ents k]] [s (count ents) (map count ents)]) clu-info) fs]))
 
 
 
 (comment
 
 
-(def L20-auto-1
+(def L20-auto
      (compute-candidate-sets
-      "/home/kaila/Bio/STOfiles/031113/AUTO/L20-auto-0.sto"
-      "/home/kaila/Bio/STOfiles/031113/AUTO/CSV/L20-auto-0.sto.Assortprot1.fna.cmsearch.csv"
-      1 1080
+      "/home/kaila/Bio/STOfiles/031113/AUTO/B/L20-auto-3.sto"
+      "/home/kaila/Bio/STOfiles/031113/AUTO/B/CSV/Pass-3/L20-auto-3.sto.Assortprot1.fna.cmsearch.csv"
+      3 1200
       :refn jensen-shannon
       :xlate +RY-XLATE+ :alpha ["R" "Y"]
       :crecut 0.01 :limit 19
-      :plot-dists true ))
+      :plot-dists true))
 
 
 

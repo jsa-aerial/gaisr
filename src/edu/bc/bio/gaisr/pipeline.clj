@@ -354,99 +354,6 @@
 
 ;;; ----------------------------------------------------------------------
 ;;;
-
-(defn summary-map [motif-sto-file]
-  (let [m (into {}
-                (map #(let [[x y] (str/split #"=" (str/trim %))]
-                        [(keyword (str/replace-re #"_" "-" (str/lower-case x)))
-                         (Float. y)])
-                     (str/split
-                      #"\t" (runx "summarize" "-w" motif-sto-file))))
-        species-cnt (count
-                     (frequencies
-                      (map #(second (re-find #"#=GS\s+(\S+):" %))
-                           (filter #(re-find #"DE" %)
-                                   (str/split #"\n" (slurp motif-sto-file))))))]
-    (assoc m :species-cnt species-cnt :motif motif-sto-file)))
-
-(defn rank-em [summary-maps]
-  (sort-by
-   #(% :rank) >
-   (map
-    (fn[sm]
-      (let [sid (sm :seq-id) ; % seq identical
-            sid (if (<= sid 0) 1 sid)]
-        (assoc sm
-          :rank
-          (* (sm :species-cnt) (math/sqrt (* (+ (sm :conserved-pos) 0.2)
-                                         (/ (sm :bp) sid)))
-             (inc (java.lang.Math/log (/ (sm :num) (sm :species-cnt))))))))
-    summary-maps)))
-
-;;;ord <- order(test.data[,"Rank.index"], decreasing=T);
-
-
-(defn cmf-post-process [motif-sto-filespec
-                        & {lt :lt ut :ut w :w
-                           :or {lt 10 ut nil s true w nil}}]
-  (let [infile (fs/fullpath motif-sto-filespec)
-        outfile (str infile ".filtered")
-        cmfpath (get-tool-path :cmfinder)
-        cmfiltercmd (str cmfpath "filter.pl")
-        cmdargs ["-s" "-lt" (str lt)]
-        cmdargs (if ut (conj cmdargs "-ut" (str ut)) cmdargs)
-        cmdargs (conj cmdargs infile outfile)]
-    (assert-tools-exist [cmfiltercmd])
-    (runx cmfiltercmd cmdargs)
-    outfile))
-
-
-(defn cmbuild [motif-stofile]
-  (let [infernal-path (get-tool-path :infernal)
-        cmbuildcmd (str infernal-path "cmbuild")
-        motif-stofile (fs/fullpath motif-stofile)
-        cmfile (-> motif-stofile
-                   (#(str/split #"\." %))
-                   (#(str (first %) "."
-                          (last (if (> (count %) 2) (butlast %) %))))
-                   (str ".cm"))]
-    (assert-tools-exist [cmbuildcmd])
-    (runx cmbuildcmd "-F" cmfile motif-stofile)
-    cmfile))
-
-
-(defn cmcalibrate [cmfile & {par :par  :or {par 3}}]
-  (let [infernal-path (get-tool-path :infernal)
-        cmcalibratecmd (str infernal-path "cmcalibrate")
-        cmfile (fs/fullpath cmfile)
-        mpirun "mpirun"
-        cmdargs ["-np" (str par)
-                 cmcalibratecmd "--mpi" cmfile]]
-    (assert-tools-exist [cmcalibratecmd])
-    (runx mpirun cmdargs)
-    cmfile))
-
-
-(defn cmsearch [cmfile fna-seqalign-file outfile
-                & {par :par eval :eval :or {par 3 eval 1.0}}]
-  (let [infernal-path (get-tool-path :infernal)
-        cmsearchcmd (str infernal-path "cmsearch")
-        cmfile (fs/fullpath cmfile)
-        alignfile (fs/fullpath fna-seqalign-file)
-        outfile (fs/fullpath outfile)
-        mpirun "mpirun"
-        cmdargs ["-np" (str par)
-                 cmsearchcmd "--mpi" "-E" (str eval) cmfile alignfile]]
-    (assert-tools-exist [cmsearchcmd])
-    (io/with-out-writer outfile
-      (print (runx mpirun cmdargs)))
-    outfile))
-
-
-
-
-;;; ----------------------------------------------------------------------
-;;;
 ;;; CMSearch output filter and CSV representation.  Parses cmsearch
 ;;; output files, for each plus/minus hit take the better of the two
 ;;; (in the often case of only one, just take that).
@@ -954,17 +861,19 @@
   "
   [isto cm ent]
   (let [fna (entry-file->fasta-file ent :names-only true)
-        oldext (->> isto (re-find #"[0-9]+\.sto$"))
+        oldext (->> isto (re-find #"[0-9]+([A-Z]|)\.sto$") first)
         nxtver (->> oldext (re-find #"[0-9]+") (Integer.) inc (str))
-        osto (str/replace-re #"[0-9]+\.sto" (str nxtver ".sto") isto)
+        osto (str/replace-re #"[0-9]+([A-Z]|)\.sto" (str nxtver ".sto") isto)
         gc-lines (first (join-sto-fasta-lines isto ""))
         _ (cmalign cm fna osto :opts ["--withali" isto "-q" "-1"])
-        [_ seq-lines cons-lines] (join-sto-fasta-lines osto "")]
+        [_ seq-lines cons-lines] (join-sto-fasta-lines osto "")
+        cons-lines (butlast cons-lines)]
     (io/with-out-writer osto
       (doseq [gcl gc-lines] (println gcl))
       (println)
       (doseq [[nm [_ sq]] seq-lines] (cl-format true "~A~40T~A~%" nm sq))
-      (doseq [[nm [_ sq]] cons-lines] (cl-format true "~A~40T~A~%" nm sq)))
+      (doseq [[nm [_ sq]] cons-lines] (cl-format true "~A~40T~A~%" nm sq))
+      (println "//"))
     osto))
 
 
@@ -1032,99 +941,4 @@
     (if printem
       (prn result)
       result)))
-
-
-
-
-
-;;;---------------------- testing - workin progress - messes ------------------
-
-
-;;; (defn run-pipeline
-;;;   [input &
-;;;    {form :form steps :steps
-;;;     :or {form :full
-;;;          steps [hitfile->basic-entries
-;;;                 utrs-filter
-;;;                 (fn [entries]
-;;;                   (nlsq-tuples-from-utrs
-;;;                    entries (fs/replace-type input ".hitfna")))]}}]
-;;;   (if (= form :full)
-;;;     (run-pipeline-full input)
-;;;     (let
-;;;         )))
-
-
-;;; (defn pipe-test [hit-fna base [dnm fnm]]
-;;;   (-> (fs/join base dnm fnm)
-;;;       cmfinder*
-;;;       ((fn[mstos](map #(cmf-post-process %) mstos)))
-;;;       ((fn[fmstos](map #(cmbuild %) fmstos)))
-;;;       ((fn[cms](doall (pmap #(cmcalibrate %) cms))))
-;;;       ((fn[cms](pmap #(cmsearch % hit-fna (gen-hit-out-filespec %))
-;;;                      cms)))))
-
-
-
-
-
-
-
-;;; (tblastn "/home/jsa/Bio/Blasting/b-subtilus-Ls.fna")
-;;; Once through the full pipeline.  Set up a job network embodying a
-;;; full pipeline:
-;;;
-
-
-;;; (loop [result (-> selections  ; Selections uploaded or ???
-;;;                   blast       ; tblastn or blastn (by selections alphabet)
-;;;                   get-candidates ; phylo cluster and redundant filter
-;;;                   cmfinder    ; build motif sto files
-;;;                   cmfilter    ; filter motif sto files for redundancy
-;;;                   cmbuild     ; motif sto files -> infernal cm
-;;;                   cmcalibrate ; calibrate cm
-;;;                   cmsearch)   ; blast hits + cm --> new alignments
-;;;        results #{}]
-;;;   (if (no-change result (results :last))
-;;;     result ; if change less than delta, return result
-;;;     (recur
-;;;      (-> result cmbuild cmcalibrate cmsearch)
-;;;      (assoc last :last result (gen-kwuid) result))))
-
-;;;filter.pl -s -lt 10 Firmicutes-109.fna.mofif-sto.h1.1 Firmicutes-109-filtered.motif-sto.h1.1
-;;;cmbuild Firmicutes-109.cm Firmicutes-109-filtered.motif-sto.h1.1
-;;;mpirun -np 4 cmcalibrate --mpi Firmicutes-109.cm
-;;;mpirun -np 4 cmsearch --mpi Firmicutes-109.cm ../b-subtilus-Ls.hitfna
-
-;;; (rank-em
-;;;  (map summary-map
-;;;       (map #(fs/join "/home/jsa/Bio/Pipeline1/Actinobacteridae-103" %)
-;;;            (filter #(re-find #"filtered" %)
-;;;                    (fs/listdir
-;;;                     "/home/jsa/Bio/Pipeline1/Actinobacteridae-103")))))
-
-;;; (map #(do [(% :seq-id) (% :weight)]) *1)
-
-
-;;; (def *ents* (catch-all (-> "/home/jsa/Bio/Blasting/b-subtilus-Ls.fna.blast"
-;;;                            hitfile->basic-entries)))
-
-;;; (def *ents* (time (utrs-filter canned/*ents*)))
-
-
-
-
-;;; (def *x* (catch-all
-;;;           (let [hitfile "/data2/Bio/Paper/FastaFiles/Assortprots2.fna.blast"
-;;;                 hit-fna (fs/replace-type hitfile ".hitfna")]
-;;;             (-> hitfile
-;;;                 hitfile->basic-entries
-;;;                 utrs-filter
-;;;                 (nlsq-tuples-from-utrs hit-fna)))))
-
-
-
-
-
-
 

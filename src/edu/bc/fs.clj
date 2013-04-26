@@ -1,17 +1,26 @@
 (ns edu.bc.fs
   ^{:doc "File system utilities in Clojure"
-    :author "Miki Tebeka <miki.tebeka@gmail.com>"}
+    :author "Miki Tebeka <miki.tebeka@gmail.com>, Jon Anthony"}
   (:refer-clojure :exclude [empty?])
   (:require [clojure.contrib.io :as io]
             [clojure.contrib.string :as str]
             [clojure.zip :as zip])
   (:import java.io.File
+           [java.nio.file FileSystems Path Files]
            java.io.FileInputStream
            java.io.FileOutputStream
            java.io.FilenameFilter))
 
 ;;; (compile 'edu.bc.fs)
 
+(comment ;; Somehow somday maybe make this work??
+(-> (FileSystems/getDefault)
+    (.getPath "/usr/local/Infernal" (into-array [""])))
+(Files/readAttributes
+ (-> (FileSystems/getDefault)
+     (.getPath "/usr/local/Infernal" (into-array [""])))
+ "basic:*" (make-array java.nio.file.LinkOption 0))
+)
 
 (def separator File/separator)
 
@@ -98,6 +107,13 @@
   "Return true if path is writeable."
   [path]
   (.canWrite (io/file path)))
+
+(defn symbolic-link?
+  "Return true if path denotes a symbolic link, false otherwise"
+  [path]
+  (Files/isSymbolicLink
+   (-> (FileSystems/getDefault)
+       (.getPath path (into-array [""])))))
 
 
 
@@ -208,6 +224,15 @@ if it is not or if the file cannot be deleted."
 (defn- fix-file-regex [l]
   (-> l str/trim (str "$") ((partial str/replace-re #"\*" ".*"))))
 
+(defn re-directory-files
+  "Return full path qualified file specifications for all files in
+   directory whose name ends with a string matched by re.  RE is a
+   regexp (#\"regex def\" literal or a string that defines a
+   regexp (which will be turned into a pattern).
+  "
+  [directory re]
+  (->> re str fix-file-regex re-pattern (_re-dir-files directory)))
+
 (defn directory-files
   "Return full path qualified file specifications for all files in
    directory whose suffix matches file-type.  Typically file-type
@@ -216,16 +241,8 @@ if it is not or if the file cannot be deleted."
    So, giving -new.sto for example, works as well.
   "
   [directory file-type]
+  ;; REFACTOR to ues re-directory-files???
   (_re-dir-files directory (re-pattern (str file-type "$"))))
-
-(defn re-directory-files
-  "Return full path qualified file specifications for all files in
-   directo ry whose name is matched by re.  RE is a regexp (#\"regex
-   def\" literal or a string that defines a regexp (which will be
-   turned into a pattern).
-  "
-  [directory re]
-  (_re-dir-files directory (re-pattern (fix-file-regex re))))
 
 
 

@@ -3,7 +3,7 @@
 ;;                          D B - D O W N L O A D S                         ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -46,9 +46,7 @@
         [edu.bc.bio.sequtils.files
          :only [sto-GC-and-seq-lines join-sto-fasta-file]]
         [edu.bc.log4clj
-         :only [create-loggers log>]])
-
-  (:import [java.lang Thread]))
+         :only [create-loggers log>]]))
 
 
 (create-loggers
@@ -88,10 +86,8 @@
       (log> "refseq-ftp" :info
             "RefSeq ftp: Fetching ~A --> ~A" file filespec)
       (retrieve-file url file (str dir "/" file))
-      (Thread/sleep 500))))
+      (sleep 500))))
 
-
-;;; "ftp://anonymous:user%40host.com@ftp.ncbi.nih.gov/refseq/release/microbial/"
 (defn process-refseq-files [url loc]
   (let [ftp-files (ftp-dir url refseq-files)
         [gbffs fnas] (let [x (group-by #(if (re-find #"\.gbff" %) :gbff :fna)
@@ -114,8 +110,10 @@
 (def refseq-ftp-url
   "ftp://anonymous:user%40host.com@ftp.ncbi.nih.gov/refseq/release/microbial/")
 
-;;; (def *ref-ftp-load*
+;;; (def ref-ftp-load
 ;;;      (future (process-refseq-files refseq-ftp-url "/data2/BioData")))
+
+
 
 
 (def qin-et-al-2010-url
@@ -154,7 +152,7 @@
    type/seed, labels/1, and format/stockholm"
 
   [accessions dir
-   & {type :type labels :labels format :format
+   & {:keys [type labels format]
       :or {type "seed" labels 1 format "stockholm"}}]
 
   (let [origin "#=GF AU Infernal 1.0.2"
@@ -177,6 +175,10 @@
 ;;;  (keep #(when (> (count %) 1) (first %))
 ;;;        (csv/parse-csv (slurp "/data2/Bio/ECRibLeaders/SearchRNAs-50-set.csv")))
 ;;;  "/data2/Bio/ECRibLeaders/RFAM")
+;;;
+;;;(download-rfam-stos
+;;; ["RF00552"]
+;;; "/data2/Bio/RFAM")
 
 
 

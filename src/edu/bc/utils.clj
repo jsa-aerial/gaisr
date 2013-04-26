@@ -839,9 +839,13 @@
 (defn classpath []
   (str/split #":" (sys-property "java.class.path")))
 
-(defn getenv [ev]
-  "Return the value of the environment variable EV (a string)"
-  (System/getenv ev))
+(defn getenv
+  "Return the value of the environment variable EV (a string).
+   Optionally, (no argument variant) return a map of all the
+   environment variables.
+  "
+  ([ev] (System/getenv ev))
+  ([] (System/getenv)))
 
 
 

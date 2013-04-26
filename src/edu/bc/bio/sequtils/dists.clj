@@ -933,7 +933,7 @@
         seqs (get-adjusted-seqs (map second entries) delta)
         entries (into {} entries)
         coll (->> seqs
-                  (map (fn[[e s]] [e (seqXlate s :xmap xlate)]))
+                  (map (fn[[e s]] [e (if xlate (seqXlate s :xmap xlate) s)]))
                   (map (fn[i es] [i es]) (iterate inc 0)))
 
         [wz] (res-word-size (map first seqs) :delta delta
@@ -944,7 +944,7 @@
 
         keyfn first
         kcoll (map keyfn coll)
-        dm (gr/dist-matrix distfn coll :keyfn keyfn)
+        dm (clu/dist-matrix distfn coll :keyfn keyfn)
 
         distfn2 (fn[l r]
                   (apply jensen-shannon
@@ -958,12 +958,12 @@
 
        (for [k (range 4 kmax)
              :let [[krnngrph rnncntM knngrph]
-                   (gr/krnn-graph k #(get dm [%1 %2]) kcoll)]]
-         (let [clusters (->> (gr/split-krnn k krnngrph rnncntM knngrph)
+                   (clu/krnn-graph k #(get dm [%1 %2]) kcoll)]]
+         (let [clusters (->> (clu/split-krnn k krnngrph rnncntM knngrph)
                              ;;(#(do (prn :G>k/G<k %) %))
                              (map #(gr/tarjan (keys %) %))
                              ;;(#(do (prn :sccs %) %))
-                             (apply gr/refoldin-outliers krnngrph)
+                             (apply clu/refoldin-outliers krnngrph)
                              vec)
                ent-clus (let [coll (into {} coll)]
                           (map (fn[scc]
@@ -989,6 +989,8 @@
         name (->> stofile fs/basename (str/split #"-") first)
         clu-dir (fs/join basedir (str "CLU-" name))
         _ (when (not (fs/exists? clu-dir)) (fs/mkdir clu-dir))
+        clud-dir (fs/join clu-dir (str "d" delta))
+        _ (when (not (fs/exists? clud-dir)) (fs/mkdir clud-dir))
         clu-info (->> (krnn-seqs-clust
                        stofile
                        :delta delta
@@ -1000,10 +1002,10 @@
                 first second (map #(map first %))
                 (map (fn[i ents]
                        (gen-entry-file
-                        ents (fs/join clu-dir (str "clu-" i ".ent"))))
+                        ents (fs/join clud-dir (str "clu-" i ".ent"))))
                      (iterate inc 1))
                 doall)]
-    [(map (fn[[s ents k]] [s (count ents) (map count ents)]) clu-info) fs]))
+    [(map (fn[[s ents k]] [s k (count ents) (map count ents)]) clu-info) fs]))
 
 
 

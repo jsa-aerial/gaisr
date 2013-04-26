@@ -72,7 +72,8 @@
                                  "where " where))
             gn-bid-map (into {} (map #(do [(% :name) (% :bioentry_id)])
                                      qmap))]
-        (io/with-out-writer snapshot (prn gn-bid-map))
+        (binding [*print-length* nil]
+          (io/with-out-writer snapshot (prn gn-bid-map)))
         gn-bid-map))))
 
 (defparameter "Map of genome names to bioentry ids"

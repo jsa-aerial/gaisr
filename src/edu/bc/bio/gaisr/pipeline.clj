@@ -3,7 +3,7 @@
 ;;                              P I P E L I N E                             ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -412,10 +412,17 @@
           :generic  (get-generic-sto-locs rem-file))))
 
 
+(defn get-cmfile [line]
+  (subs (re-find #" /[A-Za-z0-9_\.\-/]+\.cm" line) 1))
+
+(defn get-hitfile [line]
+  (subs (first (re-find #" /[A-Za-z0-9_\.\-/]+\.(hitfna|fa|fna)" line)) 1))
+
 (defn get-cm-stofile [cmfile]
-  (last (str/split #" " (first (drop-until
-                                #(re-find #"^BCOM" %)
-                                (str/split #"\n" (slurp cmfile)))))))
+  (last (str/split
+         #"\s+" (first (drop-until
+                        #(re-find #"^(B|)COM" %)
+                        (io/read-lines cmfile))))))
 
 (defn ent-name [ent-line]
   (if (= (str/take 3 ent-line) ">gi")
@@ -432,6 +439,65 @@
             (let [[s e] (if (= sd "-1") [e s] [s e])]
               (str s "-" e)))))))
 
+(defmulti
+  ^{:arglists '([cmsearch-out])
+    :doc
+    "Obtain the pieces of the cmsearch output file that we need to
+     produce the contents of a gaisr csv encoding the information.
+     Both input (the seq of lines) and output (the selected 'raw'
+     information) are dependent on the version of Infernal used.
+     Version 1.1+ uses a simpler variant (though oddly still not
+     canonically delimited fields) while 1.0 uses an arcane old style
+     BLAST like output."}
+  cmsearch-out-info
+  (fn[& args] (if (infernal-2+?) :1.1+ :1.0)))
+
+(defmethod cmsearch-out-info :1.1+
+  [cmsearch-out]
+  (let [file-content (io/read-lines cmsearch-out)
+        cmline (first (drop-until #(re-find #"CM file" %) file-content))
+        cmfile (get-cmfile cmline)
+        dbline (first (drop-until #(re-find #"target" %) file-content))
+        hitfile (get-hitfile dbline)
+        lines (->> file-content
+                   (drop-until #(re-find #"^ ---" %)) rest
+                   (take-until #(= "" %))
+                   (filter #(not (re-find #"^ ---" %)))
+                   (map #(drop 3 (str/split #" +" %))))]
+    [cmfile hitfile
+     (reduce (fn[M x]
+               (let [[ev sc b sqinfo s e st _cm _tr gc desc] x
+                     st (if (= st "+") 1 -1)
+                     s (Integer. s)
+                     e (Integer. e)
+                     ;;[s e] (if (= st 1) [s e] [e s])
+                     nc (ent-name sqinfo)
+                     ent (if nc (str nc ":" (ent-loc sqinfo)) sqinfo)]
+                 (assoc M ent [st s e sc ev b gc])))
+             {} lines)]))
+
+(defmethod cmsearch-out-info :1.0
+  [cmsearch-out]
+  (let [file-content (io/read-lines cmsearch-out)
+        cmdline (first (drop-until #(re-find #"^# command" %) file-content))
+        cmfile (get-cmfile cmdline)
+        hitfile (get-hitfile cmdline)
+        stofile (get-cm-stofile cmfile)
+        lines (drop-until #(re-find #"^>" %) file-content)
+        parts (partition-by #(if (or (= % "#") (re-find #"^>" %)) :x :y)
+                            lines)]
+    [cmfile hitfile
+     (reduce (fn[m [k v]]
+               (if (= (first k) "#")
+                 m
+                 (let [k (first k)
+                       nc (ent-name k)
+                       k (if nc (str nc ":" (ent-loc k)) k)
+                       v (keep #(when (not= "" %) (str/trim %)) v)]
+                   (assoc m k v))))
+             {} (partition 2 parts))]))
+
+
 (defn build-hitseq-map [hitfile]
   (reduce (fn[m [gi sq]]
             (let [nc (ent-name gi)
@@ -441,33 +507,44 @@
 
 
 (defn cmsearch-group-hits [cmsearch-out]
-  (let [file-content (str/split #"\n" (slurp cmsearch-out))
-        cmdline (first (drop-until #(re-find #"^# command" %) file-content))
-        cmfile (subs (re-find #" /[A-Za-z0-9_\.\-/]+\.cm" cmdline) 1)
-        hitfile (subs (first (re-find #" /[A-Za-z0-9_\.\-/]+\.(hitfna|fa|fna)"
-                                      cmdline)) 1)
-        stofile (get-cm-stofile cmfile)
-        lines (drop-until #(re-find #"^>" %) file-content)
-        parts (partition-by #(if (or (= % "#") (re-find #"^>" %)) :x :y)
-                            lines)]
+  (let [[cmfile hitfile hit-map] (cmsearch-out-info cmsearch-out)
+        stofile (get-cm-stofile cmfile)]
     [(get-sto-seq-locs stofile)
-     (reduce (fn[m [k v]]
-               (if (= (first k) "#")
-                 m
-                 (let [k (first k)
-                       nc (ent-name k)
-                       k (if nc (str nc ":" (ent-loc k)) k)
-                       v (keep #(when (not= "" %) (str/trim %)) v)]
-                   (assoc m k v))))
-             {} (partition 2 parts))
+     hit-map
      (build-hitseq-map hitfile)
      stofile]))
+
+
+(defmulti
+  ^{:arglists '([hit-val])
+    :doc
+    "Based on Infernal version take the 'hit' value params and
+     construct a vector of synthesized information values [st s e Sc
+     EV (P|B) GC X].  Where,
+
+     st is the strand: 1 or -1
+     s  is the relative start (integer)
+     e  is the relative end   (integer)
+     Sc is the 'score'
+     EV is the expectation value (eval)
+     P  is the pvalue (version 1.0 Infernal)
+     B  is the 'bias' (version 1.1 Infernal)
+     GC is the gc percent
+     X  is structure, aln, and seq match info (version 1.0) NOT USED"}
+  cmsearch-hit-info
+  (fn[& args] (if (infernal-2+?) :1.1+ :1.0)))
+
+
+(defmethod cmsearch-hit-info :1.1+
+  [hit-val]
+  (list hit-val))
 
 
 (defn remove-pre&sufix-locs [seq-stg]
   (str/replace-re #"(^[0-9]+ | [0-9]+$)" "" seq-stg))
 
-(defn cmsearch-hit-info [hit-val]
+(defmethod cmsearch-hit-info :1.0
+  [hit-val]
   (map (fn[[hit-strand query-tgt sc-ev-p-gc & tail]]
          (flatten [(if (= "Plus" (subs hit-strand 0 4)) 1 -1)
                    (let [[s _ e] (drop 7 (str/split #" " query-tgt))]

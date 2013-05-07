@@ -96,7 +96,7 @@
   (loop [entries []
          rows (drop 1 rows)]
     (let [entry (first rows)]
-      (if (< (count entry) 14) ; bogus due to csv/parse-csv....
+      (if (< (count entry) 12) ; minimum used fields
         (sort #(string-less? (%1 0) (%2 0)) entries)
         (recur (conj entries
                      [(entry 0) (entry 3) (entry 4) (entry 9)

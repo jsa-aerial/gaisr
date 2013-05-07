@@ -788,6 +788,7 @@
 ;;; ------------------------------------------------------------------------;;;
 ;;;                            Infernal Tools                               ;;;
 
+
 (defn summary-map [motif-sto-file]
   (let [m (into {}
                 (map #(let [[x y] (str/split #"=" (str/trim %))]
@@ -831,45 +832,127 @@
     outfile))
 
 
-(defn cmbuild [motif-stofile]
-  (let [infernal-path (get-tool-path :infernal)
-        cmbuildcmd (str infernal-path "cmbuild")
-        motif-stofile (fs/fullpath motif-stofile)
-        cmfile (-> motif-stofile
+(defn infernal-2+?
+  "Determine whether the version of Infernal being called upon is post
+   1.0 (1.1+ basically).  We need this as later versions differ in
+   both their output format and the command arguments that they
+   use (in particular, --cpu, for thread usage control).
+  "
+  []
+  (let [p (->> (get-tool-path :infernal)
+               fs/split
+               (take-until #(= % "bin"))
+               (apply fs/join))]
+    (> (->> p fs/normpath fs/split last (str/split #"\.")
+            second first str Integer.) 0)))
+
+
+(defn mk-infernal-cmd
+  "Build and check the canonical form of an Infernal command for us.
+   Checks that the command exists on the path, the version of Infernal
+   and cpu use (if later than 1.0.*), and folds in options.  cmd is
+   the base command as string.  opts is either a string of space
+   separated options (just like on cmdline) or a vector where all
+   pieces are separate elements.
+
+   Ensures command exists; returns the vector for command appropriate
+   for runx.
+  "
+  [cmd opts]
+  (let [opts (vec (map str (if (string? opts) (str/split #" " opts) opts)))
+        opts-cpus? (in "--cpu" opts)
+        infernal-path (get-tool-path :infernal)
+        cmdpath (str infernal-path cmd)
+        threads (cond opts-cpus? nil ; explicitly given in opts
+                      (and (not= cmd "cmbuild") (infernal-2+?)) ["--cpu" "1"]
+                      :else nil)
+        infcmd `[~cmdpath ~@threads ~@opts]]
+    (assert-tools-exist [cmdpath])
+    infcmd))
+
+(defn cmbuild
+  "Construct and issue an Infernal cmbuild command on alignment (sto!)
+   file stofile.  OPTS is a set of optional arguments given as either
+   a space separated string or a vector of strings.  Defaults to no
+   options (the -F option is automatically incorporated for the output
+   cmfile).  The output cmfile has a canonical name based on stofile -
+   \".cm\" is appended as file type.
+
+   Ex: L20-auto-1.sto --> L20-auto-1.sto.cm
+
+   Returns the cmfile spec as result.
+  "
+  [stofile & {:keys [opts]}]
+  (let [cmbuildcmd (first (mk-infernal-cmd "cmbuild" opts))
+        stofile (fs/fullpath stofile)
+        cmfile (-> stofile
                    (#(str/split #"\." %))
                    (#(str (first %) "."
                           (last (if (> (count %) 2) (butlast %) %))))
                    (str ".cm"))]
-    (assert-tools-exist [cmbuildcmd])
-    (runx cmbuildcmd "-F" cmfile motif-stofile)
+    (runx cmbuildcmd "-F" cmfile stofile)
     cmfile))
 
+(defn cmcalibrate
+  "Construct and issue an Infernal cmcalibrate command on previously
+   built cm in cmfile.
 
-(defn cmcalibrate [cmfile & {par :par  :or {par 3}}]
-  (let [infernal-path (get-tool-path :infernal)
-        cmcalibratecmd (str infernal-path "cmcalibrate")
+   PAR controls the number of MPI processes, _not_ the number of
+   threads.  Threads are only available on version 1.1+.  On thread
+   versions, the default is still to use mpi with an i/o thread (--cpu
+   1).
+
+   OPTS contains any other options that may be desired as either a
+   space separated string or as a vector of strings where all
+   parameters and their values are separate elements.
+
+   Returns the calibrated cmfile spec (same as input) as result.
+  "
+  [cmfile & {:keys [par opts]
+             :or {par 3 opts (if (infernal-2+?) ["--cpu" "4"] ["--mpi"])}}]
+  (let [cmcalibratecmd (mk-infernal-cmd "cmcalibrate" opts)
         cmfile (fs/fullpath cmfile)
         mpirun "mpirun"
-        cmdargs ["-np" (str par)
-                 cmcalibratecmd "--mpi" cmfile]]
-    (assert-tools-exist [cmcalibratecmd])
-    (runx mpirun cmdargs)
+        mpiargs `["-np" ~(str par) ~@cmcalibratecmd ~cmfile]]
+    (if (infernal-2+?)
+      (apply runx (conj cmcalibratecmd cmfile))
+      (runx mpirun mpiargs))
     cmfile))
 
+(defn cmsearch
+  "Construct and issue an Infernal cmsearch command on previously
+   built/calibrated cm in cmfile against the seqs of interest in
+   'database' fna-file (a fasta file of sequences of interest).
 
-(defn cmsearch [cmfile fna-seqalign-file outfile
-                & {par :par eval :eval :or {par 3 eval 1.0}}]
-  (let [infernal-path (get-tool-path :infernal)
-        cmsearchcmd (str infernal-path "cmsearch")
+   PAR controls the number of MPI processes, _not_ the number of
+   threads.  Threads are only available on version 1.1+.  On thread
+   versions, the default is still to use mpi with an i/o thread (--cpu
+   1).
+
+   OPTS contains any other options that may be desired as either a
+   space separated string or as a vector of strings where all
+   parameters and their values are separate elements.
+
+   Output is placed in OUTFILE.  This outfile spec is returned as
+   result.
+  "
+  [cmfile fna-file outfile
+   & {:keys [par eval opts]
+      :or {par 3 eval 1.0
+	   opts (if (infernal-2+?) ["--mid" "--cpu" "4"] ["--mpi"])}}]
+  (let [opts (if (string? opts)
+               (str "-E " eval " " opts)
+               (->> opts (cons eval) (cons "-E")))
+        cmsearchcmd (mk-infernal-cmd "cmsearch" opts)
         cmfile (fs/fullpath cmfile)
-        alignfile (fs/fullpath fna-seqalign-file)
+        dbfile (fs/fullpath fna-file)
         outfile (fs/fullpath outfile)
         mpirun "mpirun"
-        cmdargs ["-np" (str par)
-                 cmsearchcmd "--mpi" "-E" (str eval) cmfile alignfile]]
-    (assert-tools-exist [cmsearchcmd])
+        mpiargs `["-np" ~(str par) ~@cmsearchcmd ~cmfile ~dbfile]]
     (io/with-out-writer outfile
-      (print (runx mpirun cmdargs)))
+      (print (if (infernal-2+?)
+               (apply runx (conj cmsearchcmd cmfile dbfile))
+               (runx mpirun mpiargs))))
     outfile))
 
 
@@ -886,7 +969,7 @@
    targets that have been placed in seqfile.
   "
   [cm seqfile outfile
-   & {opts :opts par :par :or {opts ["-q" "-1"] par 3}}]
+   & {:keys [opts par] :or {opts ["-q" "-1"] par 3}}]
   (let [infernal-path (get-tool-path :infernal)
         cmaligncmd (str infernal-path "cmalign")
         cmfile (fs/fullpath cm)

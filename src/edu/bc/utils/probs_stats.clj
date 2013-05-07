@@ -490,7 +490,7 @@
   "
   [X Y]
   (let [prod-stdevs (* (std-deviation X) (std-deviation Y))]
-    (if (= 0 prod-stdevs)
+    (if (zero? prod-stdevs)
       (raise :type :invalid-operation
              :msg "Correlation only defined for finite nonzero stdevs"
              :X X :Y Y

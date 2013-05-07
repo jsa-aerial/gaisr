@@ -3,7 +3,7 @@
 ;;                              T A X O N O M Y                             ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -33,19 +33,14 @@
   (:require [clojure.contrib.sql :as sql]
             [org.bituf.clj-dbcp :as dbcp]
             [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
             [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
             [clojure.contrib.io :as io]
-            [clojure.zip :as zip]
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+        [clojure.pprint
+         :only [cl-format]])
 
   (:import javax.sql.DataSource
            com.mysql.jdbc.jdbc2.optional.MysqlConnectionPoolDataSource))
@@ -100,18 +95,19 @@
 (defn ancestors-as-names [id]
   (loop [x id
          v (list)]
-      (if (= x 1)
-        v
-        (let [p (@nodes x)
-              n (@names x)]
-          (recur p (conj v n))))))
+    (if (= x 1)
+      v
+      (let [p (@nodes x)
+            n (@names x)]
+        (recur p (conj v n))))))
 
-;;;(ancestors-as-names 1279)
+;;;(ancestors-as-names 2)
 
 (defn create-node-ancestor-names-file [file]
   (io/with-out-writer (io/file-str file)
     (doseq [id (keys @nodes)]
-      (println (str id "\t|\t" (str/join ", " (ancestors-as-names id)))))))
+      (when (not= id 1) ; don't include 'root' node
+        (println (str id "\t|\t" (str/join ", " (ancestors-as-names id))))))))
 
 ;;;(create-node-ancestor-names-file "/data2/BioData/taxdata/nodes-ancestor-names.txt")
 
@@ -131,7 +127,7 @@
 (def mysql-ds
      (dbcp/db-spec
       (let [ds (dbcp/mysql-datasource
-                "127.0.0.1:3306" "biosql" "root" @db-pw)]
+                "127.0.0.1:3306" "refseq58" "root" @db-pw)]
         (dbcp/set-max-active! ds 50)
         (dbcp/set-min-max-idle! ds 5 20)
         ds)))

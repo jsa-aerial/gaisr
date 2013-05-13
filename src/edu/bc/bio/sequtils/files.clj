@@ -3,7 +3,7 @@
 ;;                      S E Q U T I L S . F I L E S                         ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -38,7 +38,7 @@
             [clojure.set :as set]
             [clojure.contrib.seq :as seq]
             [clojure.contrib.io :as io]
-	    [clojure-csv.core :as csv]
+            [clojure-csv.core :as csv]
             [edu.bc.fs :as fs])
   (:use clojure.contrib.math
         edu.bc.utils
@@ -107,9 +107,9 @@
 
 
 (defn join-sto-fasta-file
-  "Block/join unblocked sequence lines in a sto or fasta file. For sto
-   files ORIGIN is a #=GF line indicating tool origin of file.  For
-   example, '#=GF AU Infernal 1.0.2'. Defaults to nothing."
+  "Block/join unblocked sequence lines in a sto file.  ORIGIN is a
+   #=GF line indicating tool origin of file.  For example, '#=GF AU
+   Infernal 1.0.2'. Defaults to nothing."
 
   [in-filespec out-filespec
    & {origin :origin :or {origin ""}}]
@@ -123,6 +123,41 @@
       (doseq [cl cons-lines]
         (let [[nm [_ sq]] cl]
           (cl-format true "~A~40T~A~%" nm sq))))))
+
+
+(def default-genome-fasta-dir
+     (or (getenv "GAISR_DEFAULT_GENOME_DIR")
+         "/data2/BioData/GenomeSeqs/RefSeq58"))
+
+(defn split-join-ncbi-fasta-file
+  "Split a fasta file IN-FILE into the individual sequences and
+   unblock the sequence if blocked.  The resulting individual [nm sq]
+   pairs are written to files named for the NC name in the gi line of
+   in-file and in the DEFAULT-GENOME-FASTA-DIR location.
+
+   The main use of this function is to take a refseq fasta
+   db (composed of many multi seq fasta files) and split the db into a
+   normed set of named sequence files for quick access to sequence per
+   name in various other processing (see gen-name-seq for example).
+
+   Canonical use case example:
+
+   (fs/dodir \"/data2/BioData/Fasta\" ; RefSeqxx fasta files
+             #(fs/directory-files % \"fna\")
+             #(split-join-ncbi-fasta-file %))
+  "
+  [in-file]
+  (let [base default-genome-fasta-dir]
+    (doseq [[gi sq] (->> in-file io/read-lines
+                         (partition-by #(re-find #"^>gi" %))
+                         (partition-all 2)
+                         (map (fn[[[nm] sbits]] [nm (apply str sbits)])))]
+      (let [nm (->> gi (str/split #"\|") (drop 3) first
+                    (str/split #"\.") first)]
+        (when (re-find #"^NC_" nm)
+          (io/with-out-writer (fs/join base (str nm ".fna"))
+            (println gi)
+            (println sq)))))))
 
 
 ;;; Convert STO format to ALN format (ClustalW format).  This is
@@ -272,11 +307,7 @@
 
 (def default-binary-db
      (or (getenv "GAISR_DEFAULT_BINARY_DB")
-         "/data2/BioData/BlastDBs/other_genomic"))
-
-(def default-genome-fasta-dir
-     (or (getenv "GAISR_DEFAULT_GENOME_DIR")
-         "/data2/BioData/GenomeSeqs"))
+         "/data2/BioData/BlastDBs/RefSeq58/refseq58_microbial_genomic"))
 
 
 (defn entry-parts

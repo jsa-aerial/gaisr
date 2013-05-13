@@ -3,7 +3,7 @@
 ;;                             J O B - C O N F I G                          ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -58,13 +58,9 @@
 
 
 (defn process-sto-files [m l]
-  (let [fspec l
-        stodir (m :stodir)
-        stos (if (.startsWith fspec fs/separator)
-               (list fspec)
-               (fs/re-directory-files stodir fspec))]
+  (let [stodir (m :stodir)]
     (reduce (fn[m sto] (process-1-file m :cmbuilds sto))
-            m stos)))
+            m (fs/glob (fs/fullpath (fs/join stodir l))))))
 
 (defn process-cm-files [m l]
   (process-1-file m :calibrates l))
@@ -83,6 +79,24 @@
                       hf-cms (conj hf-cms cm)]
                   (assoc m :cmsearchs (assoc xref-map hf hf-cms))))
               m hitfs))))
+
+(defn process-fna-files [m l]
+  (reduce (fn[m fna] (process-1-file m :blast fna))
+          m (fs/glob (fs/fullpath l))))
+
+(defn process-directive-options [m d l]
+  (let [args (->> l (str/split #"\s*:\s*") second
+                  (str/split #"\s*,\s*")
+                  (map #(->> % (str/split #"\s+")
+                             ((fn[[k v]]
+                                (let [v (->> v read-string
+                                             ((fn[x] (if (symbol? x)
+                                                       (keyword (name x))
+                                                       x))))]
+                                  [(keyword k) v])))))
+                  flatten
+                  vec)]
+    (assoc m :blast (conj (get m :blast []) [:args args]))))
 
 
 (defn parse-config-file [filespec]
@@ -105,6 +119,9 @@
        (condp #(re-find %1 %2) l
          #"^\s*#+" ; NOTE: need to remove re-find from lseq filter
          (add-comment m l)
+
+         #"^BLAST\s*:"
+         (directive (process-directive-options m :blast l) :blast)
 
          #"^Hitfile-Dir\s*:"
          (getf m :hitfile-dir l)
@@ -160,7 +177,10 @@
                       (m :cmdir)))
           :gen-csvs)
 
+         #"^FFP\s*:"
+
          (case (m :directive)
+               :blast (process-fna-files m l)
                :cmbuild (process-sto-files m l)
                :calibrate (process-cm-files m l)
                :cmsearch (process-hit-files m l)

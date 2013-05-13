@@ -3,7 +3,7 @@
 ;;                              U T I L S                                   ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -281,9 +281,35 @@
           :ignore (first colls))))))
 
 
-
 (defn xfold
-  ""
+  "Fold function f over a collection or set of collections (c1, ...,
+   cn) producing a collection (concrete type of vector).  Arity of f
+   must be equal to the number of collections being folded with
+   parameters matching the order of the given collections.  Folding
+   here uses the reducer lib fold at base, and thus uses work stealing
+   deque f/j to mostly relieve the partition problem.  In signatures
+   with N given, N provides the packet granularity, or if (< N 1),
+   granularity is determined automatically (see below) as in the
+   base (non N case) signature.
+
+   While xfold is based on r/fold, it abstracts over the combiner,
+   reducer, work packet granularity, and transforming multiple
+   collections for processing by f by chunking the _transpose_ of the
+   collection of collections.
+
+   As indicated above, xfold's fold combiner is monoidal on vectors:
+   it constructs a new vector from an l and r vector, and has identity
+   [] (empty vector).  In line with this, xfold's reducer builds up
+   new vectors from elements by conjing (f a1, ... an) onto a prior
+   result or the combiner identity, [], as initial result.
+
+   Packet granularity is determined automatically (base case or N=0)
+   or supplied with N > 1 in signatures with N.  Automatic
+   determination tries to balance significant work chunks (keep thread
+   overhead low), with chunks that are small enough to have multiple
+   instances per worker queue (supporting stealing by those workers
+   that finish ahead of others).
+  "
   ([f coll]
      (let [cores (.. Runtime getRuntime availableProcessors)
            workers (int (math/floor (* 3/4 cores)))
@@ -293,12 +319,14 @@
        #_(println :>>N n)
        (xfold f n coll)))
   ([f n coll]
-     (r/fold n
-             (fn
-               ([] [])
-               ([l r] (apply conj l r)))
-             (fn[v x] (conj v (f x)))
-             (vec coll)))
+     (if (< n 1)
+       (xfold f coll)
+       (r/fold n
+               (fn
+                 ([] [])
+                 ([l r] (apply conj l r)))
+               (fn[v x] (conj v (f x)))
+               (vec coll))))
   ([f n coll & colls]
      (xfold (fn[v] (apply f v)) n (apply transpose coll colls))))
 

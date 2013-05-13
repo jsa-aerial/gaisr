@@ -70,7 +70,7 @@
    indicates that distfn is symmetric (default) and keyfn returns a
    key suitable for map entries for an item and defaults to identity.
    The idea behind keyfn is that some items may be large or otherwise
-   complicated and so expensive to compare but a unique key may be
+   complicated and thus expensive to compare but a unique key may be
    generated for them beforehand.  A typical scenario would be to
    'Goedel number' them.
 

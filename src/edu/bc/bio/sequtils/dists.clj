@@ -943,7 +943,6 @@
                  (jensen-shannon (probs wz sx) (probs wz sy)))
 
         keyfn first
-        kcoll (map keyfn coll)
         dm (clu/dist-matrix distfn coll :keyfn keyfn)
 
         distfn2 (fn[l r]
@@ -954,7 +953,9 @@
                 ([sqs]
                    (hybrid-dictionary wz sqs))
                 ([x & xs]
-                   (hybrid-dictionary wz (cons x xs))))]
+                   (hybrid-dictionary wz (cons x xs))))
+	
+	kcoll (map keyfn coll)]
 
        (for [k (range 4 kmax)
              :let [[krnngrph rnncntM knngrph]

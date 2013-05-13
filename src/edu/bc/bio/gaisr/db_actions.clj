@@ -61,7 +61,7 @@
 (def mysql-ds
      (dbcp/db-spec
       (let [ds (dbcp/mysql-datasource
-                "127.0.0.1:3306" "biosql" "root" @db-pw)]
+                "127.0.0.1:3306" "refseq58" "root" @db-pw)]
         (dbcp/set-max-active! ds 50)
         (dbcp/set-min-max-idle! ds 5 20)
         ds)))

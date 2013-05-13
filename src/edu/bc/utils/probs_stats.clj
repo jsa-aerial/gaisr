@@ -310,7 +310,7 @@
    to assign to n.  Lastly, if single numbers are given, their weight
    is taken as simply 1.  Effectively returns:
 
-     let c* (flattened-weighted-seq coll)
+     let c* (flatten-pair-coll coll)
          cnt (count c*)
        (/ (sum c*) cnt)
 
@@ -423,7 +423,9 @@
      let N (count X)
          mux (mean X)
          muy (mean Y)
-      (sum (fn[xi yi] (/ (- xi mux) (- yi muy) (dec N))) X Y)
+      (sum (fn[xi yi] (/ (* (- xi mux) (- yi muy)) (dec N))) X Y)
+
+      (the (dec N) would be just N, if using true populations)
 
       which, by some algebra, is E(XY) - E(X)E(Y).
 
@@ -461,7 +463,7 @@
         xs (getvs X)
         ys (getvs Y)]
     (if (not= (count xs) (count ys))
-      (raise :type :invalid-oper
+      (raise :type :invalid-operation
              :msg "Covariance of X & Y requires = size sample sets"
              :X X :Y Y)
       (- (mean (map * xs ys))

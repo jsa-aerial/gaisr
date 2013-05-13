@@ -336,7 +336,7 @@ if it is not or if the file cannot be deleted."
 
 
 ; Taken from https://github.com/jkk/clj-glob. (thanks Justin!)
-(defn- glob->regex
+(defn glob->regex
   "Takes a glob-format string and returns a regex."
   [s]
   (loop [stream s
@@ -344,7 +344,9 @@ if it is not or if the file cannot be deleted."
          curly-depth 0]
     (let [[c j] stream]
         (cond
-         (nil? c) (re-pattern (str (if (= \. (first s)) "" "(?=[^\\.])") re))
+         (nil? c) (re-pattern (str (if (= \. (first s)) "" "(?=[^\\.])")
+                                   re ; if s didn't end in *, force eol
+                                   (if (= \* (last re)) "" "$")))
          (= c \\) (recur (nnext stream) (str re c c) curly-depth)
          (= c \/) (recur (next stream) (str re (if (= \. j) c "/(?=[^\\.])"))
                          curly-depth)
@@ -363,11 +365,7 @@ if it is not or if the file cannot be deleted."
   (let [parts (split pattern)
         root (if (= (count parts) 1) "." (apply join (butlast parts)))
         regex (glob->regex (last parts))]
-    (map #(.getPath %) (seq (.listFiles (File. root)
-                                        (reify FilenameFilter
-                                          (accept [_ _ filename]
-                                            (if (re-find regex filename)
-                                              true false))))))))
+    (map #(join root %) (filter #(re-find regex %) (listdir root)))))
 
 
 

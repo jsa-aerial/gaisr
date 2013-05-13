@@ -3,7 +3,7 @@
 ;;                           C A N N E D - J O B S                          ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -249,7 +249,7 @@
 
 (defn schedule-blast
   [user entries &
-   {pgm :pgm etype :etype dir :dir args :args
+   {:keys [etype dir args pgm]
     :or {pgm (blastpgm (get-selection-fna entries))
          etype :fna dir (get-work-dir)
          args [:word-size (if (= pgm tblastn) 4 8)]}}]

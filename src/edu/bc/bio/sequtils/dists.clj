@@ -927,65 +927,103 @@
 
 (defn krnn-seqs-clust
   ""
-  [seqents & {:keys [xlate alpha delta crecut limit kmax] :or {kmax 11}}]
+  [seqents & {:keys [xlate alpha delta crecut limit kinfo]
+              :or {alpha (alphabet :rna)}}]
+  {:pre [(or (and (vector? kinfo)
+                  (reduce (fn[b x] (and b (integer? x))) true kinfo))
+             (integer? kinfo)
+             (nil? kinfo))]}
+
   (let [seqents (if (coll? seqents) seqents (read-seqs seqents :info :name))
+        seqcnt (count seqents)
+        kinfo (if (not (nil? kinfo)) kinfo [4 (long (->> seqcnt log2 ceil))])
+        [kmin kmax] (if (vector? kinfo) kinfo [(min 4 (int (/ kinfo 2))) kinfo])
+
+        ;; Get entries and their delta adjusted sequences and Goedel
+        ;; number them for efficient map key access.
         entries  (map (fn[i es] [i es]) (iterate inc 0) seqents)
         seqs (get-adjusted-seqs (map second entries) delta)
         entries (into {} entries)
         coll (->> seqs
                   (map (fn[[e s]] [e (if xlate (seqXlate s :xmap xlate) s)]))
-                  (map (fn[i es] [i es]) (iterate inc 0)))
+                  (mapv (fn[i es] [i es]) (iterate inc 0)))
 
+        ;; Get the resolution window size for sequence words
+        ;; (features), which controls vocabulary distribution content
+        ;; (dictionaries), pmfs, and RE.
         [wz] (res-word-size (map first seqs) :delta delta
                             :xlate xlate :alpha alpha
                             :crecut crecut :limit limit)
-        distfn (fn[[_ [nx sx]] [_ [ny sy]]]
-                 (jensen-shannon (probs wz sx) (probs wz sy)))
 
+        ;; Precompute all the resulting dictionaries of sequences with
+        ;; word size.  This is a vector which is naturally indexed by
+        ;; the numbering of the entries.
+        coll-ffps (mapv (fn[[i [e sq]]] (probs wz sq)) coll)
+
+        ;; Distance function that uses above precomputed distributions
+        ;; as inputs keyed off entry/seq numbering.  Just call
+        ;; coll-ffps on the numberings (i and j) of the inputs.  Each
+        ;; arg has shape [i [ent-i sq-i]]; we only need i.
+        distfn (fn[[x _x] [y _y]]
+                 (jensen-shannon (coll-ffps x) (coll-ffps y)))
+
+        ;; Compute distance matrix for knn graph computation.  keyfn
+        ;; is first of input elements which gives the numbering for an
+        ;; entry.  So, matrix is a map with keys [x y], x & y
+        ;; associated numbers of coll entries
         keyfn first
         dm (clu/dist-matrix distfn coll :keyfn keyfn)
 
-        distfn2 (fn[l r]
-                  (apply jensen-shannon
-                         (map #(if (map? %) % (probs wz %))
-                              [l r])))
+
+        ;; Distance function for S-Dbw cluster validity measure.
+        ;; Every 'point' here should be word dictionary as seq-clus
+        ;; (see below) is precomputed to be such.
+        distfn2 (fn[l r] {:pre [(and (map? l) (map? r))]}
+                  (jensen-shannon l r))
+
+        ;; Averaging ('mean') function for S-Dbw validity measure.
+        ;; This computes the 'hybrid' (minimized entropy) dictionary -
+        ;; a 'centroid' dictionary.
         avgfn (fn
                 ([sqs]
                    (hybrid-dictionary wz sqs))
                 ([x & xs]
                    (hybrid-dictionary wz (cons x xs))))
-	
-	kcoll (map keyfn coll)]
 
-       (for [k (range 4 kmax)
-             :let [[krnngrph rnncntM knngrph]
-                   (clu/krnn-graph k #(get dm [%1 %2]) kcoll)]]
-         (let [clusters (->> (clu/split-krnn k krnngrph rnncntM knngrph)
-                             ;;(#(do (prn :G>k/G<k %) %))
-                             (map #(gr/tarjan (keys %) %))
-                             ;;(#(do (prn :sccs %) %))
-                             (apply clu/refoldin-outliers krnngrph)
-                             vec)
-               ent-clus (let [coll (into {} coll)]
-                          (map (fn[scc]
-                                 (map (fn[x]
-                                        [(entries x) (-> x coll first)])
-                                      scc))
-                               clusters))
-               seq-clus (let [coll (into {} coll)]
-                          (map (fn[scc]
-                                 (let [x (xfold
-                                          (fn[x]
-                                            (->> x coll second (probs wz)))
-                                          (vec scc))]
-                                   [(avgfn x) x]))
-                               clusters))]
-           [(clu/S-Dbw-index distfn2 (vec seq-clus) :avgfn avgfn)
-            ent-clus k]))))
+        kcoll (map keyfn coll)]
+
+    (println :wz wz"\n":kmax kmax)
+    (for [k (range kmin kmax)
+          :let [[krnngrph rnncntM knngrph]
+                (clu/krnn-graph k #(get dm [%1 %2]) kcoll)]]
+      (let [_ (println :start-clustering :k k (str-date))
+            clusters (->> (clu/split-krnn k krnngrph rnncntM knngrph)
+                          ;;(#(do (prn :G>k/G<k %) %))
+                          (map #(gr/tarjan (keys %) %))
+                          ;;(#(do (prn :sccs %) %))
+                          (apply clu/refoldin-outliers krnngrph)
+                          vec)
+            ent-clus (let [coll (into {} coll)]
+                       (map (fn[scc]
+                              (map (fn[x]
+                                     [(entries x) (-> x coll first)])
+                                   scc))
+                            clusters))
+            seq-clus (let [coll (into {} coll)]
+                       (map (fn[scc]
+                              (let [v (xfold
+                                       (fn[x] (coll-ffps x))
+                                       (vec scc))]
+                                [(avgfn v) v]))
+                            clusters))
+            _ (println :end-clustering :start-S-Dbw (str-date))]
+        [(clu/S-Dbw-index distfn2 (vec seq-clus) :avgfn avgfn)
+         ent-clus k]))))
 
 (defn split-sto
   ""
-  [stofile & {:keys [delta xlate alpha crecut limit kmax] :or {kmax 11}}]
+  [stofile & {:keys [delta xlate alpha crecut limit kinfo]
+              :or {alpha (alphabet :rna)}}]
   (let [basedir (fs/dirname stofile)
         name (->> stofile fs/basename (str/split #"-") first)
         clu-dir (fs/join basedir (str "CLU-" name))
@@ -997,7 +1035,7 @@
                        :delta delta
                        :xlate xlate :alpha alpha
                        :crecut crecut :limit limit
-                       :kmax kmax)
+                       :kinfo kinfo)
                       (sort-by first <))
         fs (->> clu-info
                 first second (map #(map first %))

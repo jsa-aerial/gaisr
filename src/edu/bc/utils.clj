@@ -124,6 +124,33 @@
   ([d fm] (.format (SimpleDateFormat. fm) d)))
 
 
+(defn cpu-use
+  "Obtain and return cpu utilization.  Requires the 'top' command is
+   available, and takes the second of two samplings (first samples
+   from top are typically inaccurate).  INFO indicates the type of
+   information returned:
+
+   :idle, just the avg % idle, this is the default
+   :used, just the avg % used
+   :both, both idle and used
+
+   In  all cases  uses  aggregate cpu  utilization  over SMP  systems.
+   Values are returned as Doubles,  or for :both, a two element vector
+   of Doubles [idle used].
+  "
+  [& {:keys [info] :or {info :idle}}]
+  (let [idle (->> (runx "top" "-n" "2" "-b" "-d" "0.01" "-p" "1")
+                  (str/split #"\n") (filter #(re-find #"^Cpu" %))
+                  last (str/split #",\s+") (filter #(re-find #"%id" %))
+                  first (str/split #"%") first Double.)
+        use (- 100.0 idle)]
+    (case info
+          :idle idle
+          :used use
+          :both [idle use]
+          idle)))
+
+
 ;;; Extra predicates...
 (defn map-entry? [x]
   (instance? clojure.lang.MapEntry x))

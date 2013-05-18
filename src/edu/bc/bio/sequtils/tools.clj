@@ -313,8 +313,8 @@
          (io/with-out-writer bad-file
            (doseq [[nm-coord gapped degapped actual dup?] bad]
              (println nm-coord (if dup? "is DUP!" "") "\n"
-                      gapped "\n" degapped "\n"
-                      actual "\n"))))
+                      :GAP gapped "\n" :DEG degapped "\n"
+                      :ACT actual "\n"))))
 
        (when (fs/exists? ids) (io/delete-file ids))
        (when (fs/exists? blastout) (io/delete-file blastout))
@@ -939,7 +939,7 @@
   [cmfile fna-file outfile
    & {:keys [par eval opts]
       :or {par 3 eval 1.0
-	   opts (if (infernal-2+?) ["--mid" "--cpu" "4"] ["--mpi"])}}]
+           opts (if (infernal-2+?) ["--mid" "--cpu" "4"] ["--mpi"])}}]
   (let [opts (if (string? opts)
                (str "-E " eval " " opts)
                (->> opts (cons eval) (cons "-E")))

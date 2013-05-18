@@ -98,7 +98,7 @@
      ^{:doc "Map for translating DNA and RNA seqs to purine and
              pyrimidine seqs.  Assumes normed-elements (for which
              see)"}
-     {\A \R \G \R \C \Y \U \Y \T \Y})
+     {\A \R, \G \R, \C \Y, \U \Y, \T \Y})
 
 
 ;;; ----------------------------------------------------------------------
@@ -202,8 +202,14 @@
   [sq]
   (let [ucp (first (str/codepoints "U"))
         m (if (neg? (.indexOf sq ucp))
-            {\A \T \T \A \G \C \C \G}
-            {\A \U \U \A \G \C \C \G})]
+            {\A \T, \T \A, \G \C, \C \G}
+            {\A \U, \U \A, \G \C, \C \G})
+        ;; Add in the 'odd balls'
+        m (merge m {\R \Y, \Y \R,
+                    \K \M, \M \K,
+                    \B \V, \V \B,
+                    \D \H, \H \D,
+                    \S \S, \W \W, \N \N})]
     (str/join "" (reverse (map m sq)))))
 
 

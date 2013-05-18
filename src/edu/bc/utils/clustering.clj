@@ -80,18 +80,19 @@
    computed queue granularity (see xfold)
   "
    [distfn coll & {:keys [sym keyfn] :or {sym true keyfn identity}}]
-  (let [cnt (count coll)]
-    (reduce
-     (fn[M [i j d]]
-       (let [ik (keyfn i)
-             jk (keyfn j)]
-         (if sym (assoc M [ik jk] d [jk ik] d) (assoc M [ik jk] d))))
-     {} (xfold (fn [[i j]] [i j (distfn i j)])
-               (for [k (range cnt)
-                     i (drop k coll)
-                     j (if sym (take (- cnt k) coll) coll)
-                     :when (not= i j)]
-                 [i j])))))
+   (let [coll (vec coll)
+         cnt (count coll)]
+     (reduce (fn[M [ik jk d]]
+               (if sym
+                 (assoc M [ik jk] d [jk ik] d)
+                 (assoc M [ik jk] d)))
+             {} (xfold (fn [[i j]] [(keyfn i) (keyfn j) (distfn i j)])
+                       (for [k (range cnt)
+                             l (range cnt)
+                             :let [i (coll k)
+                                   j (coll l)]
+                             :when (if sym (< k l) (not= k l))]
+                         [i j])))))
 
 
 (defn extreme-pd

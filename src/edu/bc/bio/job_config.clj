@@ -96,7 +96,7 @@
                                   [(keyword k) v])))))
                   flatten
                   vec)]
-    (assoc m :blast (conj (get m :blast []) [:args args]))))
+    (assoc m d (conj (get m d []) [:args args]))))
 
 
 (defn parse-config-file [filespec]
@@ -178,12 +178,14 @@
           :gen-csvs)
 
          #"^FFP\s*:"
+         (directive (process-directive-options m :ffp l) :ffp)
 
          (case (m :directive)
                :blast (process-fna-files m l)
                :cmbuild (process-sto-files m l)
                :calibrate (process-cm-files m l)
                :cmsearch (process-hit-files m l)
-               :gen-csvs m)))
+               :gen-csvs m
+               :ffp m)))
      {} lseq)))
 

@@ -84,18 +84,25 @@
   (reduce (fn[m fna] (process-1-file m :blast fna))
           m (fs/glob (fs/fullpath l))))
 
+(defn process-sccs-subline [m l]
+  (let [[d v] (str/split #"\s*(:| )\s*" l)]
+    (assoc m :sccs (conj (get m :sccs []) [(keyword d) v]))))
+
 (defn process-directive-options [m d l]
-  (let [args (->> l (str/split #"\s*:\s*") second
-                  (str/split #"\s*,\s*")
-                  (map #(->> % (str/split #"\s+")
-                             ((fn[[k v]]
-                                (let [v (->> v read-string
-                                             ((fn[x] (if (symbol? x)
-                                                       (keyword (name x))
-                                                       x))))]
-                                  [(keyword k) v])))))
-                  flatten
-                  vec)]
+  (let [args (->> l (str/split #"\s*:\s*") second)
+        args (if (not args)
+               []
+               (->> args
+                    (str/split #"\s*,\s*")
+                    (map #(->> % (str/split #"\s+")
+                               ((fn[[k v]]
+                                  (let [v (->> v read-string
+                                               ((fn[x] (if (symbol? x)
+                                                         (keyword (name x))
+                                                         x))))]
+                                    [(keyword k) v])))))
+                    flatten
+                    vec))]
     (assoc m d (conj (get m d []) [:args args]))))
 
 
@@ -177,8 +184,8 @@
                       (m :cmdir)))
           :gen-csvs)
 
-         #"^FFP\s*:"
-         (directive (process-directive-options m :ffp l) :ffp)
+         #"^SCCS\s*:"
+         (directive (process-directive-options m :sccs l) :sccs)
 
          (case (m :directive)
                :blast (process-fna-files m l)
@@ -186,6 +193,6 @@
                :calibrate (process-cm-files m l)
                :cmsearch (process-hit-files m l)
                :gen-csvs m
-               :ffp m)))
+               :sccs (process-sccs-subline m l))))
      {} lseq)))
 

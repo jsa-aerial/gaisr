@@ -124,6 +124,8 @@
   ([d fm] (.format (SimpleDateFormat. fm) d)))
 
 
+(declare runx)
+
 (defn cpu-use
   "Obtain and return cpu utilization.  Requires the 'top' command is
    available, and takes the second of two samplings (first samples

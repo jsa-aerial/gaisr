@@ -494,23 +494,6 @@
 ;;; (/ 7512557802 57253960.0)
 
 
-(defn get-entries
-  [filespec & [seqs]]
-  (let [fspec (fs/fullpath filespec)
-        ftype (fs/ftype fspec)]
-    (if (not= ftype "csv")
-      (read-seqs filespec :info (if seqs :data :name))
-      (->> (edu.bc.bio.gaisr.post-db-csv/get-entries fspec)
-           (keep (fn[[nm s e sd]]
-                   (when (fs/exists? (fs/join default-genome-fasta-dir
-                                              (str nm ".fna")))
-                     (str nm "/"
-                          (if (> (Integer. s) (Integer. e))
-                            (str e "-" s "/-1")
-                            (str s "-" e "/1"))))))
-           (#(if seqs (map second (gen-name-seq-pairs %)) %))))))
-
-
 (defn ctx-seq
   [entry & {:keys [directed ldelta rdelta delta ddel] :or {directed true}}]
   {:pre [(or delta (and (not directed) (or ldelta rdelta)))]}
@@ -848,7 +831,7 @@
    output.  Typically the csv file matching a cmsearch.out.
   "
   [cf]
-  (let [suffix (first (re-find #"\.[a-z]+\.cmsearch\.(csv|out|ent)$" cf))
+  (let [suffix (first (re-find #"(\.[a-z]+|)\.cmsearch\.(csv|out|ent)$" cf))
         suffix-re (re-pattern suffix)
         hitonly (str/replace-re suffix-re "-hitonly.ent" cf)
         final (str/replace-re suffix-re "-final.ent" cf)]

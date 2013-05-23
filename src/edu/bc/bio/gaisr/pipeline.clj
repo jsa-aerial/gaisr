@@ -49,6 +49,8 @@
         edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         edu.bc.bio.sequtils.tools
+        [edu.bc.bio.sequtils.dists
+         :only [compute-candidate-sets hit-context-delta]]
 
         [edu.bc.bio.job-config :only [parse-config-file]]
 
@@ -361,12 +363,7 @@
 
 (defn get-generic-sto-locs [stofile-lazyseq]
   (reduce (fn[m s-loc]
-            (let [[nm loc] (str/split #"/" s-loc)
-                  [nm v] (str/split #"\." nm)
-                  [s e] (map #(Integer. %) (str/split #"-" loc))
-                  x s
-                  s (if (< s e) s e)
-                  e (if (= s e) x e)]
+            (let [[nm [s e] strand] (entry-parts s-loc)]
               (assoc m nm (conj (get m nm []) [s e]))))
           {} (map #(first (str/split #"\s+" %))
                   (filter #(re-find #"^N(C|S|Z)" %) stofile-lazyseq))))
@@ -402,9 +399,8 @@
         file-fmt (cond
                   (re-find #"CMfinder" fmt-line) :cmfinder
                   (re-find #"Infernal" fmt-line) :infernal
-                  (re-find #"ORIGINAL_MOTIF" fmt-line) :generic
-                  :else (raise :type :unknown-sto-fmt
-                               :args [stofile fmt-line]))
+                  :else :generic ; we hope ...
+                  )
         rem-file (drop-until #(not (.startsWith % "#")) stofile-lazyseq)]
     (case file-fmt
           :cmfinder (get-cmfinder-sto-locs rem-file)
@@ -501,7 +497,7 @@
 (defn build-hitseq-map [hitfile]
   (reduce (fn[m [gi sq]]
             (let [nc (ent-name gi)
-                  k (if nc (str nc ":" (ent-loc gi)) gi)]
+                  k (if nc (str nc ":" (ent-loc gi)) (subs gi 1))]
               (assoc m k sq)))
           {} (partition 2 (io/read-lines (io/file-str hitfile)))))
 
@@ -972,7 +968,8 @@
         stos (or (seq (config :cmbuilds))
                  (seq (fs/directory-files stodir "sto")))
         cms  (or (seq (config :calibrates))
-                 (seq (fs/directory-files cmdir "cm")))]
+                 (seq (fs/directory-files cmdir "cm")))
+        csvdir (config :gen-csvs)]
 
     (when (and (config :check-sto) (config :cmbuild))
       (chk-stos stos))
@@ -1001,15 +998,34 @@
       ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
       ;; csvdir does not exist, generate it.  Place all generated csvs
       ;; into csvdir
-      (when-let [csvdir (config :gen-csvs)]
+      (when csvdir
         (when (not (fs/exists? csvdir)) (fs/mkdir csvdir))
         (when (seq cmouts)
           (doseq [cmout cmouts] (cmsearch-out-csv cmout))
           (let [csvs (fs/directory-files cmdir "csv")]
             (doseq [csv csvs]
               (let [fname (fs/basename csv)]
-                (fs/rename csv (fs/join csvdir fname)))))))
-      :good)))
+                (fs/rename csv (fs/join csvdir fname))))))))
+
+    (when-let [sccs (config :sccs)]
+      (let [opts (into {} sccs)
+            stos (opts :stos stos)
+            csv-dir (opts :csv-dir csvdir)
+            out-dir (opts :out-dir csv-dir)]
+        (doseq [sto stos]
+          (let [sto (fs/basename sto)
+                cmscsv (first (fs/glob (str csv-dir "/*" sto "*.cmsearch.csv")))
+                run (->> sto (re-find #"[0-9]+([A-Z]|)\.sto$") first
+                         (re-find #"[0-9]+") Integer. inc)]
+            (compute-candidate-sets
+             sto cmscsv
+             run (hit-context-delta sto)
+             :refn jensen-shannon
+             :xlate +RY-XLATE+ :alpha ["R" "Y"]
+             :crecut 0.01 :limit 19
+             :plot-dists false)))))
+
+    :good))
 
 (defn run-config-job-checked
   "Run a configuration with catch and print for any exceptions"

@@ -3,7 +3,7 @@
 ;;                         P O S T - D B - C S V                            ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -78,69 +78,6 @@
      "gaisr name,orig-start,orig-end,hit-start,hit-end,hit-strand,hit-rel-start,hit-rel-end,score,evalue,pvalue,gc,structure,tgt-seq,orig-tgt-seq")
 
 
-(defn legacy-csv [rows]
-  (let [newnes [:rfam :overlap :new]]
-    (loop [entries []
-           rows (drop 1 rows)]
-      (let [entry (first rows)]
-        (if (< (count entry) 24)
-          (sort #(string-less? (%1 0) (%2 0)) entries)
-          (recur (conj entries
-                       [(entry 4) (entry 9) (entry 10) (entry 24)
-                        (entry 11)
-                        (newnes (Integer/parseInt (entry 15)))
-                        (entry 13)])
-                 (drop 1 rows)))))))
-
-(defn gaisr-csv [rows]
-  (loop [entries []
-         rows (drop 1 rows)]
-    (let [entry (first rows)]
-      (if (< (count entry) 12) ; minimum used fields
-        (sort #(string-less? (%1 0) (%2 0)) entries)
-        (recur (conj entries
-                     [(entry 0) (entry 3) (entry 4) (entry 9)
-                      (entry 8)
-                      :new "N/A"])
-               (drop 1 rows))))))
-
-
-(defn canonical-entry-info [entries]
-  (map #(let [[nm [s e] sd] (entry-parts %)
-              [s e] (if (= sd "1") [s e] [e s])]
-          [nm s e 0.0 0.0 :new sd])
-       entries))
-
-(defn sto-entries [stofile]
-  (let [entries (read-seqs stofile :info :name)]
-    (canonical-entry-info entries)))
-
-(defn ent-entries [ent-file]
-  (let [entries (io/read-lines ent-file)]
-    (if (> (->> entries first csv/parse-csv first count) 1)
-      (let [einfo (canonical-entry-info (map #(->> % (str/split #",") first)
-                                             entries))
-            entropy-scores (->> ent-file slurp csv/parse-csv
-                                butlast (map second))]
-        (map (fn[[nm s e _ _ x y] score] [nm s e score 0.0 x y])
-             einfo entropy-scores))
-      (canonical-entry-info entries))))
-
-
-(defn get-entries [csv-hit-file]
-  (let [file (fs/fullpath csv-hit-file)
-        ftype (fs/ftype file)]
-    (cond
-     (= ftype "sto") (sto-entries file)
-     (= ftype "ent") (ent-entries file)
-     ;;(= ftype "ffp") (ffp-entries file)
-     :else
-     (let [rows (csv/parse-csv (slurp file))
-           head (first rows)]
-       (if (= (first head) "gaisr name")
-         (gaisr-csv rows)
-         (legacy-csv rows))))))
-
 
 (defn filter-entries [entries]
   (keep #(when (and (= (% 5) :new)
@@ -171,7 +108,7 @@
           (map #(let [nm (first (str/split #"\." (% 0)))]
                   [nm (% 5) (or (first (re-find #"N(C|Z|S)_[0-9A-Z]+" (% 6)))
                                 nm)])
-               (get-entries filespec))))
+               (get-csv-entry-info filespec))))
 
 (defn make-qset [start-set]
   (reduce (fn[m [n* _ mn*]]
@@ -304,7 +241,7 @@
 
 (defn process-hit-file [filespec]
   (let [f (fs/fullpath filespec)
-        hitseq (-> f get-entries filter-entries)]
+        hitseq (-> f get-csv-entry-info filter-entries)]
     (if (empty? hitseq)
       {:error (cl-format nil "File '~A' has no nonredundant content" filespec)}
       (gather-hit-features (sort-by first hitseq)))))

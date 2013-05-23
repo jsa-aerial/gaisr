@@ -568,6 +568,101 @@
 
 
 
+;;; ----------------------------------------------------------------------- ;;;
+
+;;;  This crap needs to be refactored and most of it probably
+;;;  eliminated.  Most of it is old stuff that is largely superceded
+;;;  but still required by things in post-db-csv, but we at least fix
+;;;  up the names of the csv processors to more accurately reflect
+;;;  what they are!
+
+
+(defn get-legacy-csv-info [rows]
+  (let [newnes [:rfam :overlap :new]]
+    (loop [entries []
+           rows (drop 1 rows)]
+      (let [entry (first rows)]
+        (if (< (count entry) 24)
+          (sort #(string-less? (%1 0) (%2 0)) entries)
+          (recur (conj entries
+                       [(entry 4) (entry 9) (entry 10) (entry 24)
+                        (entry 11)
+                        (newnes (Integer/parseInt (entry 15)))
+                        (entry 13)])
+                 (drop 1 rows)))))))
+
+(defn get-gaisr-csv-info [rows]
+  (loop [entries []
+         rows (drop 1 rows)]
+    (let [entry (first rows)]
+      (if (< (count entry) 12) ; minimum used fields
+        (sort #(string-less? (%1 0) (%2 0)) entries)
+        (recur (conj entries
+                     [(entry 0) (entry 3) (entry 4) (entry 9)
+                      (entry 8)
+                      :new "N/A"])
+               (drop 1 rows))))))
+
+
+(defn canonical-csv-entry-info [entries]
+  (map #(let [[nm [s e] sd] (entry-parts %)
+              [s e] (if (= sd "1") [s e] [e s])]
+          [nm s e 0.0 0.0 :new sd])
+       entries))
+
+(defn get-sto-as-csv-info [stofile]
+  (let [entries (read-seqs stofile :info :name)]
+    (canonical-csv-entry-info entries)))
+
+(defn get-ent-as-csv-info [ent-file]
+  (let [entries (io/read-lines ent-file)]
+    (if (> (->> entries first csv/parse-csv first count) 1)
+      (let [einfo (canonical-csv-entry-info
+                   (map #(->> % (str/split #",") first) entries))
+            entropy-scores (->> ent-file slurp csv/parse-csv
+                                butlast (map second))]
+        (map (fn[[nm s e _ _ x y] score] [nm s e score 0.0 x y])
+             einfo entropy-scores))
+      (canonical-csv-entry-info entries))))
+
+
+(defn get-csv-entry-info [csv-hit-file]
+  (let [file (fs/fullpath csv-hit-file)
+        ftype (fs/ftype file)]
+    (cond
+     (= ftype "sto") (get-sto-as-csv-info file)
+     (= ftype "ent") (get-ent-as-csv-info file)
+     :else
+     (let [rows (csv/parse-csv (slurp file))
+           head (first rows)]
+       (if (= (first head) "gaisr name")
+         (get-gaisr-csv-info rows)
+         (get-legacy-csv-info rows))))))
+
+
+
+;;; This one was from dists and punted to the old get-enties in
+;;; post-db-csv for csv entries
+;;;
+(defn get-entries
+  [filespec & [seqs]]
+  (let [fspec (fs/fullpath filespec)
+        ftype (fs/ftype fspec)]
+    (if (not= ftype "csv")
+      (read-seqs filespec :info (if seqs :data :name))
+      (->> (get-csv-entry-info fspec)
+           (keep (fn[[nm s e sd]]
+                   (when (fs/exists? (fs/join default-genome-fasta-dir
+                                              (str nm ".fna")))
+                     (str nm "/"
+                          (if (> (Integer. s) (Integer. e))
+                            (str e "-" s "/-1")
+                            (str s "-" e "/1"))))))
+           (#(if seqs (map second (gen-name-seq-pairs %)) %))))))
+
+
+
+
 ;;;------------------------------------------------------------------------;;;
 ;;; Various sequence file readers for various formats.  In particular,
 ;;; fna, sto, and aln

@@ -129,6 +129,20 @@
      (or (getenv "GAISR_DEFAULT_GENOME_DIR")
          "/data2/BioData/GenomeSeqs/RefSeq58"))
 
+(defn split-join-fasta-file
+  [in-file out-dir
+   & {:keys [base pat] :or {base default-genome-fasta-dir pat #"^gi"}}]
+  (doseq [[gi sq] (->> in-file io/read-lines
+                       (partition-by #(re-find pat %))
+                       (partition-all 2)
+                       (map (fn[[[nm] sbits]] [nm (apply str sbits)])))]
+    (let [nm (->> gi (str/split #"\|") (drop 3) first
+                  (str/split #"\.") first)]
+      (when (re-find #"^NC_" nm)
+        (io/with-out-writer (fs/join base (str nm ".fna"))
+          (println gi)
+          (println sq))))))
+
 (defn split-join-ncbi-fasta-file
   "Split a fasta file IN-FILE into the individual sequences and
    unblock the sequence if blocked.  The resulting individual [nm sq]
@@ -220,6 +234,52 @@
         (doseq [sl seq-lines]
           (println sl)))
       alnout)))
+
+
+
+
+;;; Cool stuff from Shermin, but requires much more refactoring of
+;;; various other things of his to make it all work. See his fold-ops.
+(defn print-sto
+  "takes sequence lines and a structure line and writes it into a sto
+  format file. the seq-lines needs to be a collection of [name
+  sequence] pairs. structure is a string. Simply prints out to the
+  repl."
+
+  [seq-lines structure]
+  (println "# STOCKHOLM 1.0\n")
+  (doseq [sq seq-lines]
+    (let [[nm sq] (if (vector? sq)
+                    sq
+                    (str/split #"\s+" sq))]
+      (cl-format true "~A~40T~A~%" nm (str/replace-re #"\-" "." sq))))
+  (cl-format true "~A~40T~A~%" "#=GC SS_cons" structure)
+  (println "//"))
+
+#_(defn aln->sto
+  "takes an alignment in Clustal W format and produces a sto file by
+   using RNAalifold to determine the structure and then making it into
+   a sto file adding header and a consensus line"
+
+  [in-aln out-sto & {:keys [fold-alg st]
+                     :or {fold-alg "RNAalifold"}}]
+  (cond
+   (identity st) ;structure provided
+   (let [sq (read-seqs in-aln :type "aln")]
+     (io/with-out-writer out-sto
+       (print-sto sq st))
+     out-sto)
+
+   (= fold-alg "RNAalifold") ;structure from RNAalifold
+   (let [st (fold-aln in-aln)
+         sq (read-seqs in-aln :type "aln")]
+     (io/with-out-writer out-sto
+       (print-sto sq st))
+     out-sto) ;return out sto filename
+
+   ;;else use cmfinder
+   #_(shell/sh "perl" "/home/kitia/bin/gaisr/src/mod_cmfinder.pl" in-aln out-sto)))
+
 
 
 ;;; Forward declarations...
@@ -320,7 +380,7 @@
   "
   [entry & {:keys [ldelta rdelta] :or {ldelta 0 rdelta 0}}]
   (let [[name range] (str/split #"( |/|:)+" 2 entry)
-        name (re-find #"[A-Z]+_[A-Za-z0-9]+" name)
+        name (re-find #"[A-Za-z0-9]+_[A-Za-z0-9_]+" name)
         [range strand] (if range (str/split #"/" range) [nil nil])
         [s e st] (if (not range)
                    [1 Long/MAX_VALUE "1"]
@@ -728,16 +788,16 @@
    gma file format file.
   "
   [filespec & {:keys [info type] :or {info :data type (fs/ftype filespec)}}]
-  (let [f   (seqline-info-mapper type info)
-        ;;sqs (str/split-lines (slurp filespec)) ; <-- NOT LAZY!!
-        sqs (filter #(let [l (str/replace-re #"^\s+" "" %)]
-                       (and (not= l "") (not (.startsWith l "#"))))
-                    (io/read-lines filespec))
-        sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
-        sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
-        sqs (if (in type ["fna" "fa" "hitfna"]) (partition 2 sqs) sqs)
-        sqs (if (= type "sto") (take-while #(re-find #"^[A-Z]" %) sqs) sqs)]
-    (map f sqs)))
+  (when (not (fs/empty? filespec))
+    (let [f   (seqline-info-mapper type info)
+          sqs (filter #(let [l (str/replace-re #"^\s+" "" %)]
+                         (and (not= l "") (not (.startsWith l "#"))))
+                      (io/read-lines filespec))
+          sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
+          sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
+          sqs (if (in type ["fna" "fa" "hitfna"]) (partition 2 sqs) sqs)
+          sqs (if (= type "sto") (take-while #(re-find #"^[A-Z]" %) sqs) sqs)]
+      (map f sqs))))
 
 
 (defn read-aln-seqs

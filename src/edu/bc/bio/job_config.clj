@@ -88,6 +88,10 @@
   (let [[d v] (str/split #"\s*(:| )\s*" l)]
     (assoc m :sccs (conj (get m :sccs []) [(keyword d) v]))))
 
+(defn process-gen-sto-subline [m l]
+  (let [[d v] (str/split #"\s*(:| )\s*" l)]
+    (assoc m :gen-stos (conj (get m :gen-stos []) [(keyword d) v]))))
+
 (defn process-directive-options [m d l]
   (let [args (->> l (str/split #"\s*:\s*") second)
         args (if (not args)
@@ -187,12 +191,16 @@
          #"^SCCS\s*:"
          (directive (process-directive-options m :sccs l) :sccs)
 
+         #"Gen-Stos\s*:"
+         (directive m :gen-stos)
+
          (case (m :directive)
                :blast (process-fna-files m l)
                :cmbuild (process-sto-files m l)
                :calibrate (process-cm-files m l)
                :cmsearch (process-hit-files m l)
                :gen-csvs m
-               :sccs (process-sccs-subline m l))))
+               :sccs (process-sccs-subline m l)
+               :gen-stos (process-gen-sto-subline m l))))
      {} lseq)))
 

@@ -696,7 +696,34 @@
       (cmsearch-out-csv x :spread spread))))
 
 
-
+(defn aggregate-csvs
+  "Aggregate the cmsearch.csv output files in director
+   DIR. Aggregation works on a per sto basis: if dir has the results
+   of n-stos in it, there will be n-aggregated csvs.  Aggregation
+   drops all empty csvs and takes all non empty csvs per sto, and
+   combines those results into one `sto-name`.aggregate.cmsearch.csv.
+  "
+  [dir]
+  (let [nonempty (->> dir (#(fs/directory-files % "cmsearch.csv"))
+                      (filter #(> (-> % get-csv-entry-info count) 0))
+                      sort)
+        fsre (re-pattern fs/separator)
+        hit-groups (partition-by
+                    (fn[f]
+                      (->> f (str/split fsre) last
+                           (str/split #"\.") first))
+                    nonempty)]
+    (doseq [g hit-groups]
+      (let [header (->> g first io/read-lines first)
+            outfile (->> header csv/parse-csv first last
+                         (str/split fsre) last
+                         (#(str % ".aggregate.cmsearch.csv"))
+                         (fs/join dir))]
+        (io/with-out-writer outfile
+          (println header)
+          (doseq [f g]
+            (doseq [l (drop 1 (io/read-lines f))]
+              (println l))))))))
 
 ;;; ----------------------------------------------------------------------
 ;;;
@@ -932,17 +959,34 @@
    ensures various #GF commentary lines are preserved and places a
    marker in the output indicating start of new aligned sequences.
   "
-  [isto cm ent]
-  (let [fna (entry-file->fasta-file ent :names-only true)
-        oldext (->> isto (re-find #"[0-9]+([A-Z]|)\.sto$") first)
-        nxtver (->> oldext (re-find #"[0-9]+") (Integer.) inc (str))
+  [isto cm ent & [ctxsz]]
+  (let [oldver (->> isto (re-find #"[0-9]+([A-Z]|)\.sto$")
+                    first (re-find #"[0-9]+"))
+        nxtver (->> oldver Integer. inc str)
         osto (str/replace-re #"[0-9]+([A-Z]|)\.sto" (str nxtver ".sto") isto)
+        added (-> ent (read-seqs :info :name) count)
         gc-lines (first (join-sto-fasta-lines isto ""))
-        _ (cmalign cm fna osto :opts ["--withali" isto "-q" "-1"])
+
+        _ (if (fs/empty? ent)
+            ;; Nothing new for this run
+            (fs/copy isto osto)
+            ;; Else, full blown foldin old with new realign
+            (let [fna (entry-file->fasta-file ent :names-only true)]
+              (cmalign cm fna osto
+                       :opts [(if (infernal-2+?) "--mapali" "--withali")
+                              isto])))
+
         [_ seq-lines cons-lines] (join-sto-fasta-lines osto "")
-        cons-lines (butlast cons-lines)]
+        cons-lines (butlast cons-lines)
+        gf-added (str "#=GF ADDED " oldver "->" nxtver " " added)
+        gf-ctxsz (if ctxsz (str "#=GF CTXSZ " ctxsz) nil)]
+
     (io/with-out-writer osto
-      (doseq [gcl gc-lines] (println gcl))
+      (doseq [gcl (take 2 gc-lines)] (println gcl)) ; Stockholm & origin
+      (println)
+      (when gf-ctxsz (println gf-ctxsz)) ; ctx size gf line
+      (println gf-added) ; Num sqs added this time
+      (doseq [gcl (drop 2 gc-lines)] (println gcl)) ; remainders
       (println)
       (doseq [[nm [_ sq]] seq-lines] (cl-format true "~A~40T~A~%" nm sq))
       (doseq [[nm [_ sq]] cons-lines] (cl-format true "~A~40T~A~%" nm sq))
@@ -969,7 +1013,8 @@
                  (seq (fs/directory-files stodir "sto")))
         cms  (or (seq (config :calibrates))
                  (seq (fs/directory-files cmdir "cm")))
-        csvdir (config :gen-csvs)]
+        csvdir (config :gen-csvs)
+        ctxsz (atom {})]
 
     (when (and (config :check-sto) (config :cmbuild))
       (chk-stos stos))
@@ -1007,23 +1052,52 @@
               (let [fname (fs/basename csv)]
                 (fs/rename csv (fs/join csvdir fname))))))))
 
+    ;; Sequence Conservation, Context, Size filtering.  Take cmsearch
+    ;; results and automatically filter into pos and neg sets
     (when-let [sccs (config :sccs)]
       (let [opts (into {} sccs)
             stos (opts :stos stos)
+            stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
             csv-dir (opts :csv-dir csvdir)
-            out-dir (opts :out-dir csv-dir)]
+            out-dir (opts :out-dir csv-dir)
+            chart-dir (fs/join stodir "Charts")]
+        (when (not (fs/exists? chart-dir)) (fs/mkdir chart-dir))
         (doseq [sto stos]
-          (let [sto (fs/basename sto)
-                cmscsv (first (fs/glob (str csv-dir "/*" sto "*.cmsearch.csv")))
-                run (->> sto (re-find #"[0-9]+([A-Z]|)\.sto$") first
-                         (re-find #"[0-9]+") Integer. inc)]
+          (let [sb (fs/basename sto)
+                cmscsv (first (fs/glob (str csv-dir "/*" sb "*.cmsearch.csv")))
+                run (->> sb (re-find #"[0-9]+([A-Z]|)\.sto$") first
+                         (re-find #"[0-9]+") Integer. inc)
+                [csz gfcsz-found] (hit-context-delta sto :plot chart-dir)]
+            (when (not gfcsz-found) ; If gen-stos runs and need to save ctxsz
+              (swap! ctxsz #(assoc % sb csz)))
             (compute-candidate-sets
              sto cmscsv
-             run (hit-context-delta sto)
+             run csz
              :refn jensen-shannon
              :xlate +RY-XLATE+ :alpha ["R" "Y"]
              :crecut 0.01 :limit 19
-             :plot-dists false)))))
+             :plot-dists chart-dir)))))
+
+    ;; Take pos SCCS sets, plus the input stos (and corresponding cms)
+    ;; and generate the next stage stos
+    (when-let [gen-stos (config :gen-stos)]
+      (let [opts (into {} gen-stos)
+            stos (opts :stos stos)
+            stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
+            sccs (config :sccs)
+            sccs-dir (some #(when (= (first %) :out-dir) (second %)) sccs)
+            sccs-dir (opts :sccs-dir (or sccs-dir csvdir))
+            out-dir (opts :out-dir (fs/dirname (first stos)))]
+        (doseq [sto stos]
+          (let [sb (fs/basename sto)
+                csz (get (deref ctxsz) sb)
+                cm (->> (str "*" sb "*.cm")
+                        (fs/join cmdir)
+                        fs/glob first)
+                ent (->> (str "*" sb "*-final.ent")
+                         (fs/join sccs-dir)
+                         fs/glob first)]
+            (next-sto sto cm ent csz)))))
 
     :good))
 

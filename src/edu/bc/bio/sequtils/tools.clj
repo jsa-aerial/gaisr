@@ -943,16 +943,16 @@
   (let [opts (if (string? opts)
                (str "-E " eval " " opts)
                (->> opts (cons eval) (cons "-E")))
-        cmsearchcmd (mk-infernal-cmd "cmsearch" opts)
         cmfile (fs/fullpath cmfile)
         dbfile (fs/fullpath fna-file)
         outfile (fs/fullpath outfile)
-        mpirun "mpirun"
-        mpiargs `["-np" ~(str par) ~@cmsearchcmd ~cmfile ~dbfile]]
+        cmsearchcmd (conj (mk-infernal-cmd "cmsearch" opts)
+                          cmfile dbfile)
+        mpiargs `["-np" ~(str par) ~@cmsearchcmd]]
     (io/with-out-writer outfile
       (print (if (infernal-2+?)
-               (apply runx (conj cmsearchcmd cmfile dbfile))
-               (runx mpirun mpiargs))))
+               (apply runx cmsearchcmd)
+               (runx "mpirun" mpiargs))))
     outfile))
 
 
@@ -968,20 +968,21 @@
    through FFP and/or Scribl process yielding a new set of candidate
    targets that have been placed in seqfile.
   "
-  [cm seqfile outfile
-   & {:keys [opts par] :or {opts ["-q" "-1"] par 3}}]
-  (let [infernal-path (get-tool-path :infernal)
-        cmaligncmd (str infernal-path "cmalign")
+  [cm seqfile outfile & {:keys [opts par] :or {par 3}}]
+  (let [vopts (if (infernal-2+?) ["--cpu" "3" "--noprob"] ["--mpi" "-q" "-1"])
+        opts (if (string? opts)
+               (str/join " " (conj vopts opts))
+               (concat vopts opts))
         cmfile (fs/fullpath cm)
         seqfile (fs/fullpath seqfile)
         outfile (fs/fullpath outfile)
-        mpirun "mpirun"
-        cmdargs (conj (vec (concat ["-np" (str par)
-                                    cmaligncmd "--mpi" "-o" outfile]
-                                   opts))
-                      cmfile seqfile)]
+        cmaligncmd (conj (mk-infernal-cmd "cmalign" opts)
+                         "-o" outfile cmfile seqfile)
+        mpiargs `["-np" ~(str par) ~@cmaligncmd]]
+
     (if (fs/empty? seqfile)
       (raise :type :empty-seq-file :file seqfile)
-      (do (assert-tools-exist [cmaligncmd])
-          (runx mpirun cmdargs)))
+      (if (infernal-2+?)
+        (apply runx (conj cmaligncmd :> "/dev/null"))
+        (runx "mpirun" mpiargs)))
     outfile))

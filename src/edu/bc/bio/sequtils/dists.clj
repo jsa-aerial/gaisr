@@ -534,19 +534,37 @@
                      (count sq) nm])
              (range 3 (inc limit))))))
 
+
+(defn render-chart
+  ([location xs ys xlabel ylabel title & {:keys [series-label legend]}]
+     (let [chart (if (or series-label legend)
+                   (incanter.charts/scatter-plot
+                    xs ys
+                    :x-label xlabel :y-label ylabel :title title
+                    :series-label series-label :legend legend)
+                   (incanter.charts/scatter-plot
+                    xs ys
+                    :x-label xlabel :y-label ylabel :title title))]
+       (render-chart chart location)))
+  ([chart location]
+     (if (= location :display)
+       (incanter.core/view chart)
+       (incanter.core/save chart location))))
+
 (defn plot-cres
-  [cre-samples]
+  [cre-samples & {:keys [file]}]
   (doseq [cres cre-samples]
     (let [ks (map first cres)
           cnt (third (first cres))
           cres (map second cres)]
-      (incanter.core/view
-       (incanter.charts/scatter-plot
-        ks cres
-        :x-label "feature length"
-        :y-label "Commulative Relative Entropy"
-        :title (str "CRE(l, F/F^), len: " cnt
-                    " Fmax: " (round (ln cnt))))))))
+      (render-chart
+       (if file file :display)
+       ks cres
+       "feature length"
+       "Commulative Relative Entropy"
+       (str "CRE(l, F/F^), len: " cnt
+            " Fmax: " (round (ln cnt)))))))
+
 
 (defn res-word-size
   ""
@@ -628,38 +646,43 @@
                               ;; many bad, since nearly all are bad
                               (if (and (<= re Mre) (<= (Fx re) cdf-cut)) re v)))
                           0.0 res)
+        ;;_ (print :re-cutoff1 re-cutoff :Fres (first res) "/ ")
+        ;; A _single_ good score can occur an 'anomalous' number of times
+        re-cutoff (let [fres (first res)]
+                    (cond (not (zero? re-cutoff)) re-cutoff
+                          (<= fres Mre) fres
+                          :else 0.0))
+        ;;_ (print :re-cutoff2 re-cutoff "/ ")
         ;; Round to nearest thousandth
         re-cutoff (/ (round (* 1000 (+ re-cutoff 0.001))) 1000.0)]
-    #_(println re-cutoff)
+    #_(println :re-cutoff re-cutoff)
     (reduce (fn[cutpt re] (if (<= re re-cutoff) (inc cutpt) cutpt))
             0 (map second nm-res))))
 
 
-(defn plot-re-pmf [nm-res]
+(defn plot-re-pmf
+  [nm-res  & {:keys [file]}]
   (let [pmf-info (map (fn[[re p v]] [re (count v)]) (nm-res-dist nm-res))
         pmf-dist (into {} pmf-info)
-        xs (sort (map first pmf-info))
-        chart (incanter.charts/scatter-plot
-               xs (map #(get pmf-dist % 0.0) xs)
-               :x-label "RE value"
-               :y-label "Sq/RE count"
-               :title "Sq RE distribution"
-               :series-label "sq/hbrid JSD PMF"
-               :legend true)]
-    (incanter.core/view chart)))
+        xs (sort (map first pmf-info))]
+    (render-chart
+     (if file file :display)
+     xs (map #(get pmf-dist % 0.0) xs)
+     "RE value" "Sq/RE count" "Sq RE distribution"
+     :series-label "sq/hbrid JSD PMF"
+     :legend true)))
 
-(defn plot-re-cdf [nm-res]
+(defn plot-re-cdf
+  [nm-res & {:keys [file]}]
   (let [Fx (nm-res-cdf nm-res)
         step 0.005
-        xs (for [i (range 200)] (* i step))
-        chart (incanter.charts/scatter-plot
-               xs (map Fx xs)
-               :x-label "JSD RE"
-               :y-label "Fre-dist(x)"
-               :title "FFP CDF plot"
-               :series-label "sq/hbrid JSD CDF"
-               :legend true)]
-    (incanter.core/view chart)))
+        xs (for [i (range 200)] (* i step))]
+    (render-chart
+     (if file file :display)
+     xs (map Fx xs)
+     "JSD RE" "Fre-dist(x)" "FFP CDF plot"
+     :series-label "sq/hbrid JSD CDF"
+     :legend true)))
 
 
 (defn select-cutpoint
@@ -731,19 +754,32 @@
       :dups (filter (fn[[k v]] (> v 1)) human-picked)]))
 
 
-(defn plot-sto-dists
-  [prot-name cnt-seqs ctx-delta res cutpt nms-stods]
+(defn plot-hit-dists
+  [prot-name cnt-seqs ctx-delta res cutpt nms-stods & {:keys [file]}]
   (let [xs (range cnt-seqs)
-        chart (incanter.charts/scatter-plot
-               xs (map second nms-stods)
-               :x-label "Sequence"
-               :y-label "Sq RE to Hybrid"
-               :title (str prot-name " Sq RE to Sto Hybrid."
-                           " Ctx Sz: " ctx-delta
-                           " Res: " res ", Cutpt: " cutpt)
-               :series-label "sq/hbrid-distance"
-               :legend true)]
-    (incanter.core/view chart)))
+        out (if file (fs/join file (str prot-name "-hitonly.png")) :display)]
+    (render-chart
+     out
+     xs (map second nms-stods)
+     "Sequence" "Sq RE to Hybrid"
+     (str prot-name " Hits only to Hybrid."
+          " Res: " res ", Cutpt: " cutpt)
+     :series-label "sq/hbrid-distance"
+     :legend true)))
+
+(defn plot-cand-dists
+  [prot-name cnt-seqs ctx-delta res cutpt nms-stods & {:keys [file]}]
+  (let [xs (range cnt-seqs)
+        out (if file (fs/join file (str prot-name "-candidates.png")) :display)]
+    (render-chart
+     out
+     xs (map second nms-stods)
+     "Sequence" "Sq RE to Hybrid"
+     (str prot-name " Candidates to Hybrid."
+          " Ctx Sz: " ctx-delta
+          " Res: " res ", Cutpt: " cutpt)
+     :series-label "sq/hbrid-distance"
+     :legend true)))
 
 
 (defn compute-candidate-info
@@ -766,7 +802,10 @@
         cutpt (select-cutpoint nm-re-sq :Dy Dy)
         [good bad] (get-good-candidates nm-re-sq cutpt)]
     (when (and plot-cre cres) (plot-cres cres))
-    (when plot-dists (plot-sto-dists pnm sz delta wz cutpt nm-re-sq))
+    (when plot-dists
+      (if (zero? delta)
+        (plot-hit-dists pnm sz delta wz cutpt nm-re-sq :file plot-dists)
+        (plot-cand-dists pnm sz delta wz cutpt nm-re-sq :file plot-dists)))
     [good bad cutpt nm-re-sq]))
 
 
@@ -837,28 +876,48 @@
         final (str/replace-re suffix-re "-final.ent" cf)]
     [hitonly final]))
 
+
+(defn get-saved-ctx-size
+  "If we have previously calculated the context size for sequences in
+   STO, use that directly.  Previously calculated context sizes are
+   recorded in sto on a #=GF line with subtype CTXSZ, followed by the
+   size (an integer)
+  "
+  [sto]
+  (let [l (->> sto io/read-lines
+               (drop-until #(re-find #"^(#=GF\s+CTXSZ\s+[0-9]+|NC)" %))
+               first (re-find #"CTXSZ\s+([0-9]+|)") second)]
+    (if l (Integer. l) nil)))
+
 (defn hit-context-delta
   [sto & {:keys [plot mindelta] :or {mindelta 200}}]
-  (let [pts (xfold (fn[i]
-                     (->> (compute-candidate-info
-                           sto sto
-                           (+ mindelta (* i 20)) 1
-                           :refn jensen-shannon
-                           ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
-                           :crecut 0.01 :limit 19
-                           :plot-dists false)
-                          first (map second) mean))
-                   (range 81))
-        ms (map #(min %1 %2) pts (drop 1 pts))
-        chart (incanter.charts/scatter-plot
-               (map #(+ mindelta (* 20 %)) (range (count ms))) ms
-               :x-label "Size X 20"
-               :y-label "RE/JSD"
-               :title "RE to subseq"
-               :series-label "Sub Seq Size"
-               :legend true)]
-    (when plot (incanter.core/view chart))
-    (+ mindelta (* 20 (first (pos (apply min pts) pts))))))
+  (let [gfcsz (get-saved-ctx-size sto)]
+    (if gfcsz
+      [gfcsz true]
+      (let [pts (xfold (fn[i]
+                         (->> (compute-candidate-info
+                               sto sto
+                               (+ mindelta (* i 20)) 1
+                               :refn jensen-shannon
+                               ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
+                               :crecut 0.01 :limit 19
+                               :plot-dists false)
+                              first (map second) mean))
+                       (range 81))
+            ms (map #(min %1 %2) pts (drop 1 pts))
+            out (if plot
+                  (->> sto fs/basename
+                       (#(fs/replace-type % "-ctxsz.png"))
+                       (fs/join plot))
+                  :display)]
+        (when plot
+          (render-chart
+           out
+           (map #(+ mindelta (* 20 %)) (range (count ms))) ms
+           "Size X 20" "RE/JSD" "RE to subseq"
+           :series-label "Sub Seq Size"
+           :legend true))
+        [(+ mindelta (* 20 (first (pos (apply min pts) pts)))) false]))))
 
 (defn hit-context-delta-db
   ""

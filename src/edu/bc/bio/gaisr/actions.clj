@@ -228,6 +228,14 @@
      (list stktrc))))
 
 
+(defn remote-busy-check [upload-file]
+  (let [use-type (->> upload-file io/read-lines first)]
+    (remote-try
+     {:body (json/json-str
+             {:info ["done" "good" (cpu-use :info (keyword use-type))]
+              :stat "success"})})))
+
+
 (defn remote-check-sto
   "Run check-sto on uploaded file upload-file."
   [upload-file]
@@ -386,20 +394,20 @@
   [user filename upload-file]
   (remote-try
    (let [resultfn
-          (fn[[file res]]
-            (if (map? res)
-              (cons :error (cons file (get-remote-cemap res)))
-              (cons :good (map #(if (fs/exists? %) (slurp %) []) res))))
-          jobid (add *jobs* user
-                     `[(print-str ~filename)
-                       (tools/correct-sto-coordinates ~upload-file)]
-                     resultfn)]
-      (start *jobs* jobid)
-      {:body (json/json-str
-              {:info [:started :started
-                      (str filename " coordinate correction started, jobid ")
-                      (str jobid)]
-               :stat "success"})})))
+         (fn[[file res]]
+           (if (map? res)
+             (cons :error (cons file (get-remote-cemap res)))
+             (cons :good (map #(if (fs/exists? %) (slurp %) []) res))))
+         jobid (add *jobs* user
+                    `[(print-str ~filename)
+                      (tools/correct-sto-coordinates ~upload-file)]
+                    resultfn)]
+     (start *jobs* jobid)
+     {:body (json/json-str
+             {:info [:started :started
+                     (str filename " coordinate correction started, jobid ")
+                     (str jobid)]
+              :stat "success"})})))
 
 
 (defn remote-embl-to-nc
@@ -413,7 +421,7 @@
          (fn[[file res]]
            (if (map? res)
              (cons :error (cons file (get-remote-cemap res)))
-             (list :good (if (fs/exists? res) (slurp res) []))))
+             (cons :good (map #(if (fs/exists? %) (slurp %) []) res))))
          jobid (add *jobs* user
                     `[(print-str ~filename)
                       (tools/embl-to-nc ~upload-file)]
@@ -426,14 +434,14 @@
               :stat "success"})})))
 
 
-(defn remote-entry-file-intersect
+(defn remote-entry-file-setop
   "Remote entry file intersection.  If with-seqs is true return
    entries with their sequences.  This option requires all files to be
    of the same type.  fs is a vector of file paths of the
    uploaded-files after renaming for corresponding originating file
    extensions.
   "
-  [fs with-seqs]
+  [op with-seqs fs]
   (remote-try
    (when with-seqs
      (let [x (->> fs
@@ -441,9 +449,9 @@
                   (#(= (count %) 1)))]
        (when (not x)
          (raise :type :not-same-ftype :msg "Not all files have same type"))))
-   (let [res (if with-seqs
-               (apply tools/entry-file-intersect-with-seqs fs)
-               (apply tools/entry-file-intersect false fs))]
+   (let [res (apply tools/entry-file-setop
+                    (keyword op) with-seqs
+                    (if with-seqs fs (cons false fs)))]
      {:body (json/json-str
              {:info [:NA :NA (vec res)]
               :stat "success"})})))
@@ -550,6 +558,9 @@
 
      :else
      (cond
+      (= upload-type "busy-check")
+      (remote-busy-check upload-file)
+
       (= upload-type "hitfile")
       (do (io/copy upload-file (io/file-str local-out))
           {:body (json/json-str (process-hit-file local-out))})
@@ -576,16 +587,17 @@
         (fs/rename upload-path tmp-file)
         (remote-embl-to-nc user filename tmp-file))
 
-      (= upload-type "entry-file-intersect")
-      (remote-entry-file-intersect
+      (= upload-type "entry-file-set")
+      (remote-entry-file-setop
+       (read-string (first (args :misc)))
+       (read-string (second (args :misc)))
        (->> upload-file
             (map #(.getPath %))
             (map #(let [ft (fs/ftype %1)
                         nf (fs/replace-type %2 (str "." ft))]
                     (fs/rename %2 nf)
                     nf)
-                 filename))
-       (read-string (first (args :misc))))
+                 filename)))
 
       (= upload-type "rna-taxon-info")
       (remote-rna-taxon-info upload-file)

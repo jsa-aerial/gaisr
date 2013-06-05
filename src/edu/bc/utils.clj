@@ -142,9 +142,9 @@
   "
   [& {:keys [info] :or {info :idle}}]
   (let [idle (->> (runx "top" "-n" "2" "-b" "-d" "0.01" "-p" "1")
-                  (str/split #"\n") (filter #(re-find #"^Cpu" %))
-                  last (str/split #",\s+") (filter #(re-find #"%id" %))
-                  first (str/split #"%") first Double.)
+		  (str/split #"\n") (filter #(re-find #"^Cpu" %))
+		  last (str/split #"\s*,\s*") (filter #(re-find #"%id" %))
+		  first (str/split #"\s*%\s*") first Double.)
         use (- 100.0 idle)]
     (case info
           :idle idle

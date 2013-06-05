@@ -606,6 +606,9 @@
          :good :bad)))
    hit-parts))
 
+
+#_(def dbg-dups (atom nil))
+
 (defn remove-dups
   "Hits are relative in cmsearch out (sto file).  The original hit
    start/end are relative to the relative sequence in the hit
@@ -635,6 +638,7 @@
    remains.
   "
   [hit-parts spread stofile]
+  #_(swap! dbg-dups (fn[_] hit-parts))
 
   (let [sto-map (reduce (fn[M e]
                           (let [[nm coord] (->> e entry-parts (take 2))]
@@ -642,11 +646,13 @@
                         {} (read-seqs stofile :info :name))
         in-spread? (fn [x y] (<= (abs (- x y)) spread))
         dup? (fn[m [nm abst abend :as k]]
-               (let [[s e :as coord] (m k)
-                     [stost stoend :as sto-coord] (sto-map nm)]
-                 (or (and coord
-                          (in-spread? s abst)
-                          (in-spread? e abend))
+               (let [[stost stoend :as sto-coord] (sto-map nm)]
+                 (or (reduce (fn[tf [s e]]
+                               (if tf
+                                 tf
+                                 (and (in-spread? s abst)
+                                      (in-spread? e abend))))
+                             false (m nm))
                      (and sto-coord
                           (let [[abst abend]
                                 (if (< abend abst) [abend abst] [abst abend])]
@@ -659,7 +665,7 @@
                      k [nm abst abend]]
                  (if (dup? m k)
                    [m s]
-                   [(assoc m k [abst abend]) (conj s v)])))
+                   [(assoc m nm (conj (m nm []) [abst abend])) (conj s v)])))
              [{} []] hit-parts))))
 
 

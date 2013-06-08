@@ -407,7 +407,11 @@
                [s e sd] (if (> s e) [e s -1] [s e 1])
                entry (str nc-nm "/" s "-" e "/" sd)]
            [(assoc m embl-entry (conj (get m embl-entry []) entry)) bm])
-         [m (assoc bm embl-entry :bad)])))
+
+         ;; else its 'bad'.  NOTE, we check if it is already found as
+         ;; a good example in the blast output, as it can occur
+         ;; multiple times - possible 1 or more good and several 'bad'
+         [m (if (contains? m embl-entry) bm (assoc bm embl-entry :bad))])))
    [{} {}] (butlast (csv/parse-csv (slurp blast-output-file)))))
 
 

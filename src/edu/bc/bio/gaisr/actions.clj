@@ -53,7 +53,7 @@
         [edu.bc.bio.gaisr.db-actions
          :only [seq-query feature-query names->tax]]
         [edu.bc.bio.gaisr.new-rnas
-         :only [rna-taxon-info sorted-bacterial-taxons-of-note]]
+         :only [load-new-rna rna-taxon-info sorted-bacterial-taxons-of-note]]
         [edu.bc.bio.gaisr.pipeline
          :only [run-config-job-checked]]
         [edu.bc.bio.gaisr.post-db-csv
@@ -457,6 +457,15 @@
               :stat "success"})})))
 
 
+(defn remote-load-new-rna
+  [uploaded-sto-file]
+  (remote-try
+   (let [res (load-new-rna uploaded-sto-file)]
+     {:body (json/json-str
+             {:info [:NA :NA res]
+              :stat "success"})})))
+
+
 (defn remote-rna-taxon-info
   "Perform a new rna taxon grouping information analysis on the rnas
    and taxons given in upload-file.  upload-file format is a list of
@@ -599,6 +608,13 @@
                     nf)
                  filename)))
 
+      (= upload-type "load-new-rna")
+      (let [upload-path (.getPath upload-file)
+            basedir (fs/dirname upload-path)
+	    stofile (fs/join basedir filename)]
+	(fs/rename upload-path stofile)
+        (remote-load-new-rna stofile))
+
       (= upload-type "rna-taxon-info")
       (remote-rna-taxon-info upload-file)
 
@@ -641,7 +657,7 @@
 
       :else
       {:body (json/json-str
-              {:error "'Dunno yet' means don't know yet! :-)"})}))))
+              {:error (str " Unrecognized upload type: " upload-type)})}))))
 
 
 

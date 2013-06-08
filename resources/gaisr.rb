@@ -78,21 +78,23 @@ if (@cmd == "-h" or @cmd == "--help")
   puts "\nUsage:\n"
   puts "gaisr subcmd args"
   puts ""
+  puts "args is the set of arguments appropriate to subcmd (including -h)"
+  puts ""
   puts "subcmd is one of\n\n"
   puts " * server {<server-name> | 'any' | 'show' | 'activity' | 'available'}"
   puts " * list {['active' | 'done']}"
+  puts " (The following subcmds may be prefaced by a server name)\n"
   puts " * check-sto <stofile>+"
   puts " * get-seqs [sto|aln|fna|ent] {[+|-]prefix [+|-]suffix}"
-  puts " * correct-sto-coordinates stofile"
+  puts " * correct-sto-coordinates stofile+"
   puts " * embl-to-nc embl-file"
   puts " * entry-file-set op {'with-seqs'} file1 file2 & files"
   puts " * run-config config-file"
   puts " * check-job {all | jobid+}"
+  puts " * load-new-rna <stofile>+"
   puts " * rna-taxon-info outfile [rnas | -f rna-file] [taxons | -f taxon-file]"
   puts " * name-taxonomy"
   puts " * sto-csv-matchup"
-  puts ""
-  puts "args is the set of arguments appropriate to subcmd (including -h)"
   puts ""
   puts "Reports the results of subcmd's execution.  Typically 'success'"
   puts "or if failure, the exception text of failure"
@@ -112,6 +114,7 @@ elsif (not ['server',
             'entry-file-set',
             'run-config',
             'check-job',
+            'load-new-rna',
             'rna-taxon-info'].include?(@cmd))
   puts "Unknown subcmd #{@cmd}"
   puts "use gaisr -h, for useage"
@@ -208,7 +211,7 @@ end
 def report_result (header, result)
   res_array, result = get_result(result)
   if (!good_result?(res_array))
-    puts "Error - ", res_array[1..res_array.len]
+    puts "Error - #{res_array[1..res_array.length]}, #{result}"
   else
     puts ""
     if (header != "")
@@ -351,10 +354,11 @@ def check_job (args)
   if test_file(jobidfile, "No job with id #{jobid} found")
     data = IO.readlines(jobidfile).map do |x| x.chomp end
     jobid = data[0]
-    tempfile = File.join(Dir.tmpdir, jobid)
-    tempFile = File.new(tempfile, "w")
-    tempFile.puts(jobid)
-    tempFile.close
+    tempfile = to_tmpfile(jobid, jobid)
+    #tempfile = File.join(Dir.tmpdir, jobid)
+    #tempFile = File.new(tempfile, "w")
+    #tempFile.puts(jobid)
+    #tempFile.close
     result = remote_cmd(@cmd, tempfile)
     File.delete(tempfile)
     ## Make sure we pass in the actual jobidfile (not default last-job.txt!!)
@@ -547,6 +551,29 @@ def entry_file_set(args)
 end
 
 
+def load_new_rna (file)
+  result = remote_cmd(@cmd, file)
+  res_arr, res = get_result(result)
+  if (!good_result?(res_arr))
+    report_result("", result)
+  else
+    added, xrefcnt = res_arr.last[0]
+    puts "For #{file},\n"
+    if (added.length > 0)
+      puts "Added new RNAs:"
+      added.each do |x| puts "  #{x}" end
+      puts "With #{xrefcnt} new genome xrefs"
+    else
+      puts "No new RNAs added"
+    end
+  end
+end
+
+def load_new_rnas (args)
+  args.each do |f| load_new_rna(f) end
+end
+
+
 def rna_taxon_info (args)
   i = 0
   outname = args[i]
@@ -600,19 +627,54 @@ end
 def display_help (cmd)
   puts ""
   case cmd
+  when "server"
+    puts "server {<name> | 'any' | 'show' | 'activity' | 'available'}"
+    puts ""
+    puts "The server cmd enables you to specify a default server (by NAME),"
+    puts "SHOW the currently set default server, show the ACTIVITY of the"
+    puts "available servers (as percent idle across all cores), and list the"
+    puts "set of AVAILABLE servers."
+    puts ""
+    puts "A default server setting will implicitly send all subsequent command"
+    puts "requests to that server (until explicitly changed).  For any single"
+    puts "request, you can explicitly specify a different server than the"
+    puts "default, but prefacing the subcmd with an available server name."
+    puts "See below for some examples of these uses.  If you do not set a"
+    puts "default server and do not specifiy an explicit server for a command,"
+    puts "an attempt is made to pick a server, but this may yield a 'no sever'"
+    puts "error for the command.  Setting the default server to 'any' will"
+    puts "result in the selection of a server automatically per command."
+    puts ""
+    puts "Examples:"
+    puts ""
+    puts "gaisr server roz"
+    puts "  will set your default server to roz."
+    puts ""
+    puts "gaisr correct-sto-coordinates S6-auto-3M.sto"
+    puts "  Given previous example, this will run the corrector on roz"
+    puts ""
+    puts "gaisr babs run-config S6-auto-10.cfg"
+    puts "  Will run the job on babs irrespective of your default server"
+
   when "list"
+    puts "list {['active' | 'done']}"
+    puts ""
     puts "Lists your current ('active') jobs or your set of completed jobs."
     puts "With 'active' given, lists active/current running jobs."
     puts "With 'done' given, lists the completed jobs."
     puts "Default, when no argument is given, lists active jobs."
 
   when "check-sto"
+    puts "check-sto <stofile>+"
+    puts ""
     puts "Runs the gaisr sto file integrity checker.  Checks for a legally"
     puts "constructed and formatted file.  If the file is 'good', returns"
     puts "that as a message.  If there are problems, the problems are listed"
     puts "along with the genome names (N numbers) of the offending lines."
 
   when "get-seqs"
+    puts "get-seqs [sto|aln|fna|ent] {[+|-]prefix [+|-]suffix}"
+    puts ""
     puts "Takes a sto, aln, fasta, or 'entry' file and optional integers"
     puts "indicating how much to add or subtract to the start and end of"
     puts "sequences. Negative values always trim while positive values always"
@@ -648,6 +710,8 @@ def display_help (cmd)
     puts "  to compute the new coordinates that match the trimmed sequence."
 
   when "correct-sto-coordinates"
+    puts "correct-sto-coordinates stofile+"
+    puts ""
     puts "Takes a sto file, and for each entry/sequence pair, determines if the"
     puts "degapped sequence occurs _exactly_ in the genome given in the entry."
     puts "An entry is as defined for get-seqs.  Because correct-sto-coordinates"
@@ -676,12 +740,19 @@ def display_help (cmd)
     puts "original renamed to old."
 
   when "embl-to-nc"
+    puts "embl-to-nc embl-file"
+    puts ""
     puts "Takes an input file with EMBL entry names and converts it to one"
     puts "with NCBI NC names.  Maintains sequence information.  EMBL-FILE is"
     puts "either a sto or fna file with entries named with EMBL accensions."
     puts "The result file name is the input name with '-NC' appended.  The"
     puts "result file is a corresponding sto or fna with the same sequence"
     puts "(and alignment if sto) with NCBI NC accensions replacing EMBL names."
+    puts ""
+    puts "Additionally, as there are organisms represented in various EMBL"
+    puts "files, and some sequences which have dropped or added bases, a"
+    puts "'bad' file is also produced with the sequences that could not be"
+    puts "matched to a corresponding refseq genome."
     puts ""
     puts "Because embl-to-nc may take considerable time (many minutes), it is"
     puts "always run as a job, and so will immediately return the job id for"
@@ -706,7 +777,52 @@ def display_help (cmd)
     puts "If 'with-seqs' is not given, the output is simply an entry file (a"
     puts ".ent file) with entries listed one per line."
 
+  when "run-config"
+    puts "run-config config-file"
+    puts ""
+    puts "Takes a job configuration (job config or simply config) file and"
+    puts "submits it for running as a background job.  The config file is"
+    puts "documented with config -h, and encompasses many different tools and"
+    puts "options (such as cmbuild, cmcalibrate, cmsearch, csv-gen, et.al.)"
+    puts "These are typically quite long running (hours to even days), and"
+    puts "run-config returns immediately the job id for the job.  This can be"
+    puts "checked, and results obtained with check-job."
+
+  when "check-job"
+    puts "check-job {all | jobid+}"
+    puts ""
+    puts "Checks on a job that was submitted for running in Gaisr in the"
+    puts "background.  The job may have been explicitly submitted by run-config"
+    puts "or implicitly via another command such as correct-sto-coordinates."
+    puts "Takes either the keyword 'all' or a list of one or more jobids (as"
+    puts "returned from a job submitting command)"
+    puts ""
+    puts "For each requested job (or all current jobs if 'all' is given),"
+    puts "check-job inquires of Gaisr the current status of the job.  If it is"
+    puts "finished, it obtains the results of the job, otherwise reports the"
+    puts "current running status of the job."
+
+  when "load-new-rna"
+    puts "load-new-rna <stofile>+"
+    puts ""
+    puts "Takes the information encoded in the stofiles and uses this to load"
+    puts "new RNAs into the database.  This presumes that the stofiles adhere"
+    puts "to the requirements for representing the information for a new RNA:"
+    puts ""
+    puts "* Name must have form rna_NUM-V, where NUM is a five digit integer"
+    puts "  representing the ordinal number of the new RNA with as many '0'"
+    puts "  as needed to make NUM five digits.  V is an integer version number."
+    puts "  Example: rna_00006-3.sto"
+    puts ""
+    puts "* There are four (4) #=GF lines encoding the following:"
+    puts "  #=GF RNA <symbol name of associated protein, e.g., rpsD>"
+    puts "  #=GF Taxon <associate taxon branch NCBI Taxonomy ID>"
+    puts "  #=GF in-vivo <verified associated organism NCBI Taxonomy ID>"
+    puts "  #=GF in-vitro <verified associated organism NCBI Taxonomy ID>"
+
   when "rna-taxon-info"
+    puts "rna-taxon-info outfile [rnas | -f rna-file] [taxons | -f taxon-file]"
+    puts ""
     puts "Perform a 'new rna' taxon grouping information analysis on the given"
     puts "rnas and taxons and place resulting information in the given output"
     puts "file."
@@ -730,27 +846,6 @@ def display_help (cmd)
     puts "Output format:"
     puts "rna-name, version, taxon-name, rna cnt in taxon, total cnt, percent"
     puts "list of genomes (by NC name)"
-
-  when "run-config"
-    puts "Takes a job configuration (job config or simply config) file and"
-    puts "submits it for running as a background job.  The config file is"
-    puts "documented with config -h, and encompasses many different tools and"
-    puts "options (such as cmbuild, cmcalibrate, cmsearch, csv-gen, et.al.)"
-    puts "These are typically quite long running (hours to even days), and"
-    puts "run-config returns immediately the job id for the job.  This can be"
-    puts "checked, and results obtained with check-job."
-
-  when "check-job"
-    puts "Checks on a job that was submitted for running in Gaisr in the"
-    puts "background.  The job may have been explicitly submitted by run-config"
-    puts "or implicitly via another command such as correct-sto-coordinates."
-    puts "Takes either the keyword 'all' or a list of one or more jobids (as"
-    puts "returned from a job submitting command)"
-    puts ""
-    puts "For each requested job (or all current jobs if 'all' is given),"
-    puts "check-job inquires of Gaisr the current status of the job.  If it is"
-    puts "finished, it obtains the results of the job, otherwise reports the"
-    puts "current running status of the job."
   end
   puts ""
 end
@@ -795,6 +890,9 @@ elsif (@cmd == "embl-to-nc")
 
 elsif (@cmd == "entry-file-set")
   entry_file_set(args)
+
+elsif (@cmd == "load-new-rna")
+  load_new_rnas(args)
 
 elsif (@cmd == "rna-taxon-info")
   rna_taxon_info(args)

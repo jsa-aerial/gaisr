@@ -168,6 +168,17 @@
 ;;;   (drop-verified-rnahit-table)
 ;;;   (create-verified-rnahit-table))
 
+(defn- get-rnaname-rhid-map
+  []
+  (reduce (fn[M m]
+            (assoc M (str (m :name) "-" (m :version))
+                   (m :rnahit_id)))
+          {} (sql-query
+              "select rh.name,rh.version,rh.rnahit_id from rnahit as rh")))
+
+(def rnaname-id-map
+     (atom (get-rnaname-rhid-map)))
+
 
 (defn get-sto-files [designator]
   (cond
@@ -187,7 +198,8 @@
                   (for [gf gfs
                         :let [bits (str/split #"\s+" gf)
                               kind (->> bits second str/lower-case keyword)
-                              data (third bits)]
+                              bits (drop 2 bits)
+                              data (when (seq bits) (apply str bits))]
                         :when (in kind [:rna :taxon :in-vivo :in-vitro])]
                     [kind (cond
                            (= kind :rna) data
@@ -198,8 +210,8 @@
         taxon (infomap :taxon)
         invitros (infomap :in-vitro)
         invivos (infomap :in-vivo)]
-    (if (and (empty? invitros) (empty invivos))
-      [[rna-name version rna taxon 0 "na"]]
+    (if (and (empty? invitros) (empty? invivos))
+      [[rna-name version rna taxon nil nil]]
       (reduce (fn[v vid]
                 (conj v [rna-name version rna taxon vid "vitro"]))
               (reduce (fn[v vid]
@@ -209,7 +221,6 @@
 
 ;;;(map get-mlab-gfinfo (get-sto-files "/home/kaila/Bio/Tests/JSA/NewRNAs"))
 ;;;(map get-mlab-gfinfo (get-sto-files "/home/kaila/Bio/Tests/JSA"))
-
 
 (defn- insert-rnahits
   [values]
@@ -224,7 +235,8 @@
   (let [stos (get-sto-files stospec)]
     (insert-rnahits
      (sort-by first (set (map (fn[[n v gn ntx & tail]] [n v gn ntx])
-                              (apply concat (map get-mlab-gfinfo stos))))))))
+                              (apply concat (map get-mlab-gfinfo stos))))))
+    (swap! rnaname-id-map (fn[_] (get-rnaname-rhid-map)))))
 
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA")
@@ -233,12 +245,6 @@
 ;;;
 ;;;(update-rnahit "/home/kaila/Bio/Tests/RNA_00011-3.sto")
 
-(def rnaname-id-map
-     (reduce (fn[M m]
-               (assoc M (str (m :name) "-" (m :version))
-                      (m :rnahit_id)))
-             {} (sql-query
-                 "select rh.name,rh.version,rh.rnahit_id from rnahit as rh")))
 
 (defn- insert-verified-info
   [values]
@@ -252,9 +258,10 @@
   [stospec]
   (let [stos (get-sto-files stospec)]
     (insert-verified-info
-     (sort-by first (map (fn[[n v gn ntx vid vloc]]
-                           [(rnaname-id-map (str n "-" v)) vid vloc])
-                         (apply concat (map get-mlab-gfinfo stos)))))))
+     (sort-by first (keep (fn[[n v gn ntx vid vloc]]
+                            (when (and vid vloc)
+                              [(@rnaname-id-map (str n "-" v)) vid vloc]))
+                          (apply concat (map get-mlab-gfinfo stos)))))))
 
 ;;;(update-verified-info "/home/kaila/Bio/Tests/JSA/NewRNAs")
 ;;;(update-verified-info "/home/kaila/Bio/Tests/JSA")
@@ -276,25 +283,45 @@
         rnahit-ids (map #(->> % fs/basename
                               (str/split #"\.")
                               first str/lower-case
-                              rnaname-id-map)
+                              (get @rnaname-id-map))
                         stos)
         genome-groups (map
                        (fn[sto]
                          (->> sto (#(read-seqs % :info :name))
                               (map #(first (entry-parts %)))
-                              (map #(*name-id-map* %))))
+                              (map #(*name-id-map* %))
+                              set))
                        stos)]
-    (map insert-genome-rnahits
-         (map (fn[rnahit-id genomes]
-                (map #(do [% rnahit-id]) genomes))
-              rnahit-ids
-              genome-groups))))
+    (doall
+     (map insert-genome-rnahits
+          (map (fn[rnahit-id genomes]
+                 (map #(do [% rnahit-id]) genomes))
+               rnahit-ids
+               genome-groups)))))
 
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs/RNA_00006.sto")
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA")
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/JSA/V2/RNA_00012-2.sto")
 ;;; (update-genome-rnahit "/home/kaila/Bio/Tests/RNA_00011-3.sto")
+
+
+(defn load-new-rna
+  [stospec]
+  (let [prev-rh (set @rnaname-id-map)
+        prev-verified (->> (sql-query "select count(*) from genome_rnahit")
+                           ffirst second)]
+    (sql-update
+     (doto stospec
+       update-rnahit
+       update-verified-info
+       update-genome-rnahit))
+    [(->> prev-rh (set/difference (set @rnaname-id-map))
+          (map first)
+          sort)
+     (- (->> (sql-query "select count(*) from genome_rnahit")
+             ffirst second)
+        prev-verified)]))
 
 
 (def new-rna-genome-counts
@@ -502,7 +529,7 @@
 
 
 
-;;;  rnas ["rna_00011" "rna_00012" "rna_00013"]] ;(keys rnaname-id-map)
+;;;  rnas ["rna_00011" "rna_00012" "rna_00013"]] ;(keys @rnaname-id-map)
 ;;;
 (defn rna-taxon-info
   "For each rna in RNAS, a single, or collection of, new rna
@@ -511,7 +538,7 @@
    results in outfile.
   "
   [out-file & {:keys [rnas taxons]
-               :or {rnas (sort (keys rnaname-id-map))
+               :or {rnas (sort (keys @rnaname-id-map))
                     taxons sorted-bacterial-taxons-of-note}}]
   (io/with-out-writer out-file
     (doseq [grp (for [rna-v (ensure-vec rnas)

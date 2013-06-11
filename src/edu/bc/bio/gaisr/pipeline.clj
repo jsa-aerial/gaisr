@@ -428,11 +428,13 @@
 (defn ent-loc [ent-line]
   (if (= (str/take 3 ent-line) ">gi")
     (let [l (first (re-find #":(.|)[0-9]+-[0-9]+" ent-line))]
-      (when l (subs l (first (pos-any "0123456789" l)))))
+      (if l
+        (subs l (first (pos-any "0123456789" l)))
+        (str "1-" Long/MAX_VALUE)))
     (->> ent-line
          entry-parts
          ((fn[[nm [s e] sd]]
-            (let [[s e] (if (= sd "-1") [e s] [s e])]
+            (let [[s e] (if (= sd "-1") [e s] [s e])] ; BOGUS ***HACK!!
               (str s "-" e)))))))
 
 (defmulti
@@ -577,8 +579,8 @@
   (let [[nm loc] (str/split #":" h)
         orig-seq (hit-seq-map h)
         [s e] (if loc (vec (str/split #"-" loc)) ["1" (str (count orig-seq))])
-        s (Integer. s)
-        e (Integer. e)
+        s (Long. s)
+        e (min (Long. e) (count orig-seq))
         info (reduce
               (fn[cur nxt] ; Keep the one with best Evalue
                 (if (< (Float. (nth nxt 4)) (Float. (nth cur 4)))

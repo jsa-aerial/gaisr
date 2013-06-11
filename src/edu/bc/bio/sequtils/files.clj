@@ -174,6 +174,30 @@
             (println sq)))))))
 
 
+(defn chunk-genome-fnas
+  "Take the set of fnas in directory GENOME-FNA-DIR (presumably
+   created by split-join-ncbi-fasta-file or similar) and aggregate
+   them into a new smaller set of files, where each new file contains
+   the contents of CHUNK-SIZE input files (with the possible exception
+   of the last file having a smaller number).  This is useful for
+   creating custom data sets for search.
+  "
+  [genome-fna-dir &
+  {:keys [chunk-size] :or {chunk-size 100}}]
+  (let [dir (fs/join genome-fna-dir "Chunked")
+        all (->> (fs/directory-files genome-fna-dir ".fna") sort
+                 (partition-all chunk-size))]
+    (when (not (fs/exists? dir)) (fs/mkdir dir))
+    (doseq [grp all]
+      (let [n1 (-> grp first fs/basename (fs/replace-type ""))
+            n2 (-> grp last fs/basename (fs/replace-type ""))
+            file (fs/join dir (str n1 "-" n2 ".fna"))]
+        (io/with-out-writer file
+          (doseq [f grp
+                  l (io/read-lines f)]
+            (println l)))))))
+
+
 ;;; Convert STO format to ALN format (ClustalW format).  This is
 ;;; needed by some processors which cannot take a Stockholm alignment
 ;;; format but need an "equivalent" in ClustalW ALigNment format.

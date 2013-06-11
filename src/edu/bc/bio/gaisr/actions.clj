@@ -478,8 +478,10 @@
   (remote-try
    (let [tempfile (fs/tempfile "remote-rna-taxon-info-" ".txt")
          lines (io/read-lines upload-file)
-         rnas (take-until #(= % ";;;") lines)
-         taxons (->> lines (drop-until #(= % ";;;")) (drop 1))
+         rnas (->> lines (take-until #(= % ";;;"))
+                   (filter #(and (not= % "") (not (re-find #"^#" %)))))
+         taxons (->> lines (drop-until #(= % ";;;")) (drop 1)
+                     (filter #(and (not= % "") (not (re-find #"^#" %)))))
          default? (= (first taxons) "default-taxons")
          taxons (if default?
                   (concat sorted-bacterial-taxons-of-note (drop 1 taxons))
@@ -611,8 +613,8 @@
       (= upload-type "load-new-rna")
       (let [upload-path (.getPath upload-file)
             basedir (fs/dirname upload-path)
-	    stofile (fs/join basedir filename)]
-	(fs/rename upload-path stofile)
+            stofile (fs/join basedir filename)]
+        (fs/rename upload-path stofile)
         (remote-load-new-rna stofile))
 
       (= upload-type "rna-taxon-info")

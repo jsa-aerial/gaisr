@@ -3,7 +3,7 @@
 ;;                        R D B . N E W - R N A S                           ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -338,7 +338,7 @@
               and be.description not regexp \"plasmid\"
               and tx.ncbi_taxon_id=an.ncbi_taxon_id
               and grh.rnahit_id=rh.rnahit_id
-              and an.ancestors regexp \"/taxon/\"")
+              and an.ancestors regexp \", /taxon/\"")
 
 (def genome-counts
      "select count(*) from
@@ -350,7 +350,7 @@
               and tx.ncbi_taxon_id=an.ncbi_taxon_id
               and be.name regexp \"^NC\"
               and be.description not regexp \"plasmid\"
-              and an.ancestors regexp \"/taxon/\"")
+              and an.ancestors regexp \", /taxon/\"")
 
 
 (defn count-genomes
@@ -382,7 +382,7 @@
               and be.taxon_id=tx.taxon_id
               and tx.ncbi_taxon_id=an.ncbi_taxon_id
               and grh.rnahit_id=rh.rnahit_id
-              and an.ancestors regexp \"/taxon/\"")
+              and an.ancestors regexp \", /taxon/\"")
 
 (def taxon-genome-subtbl
      "(select distinct tx.taxon_id
@@ -391,7 +391,7 @@
                    ancestor as an
               where be.taxon_id=tx.taxon_id
               and tx.ncbi_taxon_id=an.ncbi_taxon_id
-              and an.ancestors regexp \"/taxon/\"")
+              and an.ancestors regexp \", /taxon/\"")
 
 
 (defn get-genomes
@@ -465,7 +465,7 @@
                              "and   grh.bioentry_id=be.bioentry_id
                               and   be.taxon_id=tx.taxon_id
                               and   tx.ncbi_taxon_id=an.ncbi_taxon_id
-                              and   an.ancestors regexp \"")
+                              and   an.ancestors regexp \", ")
               stmt (str stmt taxon "\"")
               ;;_ (println stmt)
               result (sql-query stmt)
@@ -548,7 +548,7 @@
                             cnt (-> taxon
                                     (count-genomes :new-rnas rna :version v)
                                     first vals first)]
-                      :when (and (> cnt 0) (> fullcnt 0))]
+                      :when (> fullcnt 0)]
                   [rna (str "v" v) taxon cnt
                    fullcnt (double (* 100.0 (/ cnt fullcnt)))
                    (->> (get-ncs-by-taxon-rna-gene taxon :rna rna)
@@ -627,7 +627,7 @@
               from bioentry as be, taxon as tx, ancestor as an
               where be.taxon_id=tx.taxon_id
               and   tx.ncbi_taxon_id=an.ncbi_taxon_id
-              and   an.ancestors regexp \"vibrionales\"
+              and   an.ancestors regexp \" vibrionales\"
               and   be.description not regexp \"plasmid\"
               and   be.name regexp \"^NC\"")))
 
@@ -640,7 +640,7 @@
            from bioentry as be, taxon as tx, ancestor as an
            where be.taxon_id=tx.taxon_id
            and   tx.ncbi_taxon_id=an.ncbi_taxon_id
-           and   an.ancestors regexp \"Leuconostoc\"
+           and   an.ancestors regexp \", Leuconostoc\"
            and   be.name regexp \"^NC\"")
 
 #_(sql-query
@@ -648,7 +648,7 @@
            from bioentry as be, taxon as tx, ancestor as an
            where be.taxon_id=tx.taxon_id
            and   tx.ncbi_taxon_id=an.ncbi_taxon_id
-           and   an.ancestors regexp \"Firmicute\"
+           and   an.ancestors regexp \", Firmicute\"
            and   be.name regexp \"^NC\"")
 
 

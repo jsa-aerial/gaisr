@@ -101,6 +101,119 @@
      {\A \R, \G \R, \C \Y, \U \Y, \T \Y})
 
 
+(def +AMINO-ACID-MAP+
+     ^{:doc ""}
+     {"F" "phenylalanine", "phe" "phenylalanine"
+      "L" "leucine", "leu" "leucine"
+      "I" "isoleucine", "iie" "isoleucine"
+      "M" "methionine", "met" "methionine"
+      "V" "valine", "val" "valine"
+      "S" "serine", "ser" "serine"
+      "P" "proline", "pro" "proline"
+      "T" "threonine", "thr" "threonine"
+      "A" "alanine", "ala" "alanine"
+      "Y" "tyrosine", "tyr" "tyrosine"
+      "H" "histidine", "his" "histidine"
+      "Q" "glutamine", "gin" "glutamine"
+      "N" "asparagine", "asn" "asparagine"
+      "K" "lysine", "lys" "lysine"
+      "D" "aspartic acid", "asp" "aspartic acid"
+      "E" "glutamic acid", "glu" "glutamic acid"
+      "C" "cysteine", "cys" "cysteine"
+      "R" "arginine", "arg" "arginine"
+      "G" "glycine", "gly" "glycine"
+      "SE" "selenocysteine", "sec" "selenocysteine"
+      "PY" "pyrrolysine"})
+
+(def +REVERSE-AMINO-ACID-MAP+
+     (->> +AMINO-ACID-MAP+
+          (map (fn[[k v]] [v k]))
+          (sort-by first)
+          (reduce (fn [M [nm abrev]]
+		    (if (not= 1 (count abrev))
+		      M
+		      (assoc M nm (conj (M nm []) abrev))))
+                  {})))
+
+(def +START-CODON+
+     #{"AUG" "ATG"})
+
+(def +STOP-CONDONS+
+     #{"UAA" "UAG" "UGA"
+       "TAA" "TAG" "TGA"})
+
+(def +RNA-CONDON-MAP+
+     ^{:doc ""}
+     {"AUG" "M" ; Start codon
+      "UUU" "F", "UUC" "F"
+      "UUA" "L", "UUG" "L", "CUU" "L", "CUC" "L", "CUA" "L", "CUG" "L"
+      "AUU" "I", "AUC" "I", "AUA" "I"
+      "GUU" "V", "GUC" "V", "GUA" "V", "GUG" "V"
+      "UCU" "S", "UCC" "S", "UCA" "S", "UCG" "S"
+      "CCU" "P", "CCC" "P", "CCA" "P", "CCG" "P"
+      "ACU" "T", "ACC" "T", "ACA" "T", "ACG" "T"
+      "GCU" "A", "GCC" "A", "GCA" "A", "GCG" "A"
+      "UAU" "Y", "UAC" "Y"
+      "UAA" ""   ; Stop codon
+      "UAG" "PY" ; Also stop codon
+      "UGA" "SE" ; Also stop codon
+      "CAU" "H", "CAC" "H"
+      "CAA" "Q", "CAG" "Q"
+      "AAU" "N", "AAC" "N"
+      "AAA" "K", "AAG" "K"
+      "GAU" "D", "GAC" "D"
+      "GAA" "E", "GAG" "E"
+      "UGU" "C", "UGC" "C"
+      "UGG" "W"
+      "CGU" "R", "CGC" "R", "CGA" "R", "CGG" "R"
+      "AGU" "S", "AGC" "S"
+      "AGA" "R", "AGG" "R"
+      "GGU" "G", "GGC" "G", "GGA" "G", "GGG" "G"})
+
+(def +REVERSE-RNA-CODON-MAP+
+     (->> +RNA-CONDON-MAP+
+          (map (fn[[k v]] [v k]))
+          (sort-by first)
+          (reduce (fn [M [aa codon]] (assoc M aa (conj (M aa []) codon)))
+                  {})))
+
+(def +DNA-CONDON-MAP+
+     ^{:doc ""}
+     {"ATG" "M" ; Start codon
+      "TTT" "F", "TTC" "F"
+      "TTA" "L", "TTG" "L", "CTT" "L", "CTC" "L", "CTA" "L", "CTG" "L"
+      "ATT" "I", "ATC" "I", "ATA" "I"
+      "GTT" "V", "GTC" "V", "GTA" "V", "GTG" "V"
+      "TCT" "S", "TCC" "S", "TCA" "S", "TCG" "S"
+      "CCT" "P", "CCC" "P", "CCA" "P", "CCG" "P"
+      "ACT" "T", "ACC" "T", "ACA" "T", "ACG" "T"
+      "GCT" "A", "GCC" "A", "GCA" "A", "GCG" "A"
+      "TAT" "Y", "TAC" "Y"
+      "TAA" ""   ; Stop codon
+      "TAG" "PY" ; Also stop codon
+      "TGA" "SE" ; Also stop codon
+      "CAT" "H", "CAC" "H"
+      "CAA" "Q", "CAG" "Q"
+      "AAT" "N", "AAC" "N"
+      "AAA" "K", "AAG" "K"
+      "GAT" "D", "GAC" "D"
+      "GAA" "E", "GAG" "E"
+      "TGT" "C", "TGC" "C"
+      "TGG" "W"
+      "CGT" "R", "CGC" "R", "CGA" "R", "CGG" "R"
+      "AGT" "S", "AGC" "S"
+      "AGA" "R", "AGG" "R"
+      "GGT" "G", "GGC" "G", "GGA" "G", "GGG" "G"})
+
+(def +REVERSE-DNA-CODON-MAP+
+     (->> +DNA-CONDON-MAP+
+          (map (fn[[k v]] [v k]))
+          (sort-by first)
+          (reduce (fn [M [aa codon]] (assoc M aa (conj (M aa []) codon)))
+                  {})))
+
+
+
 ;;; ----------------------------------------------------------------------
 ;;;
 ;;; Various sequence (element) transformers and translators.  Mostly

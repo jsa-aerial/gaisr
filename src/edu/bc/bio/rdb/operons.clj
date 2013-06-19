@@ -182,7 +182,10 @@
   (with-open [opr (io/reader file)]
     (binding [*in* opr]
       (read-line) ; toss header
-      (with-local-vars [info [], gbname "", opr-loc-set #{}]
+      (with-local-vars
+	  [info []
+	   gbname ""
+	   opr-loc-set #{}]
         (while  (let [x (get-line-info)] (var-set info x))
           (let [[nm opid opinfo] (var-get info)
                 gbnm (var-get gbname)]

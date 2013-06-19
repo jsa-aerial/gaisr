@@ -3,7 +3,7 @@
 ;;                            O P E R O N - C T X                           ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011 Trustees of Boston College                            ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -257,7 +257,7 @@
             locs))))
 
 ;;;(def abc (get-species "NC_010695"))
-;;;(get-region "NC_010695" +1 8229 8000)
+;;;(get-region "NC_010695" +1 8000 500 500)
 ;;;
 ;;; (defn x [strand]
 ;;;   (get (species-hash "NC_010695") strand))

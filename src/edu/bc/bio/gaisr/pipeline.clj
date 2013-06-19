@@ -1021,7 +1021,7 @@
                  (seq (fs/directory-files stodir "sto")))
         cms  (or (seq (config :calibrates))
                  (seq (fs/directory-files cmdir "cm")))
-        csvdir (config :gen-csvs)
+        csvdir (first (config :gen-csvs)) ; HACK (see job-config...)
         ctxsz (atom {})]
 
     (when (and (config :check-sto) (config :cmbuild))
@@ -1058,7 +1058,11 @@
           (let [csvs (fs/directory-files cmdir "csv")]
             (doseq [csv csvs]
               (let [fname (fs/basename csv)]
-                (fs/rename csv (fs/join csvdir fname))))))))
+                (fs/rename csv (fs/join csvdir fname))))))
+        (when-let [aggr-dir ((into {} (rest (config :gen-csvs))) :aggregate)]
+          (aggregate-csvs csvdir)
+          (when-let [orig (first (fs/glob (fs/join csvdir "*agg*.csv")))]
+            (fs/rename orig (fs/join aggr-dir (fs/basename orig)))))))
 
     ;; Sequence Conservation, Context, Size filtering.  Take cmsearch
     ;; results and automatically filter into pos and neg sets

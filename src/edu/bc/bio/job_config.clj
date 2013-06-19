@@ -88,6 +88,12 @@
   (let [[d v] (str/split #"\s*(:| )\s*" l)]
     (assoc m :sccs (conj (get m :sccs []) [(keyword d) v]))))
 
+(defn process-gen-csv-subline [m l]
+  (let [[d v] (str/split #"\s*(:| )\s*" l)
+        d (keyword d)
+        v (if (and (= d :aggregate) (= v "csv-dir")) (first (m :gen-csvs)) v)]
+    (assoc m :gen-csvs (conj (get m :gen-csvs []) [(keyword d) v]))))
+
 (defn process-gen-sto-subline [m l]
   (let [[d v] (str/split #"\s*(:| )\s*" l)]
     (assoc m :gen-stos (conj (get m :gen-stos []) [(keyword d) v]))))
@@ -100,15 +106,16 @@
                     (str/split #"\s*,\s*")
                     (map #(->> % (str/split #"\s+")
                                ((fn[[k v]]
-                                  (let [v (->> v read-string
-                                               ((fn[x] (if (symbol? x)
-                                                         (keyword (name x))
-                                                         x))))]
+                                  (let [v (if (= k "dir")
+                                            v
+                                            (->> v read-string
+                                                 ((fn[x] (if (symbol? x)
+                                                           (keyword (name x))
+                                                           x)))))]
                                     [(keyword k) v])))))
                     flatten
                     vec))]
     (assoc m d (conj (get m d []) [:args args]))))
-
 
 (defn parse-config-file [filespec]
   (let [lseq (filter #(not (or (= "" (str/trim %))
@@ -181,11 +188,9 @@
             :gen-csv))
 
          #"^Gen-CSVs[\s:]*"
+         ;; HACK, this needs to be folded into process-directive-options
          (directive
-          (assoc m :gen-csvs
-                 (get (getf m :csvdir l)
-                      :csvdir
-                      (m :cmdir)))
+          (assoc m :gen-csvs [(get (getf m :csvdir l) :csvdir (m :cmdir))])
           :gen-csvs)
 
          #"^SCCS\s*:"
@@ -199,7 +204,7 @@
                :cmbuild (process-sto-files m l)
                :calibrate (process-cm-files m l)
                :cmsearch (process-hit-files m l)
-               :gen-csvs m
+               :gen-csvs (process-gen-csv-subline m l)
                :sccs (process-sccs-subline m l)
                :gen-stos (process-gen-sto-subline m l))))
      {} lseq)))

@@ -798,7 +798,8 @@
         [nm-re-sq pnm sz] (sto-re-dists wz candidate-file sto-file
                                         :refn refn :xlate xlate
                                         :delta delta :order order)
-        Dy (case run 1 0.1, 2 0.0, -0.1)
+        ;; For hits, always use 0.9 on CDF
+        Dy (if (zero? delta) 0.4 (case run 1 0.1, 2 0.0, -0.1))
         cutpt (select-cutpoint nm-re-sq :Dy Dy)
         [good bad] (get-good-candidates nm-re-sq cutpt)]
     (when (and plot-cre cres) (plot-cres cres))

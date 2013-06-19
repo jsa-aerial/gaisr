@@ -394,6 +394,19 @@
          "/data2/BioData/BlastDBs/RefSeq58/refseq58_microbial_genomic"))
 
 
+(defn make-entry
+  "'Inverse' of entry-parts.  EVEC is a vector of shape [nm [s e]
+   strd], where nm is the entry name, S and E are the start and end
+   coordinates in the genome, and strd is the strand marker, 1 or
+   -1. Returns the full entry as: nm/s-e/strd
+  "
+  ([evec]
+     (let [[nm [s e] st] evec]
+       (str nm "/" s "-" e "/" st)))
+  ([nm s e st]
+     (make-entry [nm [s e] st])))
+
+
 (defn entry-parts
   "ENTRY is a string \"name/range/strand\", where name is a genome
    name, range is of the form start-end and strand is 1 or -1.  At

@@ -120,6 +120,7 @@
       "D" "aspartic acid", "asp" "aspartic acid"
       "E" "glutamic acid", "glu" "glutamic acid"
       "C" "cysteine", "cys" "cysteine"
+      "W" "tryptophan", "trp" "tryptophan"
       "R" "arginine", "arg" "arginine"
       "G" "glycine", "gly" "glycine"
       "SE" "selenocysteine", "sec" "selenocysteine"
@@ -130,9 +131,9 @@
           (map (fn[[k v]] [v k]))
           (sort-by first)
           (reduce (fn [M [nm abrev]]
-		    (if (not= 1 (count abrev))
-		      M
-		      (assoc M nm (conj (M nm []) abrev))))
+                    (if (not= 1 (count abrev))
+                      M
+                      (assoc M nm abrev)))
                   {})))
 
 (def +START-CODON+

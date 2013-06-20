@@ -163,6 +163,7 @@
 
 (defn create-newhit-tables []
   (create-rnahit-table)
+  (swap! rnaname-id-map (fn[_] (get-rnaname-rhid-map)))
   (create-verified-rnahit-table)
   (create-genome-rnahit-table))
 

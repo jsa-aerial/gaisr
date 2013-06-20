@@ -342,6 +342,31 @@
       (map xlate sqs))))
 
 
+(defn ntseq->aaseq
+  "Translate the nucleotide sequence NTSEQ into its corresponding
+   amino acid (protein) sequence.  STOP true implies ntseq has its
+   stop codon at the end, otherwise ntseq is assumed to not have its
+   stop codon.  Defaults to true.
+
+   RNA-DNA = :rna implies that ntseq is given as rna (with uracil
+   bases); = :dna implies ntseq given as dna (with thymine bases).
+   Defaults to :rna
+
+   Precondition: ntseq must have a multiple of 3 bases!!
+
+   Returns the amino acid (protein) sequence for ntseq (sans start
+   stop codon translations, if they were included)
+  "
+  [ntseq & {:keys [stop rna-dna] :or {stop true rna-dna :rna}}]
+  {:pre [(-> ntseq count (div 3) second (= 0))]}
+  (let [codon-map (if (= rna-dna :rna) +RNA-CONDON-MAP+ +DNA-CONDON-MAP+)
+        twiddle (if stop butlast identity)]
+    (->> (partition-all 3 ntseq)
+         (map #(apply str %))
+         (map #(codon-map %))
+         twiddle
+         (apply str))))
+
 
 
 ;;; ----------------------------------------------------------------------

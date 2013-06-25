@@ -49,7 +49,7 @@
         edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         edu.bc.bio.sequtils.tools
-        [edu.bc.bio.sequtils.dists
+        [edu.bc.bio.sequtils.sccs
          :only [compute-candidate-sets hit-context-delta]]
 
         [edu.bc.bio.job-config :only [parse-config-file]]

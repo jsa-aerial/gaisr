@@ -567,7 +567,7 @@
                       :when (> fullcnt 0)]
                   [rna (str "v" v) taxon cnt
                    fullcnt (double (* 100.0 (/ cnt fullcnt)))
-                   (->> (get-genomes "firmicutes" :new-rnas rna)
+                   (->> (get-genomes taxon :new-rnas rna)
                                  (map :name) set)
                    #_(->> (get-ncs-by-taxon-rna-gene taxon :rna rna)
                         first third vals first set)])]

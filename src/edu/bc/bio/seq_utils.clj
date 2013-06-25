@@ -139,7 +139,7 @@
 (def +START-CODON+
      #{"AUG" "ATG"})
 
-(def +STOP-CONDONS+
+(def +STOP-CODONS+
      #{"UAA" "UAG" "UGA"
        "TAA" "TAG" "TGA"})
 

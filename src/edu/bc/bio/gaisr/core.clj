@@ -51,11 +51,12 @@
    edu.bc.bio.sequtils.files
    edu.bc.bio.sequtils.tools
    edu.bc.bio.sequtils.info-theory
+   edu.bc.bio.sequtils.dists
    edu.bc.bio.canned-jobs
    edu.bc.bio.db-downloads
 
    edu.bc.bio.gaisr.db-actions  ; Main database setup and access
-   edu.bc.bio.sequtils.dists    ; bad dependency: db-actions/hit-features-query
+   edu.bc.bio.sequtils.sccs     ; bad dependency: db-actions/hit-features-query
    edu.bc.bio.gaisr.operon-ctx  ; Initial Hit (blast, ...) operon ctx
    edu.bc.bio.gaisr.pipeline    ; pipeline functions and framework
    edu.bc.bio.gaisr.post-db-csv ; Post database query processing

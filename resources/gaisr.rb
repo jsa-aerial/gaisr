@@ -164,16 +164,22 @@ def remote_cmd (upload_type, infile, *misc)
     infile = File.new(infile)
   end
 
-  return RestClient.post(base_url,
-                         {"upload-type" => upload_type,
-                           :subtype => "remote",
-                           :user => ENV['LOGNAME'].downcase,
-                           :host => ENV["HOST"],
-                           :file => infile, ##File.new(infile),
-                           :misc => misc,
-                           :multipart => true ##NECESSARY when vec of files!
-                         },
-                         {:cookies => {:user => ENV['LOGNAME'].downcase}})
+  ## RestClient.post (and get, ...) are nice sugar wrappers for
+  ## execute/resource instances, but they do not support passing of
+  ## connection options - timeout in particular!  So, we create a
+  ## resource manually with the timeout options set and call post on
+  ## the result.
+  resource = RestClient::Resource.new(base_url,
+                                      :timeout => 600, :open_timeout => 600)
+  return resource.post({"upload-type" => upload_type,
+                         :subtype => "remote",
+                         :user => ENV['LOGNAME'].downcase,
+                         :host => ENV["HOST"],
+                         :file => infile, ##File.new(infile),
+                         :misc => misc,
+                         :multipart => true ##NECESSARY when vec of files!
+                       },
+                       {:cookies => {:user => ENV['LOGNAME'].downcase}})
 end
 
 
@@ -570,7 +576,7 @@ def load_new_rna (file)
 end
 
 def load_new_rnas (args)
-  args.each do |f| load_new_rna(f) end
+  args.each do |f| load_new_rna(f); puts "" end
 end
 
 

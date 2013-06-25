@@ -58,6 +58,7 @@
         ))
 
 
+
 (def qin-2ksq-totcnts
      (->> (fs/re-directory-files "/data2/Bio/MetaG1/FastaFiles" "*.seq.fa")
           sort

@@ -702,19 +702,25 @@
 
 
 
+(defn get-krange [kinfo seqcnt]
+  (cond
+   (nil? kinfo) [4 (long (->> seqcnt (* 0.1) ceil))]
+   (vector? kinfo) (->> kinfo (mapcat #(if (vector? %) (apply range %) [%])))
+   :else [kinfo]))
+
 (defn krnn-seqs-clust
   ""
-  [seqents & {:keys [xlate alpha delta crecut limit kinfo]
-              :or {alpha (alphabet :rna)}}]
+  [seqents & {:keys [xlate alpha delta crecut limit kinfo vindex]
+              :or {alpha (alphabet :rna) vindex clu/S-Dbw-index}}]
   {:pre [(or (and (vector? kinfo)
-                  (reduce (fn[b x] (and b (integer? x))) true kinfo))
+                  (reduce (fn[b x]
+                            (and b (or (integer? x) (vector? x)))) true kinfo))
              (integer? kinfo)
              (nil? kinfo))]}
 
   (let [seqents (if (coll? seqents) seqents (read-seqs seqents :info :name))
         seqcnt (count seqents)
-        kinfo (if (not (nil? kinfo)) kinfo [4 (long (->> seqcnt log2 ceil))])
-        [kmin kmax] (if (vector? kinfo) kinfo [(min 4 (int (/ kinfo 2))) kinfo])
+        krange (get-krange kinfo seqcnt)
 
         ;; Get entries and their delta adjusted sequences and Goedel
         ;; number them for efficient map key access.
@@ -728,6 +734,7 @@
         ;; Get the resolution window size for sequence words
         ;; (features), which controls vocabulary distribution content
         ;; (dictionaries), pmfs, and RE.
+        _ (println :start-word-res-size (str-date))
         [wz] (res-word-size (map first seqs) :delta delta
                             :xlate xlate :alpha alpha
                             :crecut crecut :limit limit)
@@ -735,6 +742,7 @@
         ;; Precompute all the resulting dictionaries of sequences with
         ;; word size.  This is a vector which is naturally indexed by
         ;; the numbering of the entries.
+        _ (println :start-coll-ffps (str-date))
         coll-ffps (mapv (fn[[i [e sq]]] (probs wz sq)) coll)
 
         ;; Distance function that uses above precomputed distributions
@@ -748,6 +756,7 @@
         ;; is first of input elements which gives the numbering for an
         ;; entry.  So, matrix is a map with keys [x y], x & y
         ;; associated numbers of coll entries
+        _ (println :start-dm-computation (str-date))
         keyfn first
         dm (clu/dist-matrix distfn coll :keyfn keyfn)
 
@@ -769,8 +778,8 @@
 
         kcoll (map keyfn coll)]
 
-    (println :wz wz"\n":kmax kmax)
-    (for [k (range kmin kmax)
+    (println :wz wz :krange krange (str-date))
+    (for [k krange
           :let [[krnngrph rnncntM knngrph]
                 (clu/krnn-graph k #(get dm [%1 %2]) kcoll)]]
       (let [_ (println :start-clustering :k k (str-date))
@@ -794,36 +803,59 @@
                                 [(avgfn v) v]))
                             clusters))
             _ (println :end-clustering :start-S-Dbw (str-date))]
-        [(clu/S-Dbw-index distfn2 (vec seq-clus) :avgfn avgfn)
+        [(if vindex (vindex distfn2 (vec seq-clus) :avgfn avgfn) 0.0)
          ent-clus k]))))
 
 (defn split-sto
   ""
-  [stofile & {:keys [delta xlate alpha crecut limit kinfo]
+  [entfile & {:keys [delta xlate alpha crecut limit kinfo]
               :or {alpha (alphabet :rna)}}]
-  (let [basedir (fs/dirname stofile)
-        name (->> stofile fs/basename (str/split #"-") first)
+  (let [ents-sqs (read-seqs entfile :info :both)
+        entries (map first ents-sqs)
+        entsq-map (into {} ents-sqs)
+        lines (io/read-lines entfile)
+        headers (take 2 lines)
+        footers (->> lines
+                     (drop-while #(or (= % "") (re-find #"^#" %)))
+                     (drop-while #(not (re-find #"^#" %))))
+
+        gen-sto (fn[fname ents]
+                  (io/with-out-writer fname
+                    (doseq [l headers] (println l))
+                    (println)
+                    (doseq [[e s] (map #(do [% (entsq-map %)]) ents)]
+                      (cl-format true "~A~40T~A~%" e s))
+                    (doseq [l footers] (println l))))
+
+        basedir (fs/dirname entfile)
+        name (->> entfile fs/basename (str/split #"\.") first)
         clu-dir (fs/join basedir (str "CLU-" name))
         _ (when (not (fs/exists? clu-dir)) (fs/mkdir clu-dir))
         clud-dir (fs/join clu-dir (str "d" delta))
         _ (when (not (fs/exists? clud-dir)) (fs/mkdir clud-dir))
+
         clu-info (->> (krnn-seqs-clust
-                       stofile
+                       entries
                        :delta delta
                        :xlate xlate :alpha alpha
                        :crecut crecut :limit limit
                        :kinfo kinfo)
                       (sort-by first <))
-        fs (->> clu-info
-                first second (map #(map first %))
+        k (->> clu-info first third)
+        entgrps (->> clu-info first second (map #(map first %)))
+        fs (->> entgrps
                 (map (fn[i ents]
                        (gen-entry-file
-                        ents (fs/join clud-dir (str "clu-" i ".ent"))))
+                        ents (fs/join clud-dir (str "clu-k" k "-" i ".ent"))))
                      (iterate inc 1))
-                doall)]
+                doall)
+        stos (->> entgrps
+                  (map (fn[i ents]
+                         (let [f (str "clu-k" k "-" i ".sto")]
+                           (gen-sto (fs/join clud-dir f) ents)))
+                       (iterate inc 1))
+                  doall)]
     [(map (fn[[s ents k]] [s k (count ents) (map count ents)]) clu-info) fs]))
-
-
 
 
 

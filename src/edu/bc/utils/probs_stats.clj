@@ -272,7 +272,7 @@
 
 
 (defn num-key-freq-map?
-  "Returns true if X a number keyed frequency map"
+  "Returns true if X is a number keyed frequency map"
   [x]
   (and (map? x) (number? (ffirst x))))
 
@@ -281,6 +281,7 @@
   [x]
   (or (num-key-freq-map? x)
       (and (sequential? (first x))
+	   (= (count (first x)) 2)
            (number? (ffirst x)))))
 
 (defn flatten-pair-coll
@@ -365,7 +366,7 @@
 
    The rfn function is the 'reducer' function to use for calculating
    the set of squared differences.  It defaults to 'map', but the user
-   can change this to some variant of fold, most typically xfold, to
+   can change this to some variant of fold, most typically vfold, to
    parallelize the computation for large collections and/or expensive
    distfns (such as various RE functions).
 

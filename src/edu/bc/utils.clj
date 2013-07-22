@@ -142,9 +142,9 @@
   "
   [& {:keys [info] :or {info :idle}}]
   (let [idle (->> (runx "top" "-n" "2" "-b" "-d" "0.01" "-p" "1")
-		  (str/split #"\n") (filter #(re-find #"^Cpu" %))
-		  last (str/split #"\s*,\s*") (filter #(re-find #"%id" %))
-		  first (str/split #"\s*%\s*") first Double.)
+                  (str/split #"\n") (filter #(re-find #"^Cpu" %))
+                  last (str/split #"\s*,\s*") (filter #(re-find #"%id" %))
+                  first (str/split #"\s*%\s*") first Double.)
         use (- 100.0 idle)]
     (case info
           :idle idle
@@ -310,7 +310,7 @@
           :ignore (first colls))))))
 
 
-(defn xfold
+(defn vfold
   "Fold function f over a collection or set of collections (c1, ...,
    cn) producing a collection (concrete type of vector).  Arity of f
    must be equal to the number of collections being folded with
@@ -321,14 +321,14 @@
    granularity is determined automatically (see below) as in the
    base (non N case) signature.
 
-   While xfold is based on r/fold, it abstracts over the combiner,
+   While vfold is based on r/fold, it abstracts over the combiner,
    reducer, work packet granularity, and transforming multiple
    collections for processing by f by chunking the _transpose_ of the
    collection of collections.
 
-   As indicated above, xfold's fold combiner is monoidal on vectors:
+   As indicated above, vfold's fold combiner is monoidal on vectors:
    it constructs a new vector from an l and r vector, and has identity
-   [] (empty vector).  In line with this, xfold's reducer builds up
+   [] (empty vector).  In line with this, vfold's reducer builds up
    new vectors from elements by conjing (f a1, ... an) onto a prior
    result or the combiner identity, [], as initial result.
 
@@ -346,10 +346,10 @@
            n (max 2 (int (math/floor (/ (count coll) (* 2 workers)))))
            n (min base n)]
        #_(println :>>N n)
-       (xfold f n coll)))
+       (vfold f n coll)))
   ([f n coll]
      (if (< n 1)
-       (xfold f coll)
+       (vfold f coll)
        (r/fold n
                (fn
                  ([] [])
@@ -357,9 +357,11 @@
                (fn[v x] (conj v (f x)))
                (vec coll))))
   ([f n coll & colls]
-     (xfold (fn[v] (apply f v)) n (apply transpose coll colls))))
+     (vfold (fn[v] (apply f v)) n (apply transpose coll colls))))
 
-(defn foldx [& args] (apply xfold args))
+(defn xfold
+  "Deprecated! Use vfold!!!"
+  [& args] (apply vfold args))
 
 
 (defn pxmap

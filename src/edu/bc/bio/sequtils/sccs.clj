@@ -198,9 +198,9 @@
               (degap-seqs (if (coll? sqs) sqs (read-seqs sqs))))
         cnt (count sqs)
         par (max (floor (/ cnt 10)) 2)
-        dicts (if (-> sqs first map?) sqs (xfold #(probs l %) sqs))
+        dicts (if (-> sqs first map?) sqs (vfold #(probs l %) sqs))
         hybrid (apply merge-with +
-                      (xfold (fn[subset] (apply merge-with + subset))
+                      (vfold (fn[subset] (apply merge-with + subset))
                              (partition-all (/ (count dicts) par) dicts)))]
     (reduce (fn[m [k v]] (assoc m k (double (/ v cnt))))
             {} hybrid)))
@@ -210,7 +210,7 @@
 ;;;                              par (partition-all
 ;;;                                   (/ (count dicts) par)
 ;;;                                   dicts))
-;;; (xfold (fn[subset] (apply merge-with + subset))
+;;; (vfold (fn[subset] (apply merge-with + subset))
 ;;;                          (partition-all (/ (count dicts) par) dicts))
 
 ;;; 1774444 the number of keys!!
@@ -226,25 +226,27 @@
 
 
 (defn ctx-seq
-  [entry & {:keys [directed ldelta rdelta delta ddel] :or {directed true}}]
+  [entry & {:keys [directed ldelta rdelta delta ddel db] :or {directed true}}]
   {:pre [(or delta (and (not directed) (or ldelta rdelta)))]}
   (let [ldelta (or delta ldelta 0)
         rdelta (or delta rdelta 0)]
     (if (not directed)
-      (gen-name-seq entry :ldelta ldelta :rdelta rdelta)
+      (gen-name-seq entry :basedir db :ldelta ldelta :rdelta rdelta)
       (let [ddel (or ddel
                      (->> entry entry-parts second
                           (#(apply - %)) abs (#(/ % 4)) ceil))
             +? (= 1 (->> entry (pos \-) count))
             ldelta (if +? ddel delta)
             rdelta (if +? delta ddel)]
-        (gen-name-seq entry :ldelta ldelta :rdelta rdelta)))))
+        (gen-name-seq entry :basedir db :ldelta ldelta :rdelta rdelta)))))
 
 (defn get-adjusted-seqs
   ""
   [entries delta & {:keys [directed ldelta rdelta ddel] :or {directed true}}]
-  (let [ddel (or ddel (if (= delta 0) 0 nil))]
-    (xfold #(ctx-seq % :directed directed
+  (let [ddel (or ddel (if (= delta 0) 0 nil))
+        db default-genome-fasta-dir] ; Must be a better way...
+    (vfold #(ctx-seq % :directed directed
+                     :db db
                      :delta delta :ddel ddel :ldelta ldelta :rdelta rdelta)
            entries)))
 
@@ -253,7 +255,7 @@
            :or {alpha (alphabet :rna)
                 directed true cnt 5 limit 14}}]
   {:pre [(or delta (and (not directed) ldelta rdelta))]}
-  (let [entries (if (coll? seqs) seqs (get-entries seqs))
+  (let [entries (if (coll? seqs) seqs (doall (get-entries seqs)))
         cnt (min cnt (count entries))
         ;;ldelta (or delta ldelta)
         ;;rdelta (or delta rdelta)
@@ -261,9 +263,29 @@
                                           :ldelta ldelta :rdelta rdelta)]
     (for [[nm sq] (random-subset name-seq-pairs cnt)
           :let [sq (if xlate (seqXlate sq :xmap xlate) sq)]]
-      (xfold (fn[l] [l (CREl l sq :alpha alpha)
+      (vfold (fn[l] [l (CREl l sq :alpha alpha)
                      (count sq) nm])
              (range 3 (inc limit))))))
+
+
+(defn nm-res-dist [nm-res]
+  (let [frq (reduce (fn[m [nm re]]
+                      (let [re (-> re (* 1000) (+ 0.1) round (/ 1000.0))]
+                        (assoc m re (conj (get m re []) nm))))
+                    {} nm-res)
+        cnt (double (count nm-res))]
+    (map (fn[[re nms]] [re (double (/ (count nms) cnt)) nms]) frq)))
+
+(defn nm-res-cdf [nm-res]
+  (let [re-dist (nm-res-dist nm-res)
+        re-sorted (sort-by first re-dist)
+        pre-sq (map (fn[[re p nms]] [p re]) re-sorted)]
+    (fn[x]
+      (reduce (fn[y [p re]]
+                (if (<= re x) (+ y p) y))
+              0.0 pre-sq))))
+
+
 
 
 (defn render-chart
@@ -296,104 +318,6 @@
        (str "CRE(l, F/F^), len: " cnt
             " Fmax: " (round (ln cnt)))))))
 
-
-(defn res-word-size
-  ""
-  [seqs & {:keys [alpha xlate directed ldelta rdelta delta cnt limit crecut]
-           :or {alpha (alphabet :rna)
-                directed true cnt 5 limit 14 crecut 0.10}}]
-  (let [cres (cre-samples seqs :delta delta
-                          :xlate xlate :alpha alpha
-                          :limit limit :cnt cnt)
-        wz (reduce (fn [res v]
-                     (/ (+ res
-                           (some #(when (< (second %) crecut) (first %)) v))
-                        2.0))
-                   0.0 cres)]
-    [(ceil wz) cres]))
-
-
-(defn sto-re-dists
-  ""
-  [wz candidate-file sto-file
-   & {:keys [refn delta order xlate par]
-      :or {refn DX||Y delta 5000 order :up par 10}}]
-  (let [comp (if (= order :up) < >)
-        cfile (fs/fullpath candidate-file)
-        ctype (fs/ftype cfile)
-        prot-name (->> cfile
-                       (str/split #"/") last (str/split #"\.") first
-                       (str/replace-re #"_" " "))
-
-        entries (get-entries cfile)
-        sqs (->> entries
-                 (#(get-adjusted-seqs % delta :ddel 0))
-                 (map second)
-                 (#(if xlate (seqXlate % :xmap xlate) %)))
-
-        refsqs (->> sto-file
-                    get-entries
-                    (#(get-adjusted-seqs % delta :ddel 0))
-                    (map second)
-                    (#(if xlate (seqXlate % :xmap xlate) %)))
-
-        sto-hd (hybrid-dictionary wz refsqs)
-        dicts (xfold #(probs wz %) sqs)
-        stods (xfold #(refn % sto-hd) dicts)]
-
-    [(sort-by second comp (set (map (fn[en d] [en d]) entries stods)))
-     prot-name
-     (count sqs)]))
-
-
-(defn nm-res-dist [nm-res]
-  (let [frq (reduce (fn[m [nm re]]
-                      (let [re (-> re (* 1000) (+ 0.1) round (/ 1000.0))]
-                        (assoc m re (conj (get m re []) nm))))
-                    {} nm-res)
-        cnt (double (count nm-res))]
-    (map (fn[[re nms]] [re (double (/ (count nms) cnt)) nms]) frq)))
-
-(defn nm-res-cdf [nm-res]
-  (let [re-dist (nm-res-dist nm-res)
-        re-sorted (sort-by first re-dist)
-        pre-sq (map (fn[[re p nms]] [p re]) re-sorted)]
-    (fn[x]
-      (reduce (fn[y [p re]]
-                (if (<= re x) (+ y p) y))
-              0.0 pre-sq))))
-
-(defn re-cdf-cut [nm-res & {:keys [Dy Mre] :or {Dy 0.0 Mre 0.935}}]
-  (let [res (sort (map first (nm-res-dist nm-res))) ; only the SET of res
-        Fx (nm-res-cdf nm-res)
-        pts (sort (map second nm-res))
-        cdf-cut (+ Dy 0.5) ; 0.5 = median of Fx by definition
-        re-cutoff (reduce (fn[v re]
-                            ;; Curry in re <= Max RE, to ensure we
-                            ;; don't derail with CDF picking many bad,
-                            ;; since nearly all are bad.  NOTE: that
-                            ;; the default Mre was experimentally
-                            ;; determined from various contexts across
-                            ;; entire refseq.  NOTE 2: Since RE is
-                            ;; unbounded, and JSD normalized, there
-                            ;; can be arbitrarily many points between
-                            ;; 0.9 and 1.0 (looonnnngggg tail...)
-                            (if (and (<= re Mre) (<= (Fx re) cdf-cut)) re v))
-                          0.0 res)
-        ;;_ (print :re-cutoff1 re-cutoff :Fres (first res) "/ ")
-        ;; A _single_ good score can occur an 'anomalous' number of times
-        re-cutoff (let [fres (first res)]
-                    (cond (not (zero? re-cutoff)) re-cutoff
-                          (<= fres Mre) fres
-                          :else 0.0))
-        ;;_ (print :re-cutoff2 re-cutoff "/ ")
-        ;; Round to nearest thousandth
-        re-cutoff (/ (round (* 1000 (+ re-cutoff 0.001))) 1000.0)]
-    #_(println :re-cutoff re-cutoff)
-    (reduce (fn[cutpt re] (if (<= re re-cutoff) (inc cutpt) cutpt))
-            0 (map second nm-res))))
-
-
 (defn plot-re-pmf
   [nm-res  & {:keys [file]}]
   (let [pmf-info (map (fn[[re p v]] [re (count v)]) (nm-res-dist nm-res))
@@ -417,75 +341,6 @@
      "JSD RE" "Fre-dist(x)" "FFP CDF plot"
      :series-label "sq/hbrid JSD CDF"
      :legend true)))
-
-
-(defn select-cutpoint
-  [re-points & {:keys [area Dy Mre] :or {Mre 0.935}}]
-  (if Dy
-    (re-cdf-cut re-points :Dy Dy :Mre Mre)
-    (let [s (* (sum re-points) area)]
-      (first
-       (reduce (fn[[x v] re]
-                 (if (< v s) [(inc x) (+ v re)] [x v]))
-               [0 0]
-               re-points)))))
-
-(defn get-good-candidates
-  [nm-re-coll cutpoint & {:keys [ends] :or {ends :low}}]
-  (let [total (count nm-re-coll)
-        [good bad] (cond
-                    (= ends :low)
-                    [(take cutpoint nm-re-coll)
-                     (drop cutpoint nm-re-coll)]
-
-                    (= ends :high)
-                    [(drop (- total cutpoint) nm-re-coll)
-                     (take (- total cutpoint) nm-re-coll)]
-
-                    :else ; :both
-                    [(concat
-                      (take cutpoint nm-re-coll)
-                      (drop (- total cutpoint) nm-re-coll))
-                     (take (- total cutpoint cutpoint)
-                           (drop cutpoint nm-re-coll))])]
-    [good bad]))
-
-
-(defn selection-perf
-  [nm-re-coll ent-file cutpoint & {:keys [ends good] :or {ends :low}}]
-   (let [candidates (->> (io/read-lines ent-file)
-                         (map entry-parts)
-                         (map (fn[[nm [s e] sd]]
-                                [(str nm "/" s "-" e "/" sd) 1])))
-         total (count nm-re-coll)
-         human-picked (reduce (fn[m [k v]]
-                             (assoc m k (inc (get m k 0))))
-                           {} candidates)
-         picked (count human-picked)
-
-         good  (if good
-                 good
-                 (-> (get-good-candidates nm-re-coll cutpoint :ends ends)
-                     first))
-         good-size (count good)
-
-         true+ (count (reduce (fn[m [k v]]
-                                (if (get human-picked k)
-                                  (assoc m k v) m))
-                              {} good))
-         false+ (- good-size true+)
-         false- (- picked true+)]
-     [:total total
-      :cutpoint cutpoint
-      :goodsize good-size
-      :true+ true+
-      :true+picked (float (/ true+ picked))
-      :goodtrue+ (float (/ true+ good-size))
-      :false+ false+
-      :false- false-
-      :false-picked (float (/ false- picked))
-      :picked picked
-      :dups (filter (fn[[k v]] (> v 1)) human-picked)]))
 
 
 (defn plot-hit-dists
@@ -516,26 +371,148 @@
      :legend true)))
 
 
+
+
+(defn re-cdf-cut [nm-res Dy Mre]
+  (let [res (sort (map first (nm-res-dist nm-res))) ; only the SET of res
+        Fx (nm-res-cdf nm-res)
+        pts (sort (map second nm-res))
+        cdf-cut (+ Dy 0.5) ; 0.5 = median of Fx by definition
+        re-cutoff (reduce (fn[v re]
+                            ;; Curry in re <= Max RE, to ensure we
+                            ;; don't derail with CDF picking many bad,
+                            ;; since nearly all are bad.  NOTE: that
+                            ;; the default Mre was experimentally
+                            ;; determined from various contexts across
+                            ;; entire refseq.  NOTE 2: Since RE is
+                            ;; unbounded, and JSD normalized, there
+                            ;; can be arbitrarily many points between
+                            ;; 0.9 and 1.0 (looonnnngggg tail...)
+                            (if (and (<= re Mre) (<= (Fx re) cdf-cut)) re v))
+                          0.0 res)
+        ;;_ (print :re-cutoff1 re-cutoff :Fres (first res) "/ ")
+        ;; A _single_ good score can occur an 'anomalous' number of times
+        re-cutoff (let [fres (first res)]
+                    (cond (not (zero? re-cutoff)) re-cutoff
+                          (<= fres Mre) fres
+                          :else 0.0))
+        ;;_ (print :re-cutoff2 re-cutoff "/ ")
+        ;; Round to nearest thousandth
+        re-cutoff (/ (round (* 1000 (+ re-cutoff 0.001))) 1000.0)]
+    #_(println :re-cutoff re-cutoff)
+    (reduce (fn[cutpt re] (if (<= re re-cutoff) (inc cutpt) cutpt))
+            0 (map second nm-res))))
+
+(defn select-cutpoint
+  [re-points & {:keys [Dy Mre] :or {Mre 0.935}}]
+  (re-cdf-cut re-points Dy Mre))
+
+
+(defn get-pos-neg-sets
+  [nm-re-coll cutpoint & {:keys [ends] :or {ends :low}}]
+  (let [total (count nm-re-coll)
+        [good bad] (cond
+                    (= ends :low)
+                    [(take cutpoint nm-re-coll)
+                     (drop cutpoint nm-re-coll)]
+
+                    (= ends :high)
+                    [(drop (- total cutpoint) nm-re-coll)
+                     (take (- total cutpoint) nm-re-coll)]
+
+                    :else ; :both
+                    [(concat
+                      (take cutpoint nm-re-coll)
+                      (drop (- total cutpoint) nm-re-coll))
+                     (take (- total cutpoint cutpoint)
+                           (drop cutpoint nm-re-coll))])]
+    [good bad]))
+
+
+(defn res-word-size
+  ""
+  [seqs & {:keys [alpha xlate directed ldelta rdelta delta cnt limit crecut]
+           :or {alpha (alphabet :rna)
+                directed true cnt 5 limit 14 crecut 0.10}}]
+  (let [cres (cre-samples seqs :delta delta
+                          :xlate xlate :alpha alpha
+                          :limit limit :cnt cnt)
+        wz (reduce (fn [res v]
+                     (/ (+ res
+                           (some #(when (< (second %) crecut) (first %)) v))
+                        2.0))
+                   0.0 cres)]
+    [(ceil wz) cres]))
+
+
+(defn sto-re-dists
+  ""
+  [wz candidate-file sto-file
+   & {:keys [refn delta xlate refdb stodb] :or {refn DX||Y delta 5000}}]
+
+  (let [cfile (fs/fullpath candidate-file)
+        ctype (fs/ftype cfile)
+        prot-name (->> cfile
+                       (str/split #"/") last (str/split #"\.") first
+                       (str/replace-re #"_" " "))
+
+        entries (with-genome-db refdb
+                  (get-entries cfile))
+        sqs (with-genome-db refdb
+              (->> entries
+                   (#(get-adjusted-seqs % delta :ddel 0))
+                   (map second)
+                   (#(if xlate (seqXlate % :xmap xlate) %))))
+
+        refsqs (with-genome-db stodb
+                 (->> sto-file
+                      get-entries
+                      (#(get-adjusted-seqs % delta :ddel 0))
+                      (map second)
+                      (#(if xlate (seqXlate % :xmap xlate) %))))
+
+        sto-hd (hybrid-dictionary wz refsqs)
+        dicts (vfold #(probs wz %) sqs)
+        stods (vfold #(refn % sto-hd) dicts)]
+
+    [(sort-by second < (set (map (fn[en d] [en d]) entries stods)))
+     prot-name
+     (count sqs)]))
+
+
 (defn compute-candidate-info
   ""
   [sto-file candidate-file delta run
-   & {:keys [refn xlate alpha crecut limit wz order
+   & {:keys [refn xlate alpha
+             refdb stodb
+             crecut limit wz
+             Dy Mre
              plot-cre plot-dists]
-      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15
-           order :up}}]
+      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15}}]
 
   (let [[wz cres] (if wz
                     [wz]
-                    (res-word-size sto-file :delta delta
-                                   :xlate xlate :alpha alpha
-                                   :limit limit :crecut crecut :cnt 5))
+                    (with-genome-db stodb
+                      (res-word-size sto-file :delta delta
+                                     :xlate xlate :alpha alpha
+                                     :limit limit :crecut crecut :cnt 5)))
         [nm-re-sq pnm sz] (sto-re-dists wz candidate-file sto-file
                                         :refn refn :xlate xlate
-                                        :delta delta :order order)
+                                        :refdb refdb :stodb stodb
+                                        :delta delta)
         ;; For hits, always use 0.9 on CDF
-        Dy (if (zero? delta) 0.4 (case run 1 0.1, 2 0.0, -0.1))
-        cutpt (select-cutpoint nm-re-sq :Dy Dy)
-        [good bad] (get-good-candidates nm-re-sq cutpt)]
+        Dy (if (zero? delta)
+             0.4
+             (if Dy Dy
+                 (case run 1 0.3, 2 0.25, 3 0.2, 4 0.1, 5 0.0, -0.1)))
+        Mre (if (zero? delta)
+              0.9
+              (if Mre Mre
+                  (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.925)))
+
+        cutpt (select-cutpoint nm-re-sq :Dy Dy :Mre Mre)
+        [good bad] (get-pos-neg-sets nm-re-sq cutpt)]
+
     (when (and plot-cre cres) (plot-cres cres))
     (when plot-dists
       (if (zero? delta)
@@ -549,13 +526,23 @@
 (defn compute-candidate-sets
   ""
   [sto-file candidate-file run delta
-   & {:keys [refn xlate alpha crecut limit order
-             cmp-ents plot-cre plot-dists]
-      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10
-           limit 15 order :up}}]
+   & {:keys [refn xlate alpha
+             refdb stodb
+             crecut limit
+             Dy Mre
+             plot-cre plot-dists]
+      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15}}]
 
-  (let [[first-phase-entry-file final-entry-file]
+  (let [refdb (@genome-db-dir-map (if refdb refdb :refseq58))
+        stodb (@genome-db-dir-map (if stodb stodb :refseq58))
+
+        [first-phase-entry-file final-entry-file]
         (get-hitonly-final-names candidate-file)
+
+        first-phase-entry-file (fs/fullpath first-phase-entry-file)
+        first-phase-neg-file (fs/replace-type
+                              first-phase-entry-file
+                              (str "-neg." (fs/ftype first-phase-entry-file)))
 
         final-entry-file (fs/fullpath final-entry-file)
         final-bad-entry-file (fs/replace-type
@@ -567,29 +554,29 @@
          rna-nm-re-sq] (compute-candidate-info
                         sto-file candidate-file 0 run
                         :refn refn :xlate +RY-XLATE+ :alpha alpha
-                        :limit limit :wz 6 :order order
+                        :refdb refdb :stodb stodb
+                        :limit limit :wz 6
+                        :Dy Dy :Mre Mre
                         :plot-cre plot-cre :plot-dists plot-dists)
-        rna-only-perf-stats (when cmp-ents
-                              (selection-perf
-                               rna-nm-re-sq cmp-ents cutpt1
-                               :good rna-only-good))
+
         _ (->> rna-only-good (map first)
                (#(gen-entry-file % first-phase-entry-file)))
+        _ (->> rna-only-bad (#(gen-entry-nv-file % first-phase-neg-file)))
 
         [good bad
          cutpt2
          nm-re-sq] (compute-candidate-info
                     sto-file first-phase-entry-file delta run
                     :refn refn :xlate xlate :alpha alpha
-                    :crecut crecut :limit limit :order order
-                    :plot-cre plot-cre :plot-dists plot-dists)
-        perf-stats (when cmp-ents
-                     (selection-perf
-                      nm-re-sq cmp-ents cutpt2 :good good))]
+                    :refdb refdb :stodb stodb
+                    :crecut crecut :limit limit
+                    :Dy Dy :Mre Mre
+                    :plot-cre plot-cre :plot-dists plot-dists)]
 
     (->> good (#(gen-entry-nv-file % final-entry-file)))
     (->> bad (#(gen-entry-nv-file % final-bad-entry-file)))
-    (entry-file->fasta-file final-entry-file)
+    (with-genome-db refdb
+      (entry-file->fasta-file final-entry-file))
 
     [[good bad cutpt2]
      [rna-only-good rna-only-bad cutpt1]
@@ -625,16 +612,18 @@
     (if l (Integer. l) nil)))
 
 (defn hit-context-delta
-  [sto & {:keys [plot mindelta] :or {mindelta 200}}]
-  (let [gfcsz (get-saved-ctx-size sto)]
+  [sto & {:keys [plot mindelta stodb] :or {mindelta 200}}]
+  (let [gfcsz (get-saved-ctx-size sto)
+        stodb (@genome-db-dir-map (if stodb stodb :refseq58))]
     (if gfcsz
       [gfcsz true]
-      (let [pts (xfold (fn[i]
+      (let [pts (vfold (fn[i]
                          (->> (compute-candidate-info
                                sto sto
                                (+ mindelta (* i 20)) 1
                                :refn jensen-shannon
                                ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
+                               :refdb stodb :stodb stodb
                                :crecut 0.01 :limit 19
                                :plot-dists false)
                               first (map second) mean))
@@ -797,7 +786,7 @@
                             clusters))
             seq-clus (let [coll (into {} coll)]
                        (map (fn[scc]
-                              (let [v (xfold
+                              (let [v (vfold
                                        (fn[x] (coll-ffps x))
                                        (vec scc))]
                                 [(avgfn v) v]))

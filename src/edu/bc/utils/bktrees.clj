@@ -3,7 +3,7 @@
 ;;                       U T I L S . B K T R E E S                          ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;

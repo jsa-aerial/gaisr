@@ -138,8 +138,13 @@
          #"^\s*#+" ; NOTE: need to remove re-find from lseq filter
          (add-comment m l)
 
-         #"^BLAST\s*:"
-         (directive (process-directive-options m :blast l) :blast)
+         #"RefDB\s*:"
+         (let [m (getf m :refdb (str/lower-case l))]
+           (assoc m :refdb (keyword (m :refdb))))
+
+         #"StoDB\s*:"
+         (let [m (getf m :stodb (str/lower-case l))]
+           (assoc m :stodb (keyword (m :stodb))))
 
          #"^Hitfile-Dir\s*:"
          (getf m :hitfile-dir l)
@@ -149,6 +154,9 @@
 
          #"^STO-Dir\s*:"
          (getf m :stodir l)
+
+         #"^BLAST\s*:"
+         (directive (process-directive-options m :blast l) :blast)
 
          #"^CM-Build[\s:]*"
          (directive (assoc m :cmbuild (m :cmdir)) :cmbuild)
@@ -207,5 +215,5 @@
                :gen-csvs (process-gen-csv-subline m l)
                :sccs (process-sccs-subline m l)
                :gen-stos (process-gen-sto-subline m l))))
-     {} lseq)))
+     {:refdb :refseq58 :stodb :refseq58} lseq)))
 

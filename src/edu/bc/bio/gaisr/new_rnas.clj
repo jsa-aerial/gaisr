@@ -85,11 +85,12 @@
    local map of name+version->rnahit_id.
   "
   []
-  (reduce (fn[M m]
-            (assoc M (str (m :name) "-" (m :version))
-                   (m :rnahit_id)))
-          {} (sql-query
-              "select rh.name,rh.version,rh.rnahit_id from rnahit as rh")))
+  (reduce
+   (fn[M m]
+     (assoc M (str (m :name) "-" (m :cluster) "-" (m :version))
+            (m :rnahit_id)))
+   {} (sql-query
+       "select rh.name,rh.cluster,rh.version,rh.rnahit_id from rnahit as rh")))
 
 (def rnaname-id-map
      (atom (get-rnaname-rhid-map)))
@@ -114,11 +115,14 @@
     "CREATE TABLE rnahit (
           rnahit_id     INT(10) UNSIGNED NOT NULL auto_increment,
           name          varchar(40) NOT NULL,
+          cluster       INT(10) UNSIGNED NOT NULL,
           version       INT(10) UNSIGNED NOT NULL,
           gene_name     varchar(40) NOT NULL,
           ncbi_taxon_id INT(11) UNSIGNED NOT NULL,
           db            varchar(40) NOT NULL,
+          subset        varchar(40) NOT NULL,
           pub           varchar(500),
+          notes         varchar(1024),
           loaded        date,
           PRIMARY KEY (rnahit_id)
      ) ENGINE=INNODB"
@@ -200,6 +204,8 @@
   (let [rna-name (->> sto fs/basename (str/split #"\.")
                       first str/lower-case)
         [rna-name version] (str/split #"-" rna-name)
+        [rna-name cluster] (str/split #"(c|C)" rna-name)
+        cluster (if cluster cluster "0")
         gfs (take-until
              #(not= "#=GF " (str/take 5 %))
              (drop 1 (io/read-lines sto)))
@@ -209,27 +215,31 @@
                         :let [bits (str/split #"\s+" gf)
                               kind (->> bits second str/lower-case keyword)
                               bits (drop 2 bits)
-                              data (when (seq bits) (apply str bits))]
+                              data (when (seq bits) (str/join " " bits))]
                         :when (in kind [:rna :taxon
                                         :in-vivo :in-vitro
-                                        :pub :db])]
+                                        :pub :db :notes])]
                     [kind (cond
-                           (in kind [:rna :pub :db]) data
+                           (in kind [:rna :pub :db :notes]) data
                            (= kind :taxon) (Integer. data)
                            :else (map #(Integer. %)
                                       (when data (str/split #", *" data))))]))
-        rna (infomap :rna)
+        prot (infomap :rna)
         taxon (infomap :taxon)
         pub (or (infomap :pub) "")
-        db (or (infomap :db) "Unknown?!?")
+        notes (or (infomap :notes) "")
+        db (or (infomap :db) "UNKNOWN")
+        [db subset] (if (= db "UNKNOWN") [db ""] (str/split #"\." db))
         invitros (infomap :in-vitro)
         invivos (infomap :in-vivo)]
     (if (and (empty? invitros) (empty? invivos))
-      [[rna-name version rna taxon db pub nil nil]]
+      [[rna-name cluster version prot taxon db subset pub notes nil nil]]
       (reduce (fn[v vid]
-                (conj v [rna-name version rna taxon db pub vid "vitro"]))
+                (conj v [rna-name cluster version
+                         prot taxon db subset pub notes vid "vitro"]))
               (reduce (fn[v vid]
-                        (conj v [rna-name version rna taxon db pub vid "vivo"]))
+                        (conj v [rna-name cluster version
+                                 prot taxon db subset pub notes vid "vivo"]))
                       [] invivos)
               invitros))))
 
@@ -242,15 +252,19 @@
    (apply
     sql/insert-values
     :rnahit
-    [:name :version :gene_name :ncbi_taxon_id :db :pub :loaded] values)))
+    [:name :cluster :version :gene_name :ncbi_taxon_id
+     :db :subset :pub :notes :loaded]
+    values)))
 
 (defn update-rnahit
   [stospec]
   (let [stos (get-sto-files stospec)]
     (insert-rnahits
-     (sort-by first (set (map (fn[[n v gn ntx db pub & tail]]
-                                [n v gn ntx db pub (str-date "yyyy-MM-dd")])
-                              (mapcat get-mlab-gfinfo stos)))))
+     (sort-by first
+              (set (map (fn[[n c v gn ntx db ss pub notes & tail]]
+                          [n c v gn ntx db ss pub notes
+                           (str-date "yyyy-MM-dd")])
+                        (mapcat get-mlab-gfinfo stos)))))
     (swap! rnaname-id-map (fn[_] (get-rnaname-rhid-map)))))
 
 ;;;(update-rnahit "/home/kaila/Bio/Tests/JSA/NewRNAs")
@@ -273,9 +287,9 @@
   [stospec]
   (let [stos (get-sto-files stospec)]
     (insert-verified-info
-     (sort-by first (keep (fn[[n v gn ntx db pub vid vloc]]
+     (sort-by first (keep (fn[[n c v gn ntx db ss pub notes vid vloc]]
                             (when (and vid vloc)
-                              [(@rnaname-id-map (str n "-" v)) vid vloc]))
+                              [(@rnaname-id-map (str n "-" c "-" v)) vid vloc]))
                           (apply concat (map get-mlab-gfinfo stos)))))))
 
 ;;;(update-verified-info "/home/kaila/Bio/Tests/JSA/NewRNAs")
@@ -295,9 +309,8 @@
 (defn update-genome-rnahit
   [stospec]
   (let [stos (get-sto-files stospec)
-        rnahit-ids (map #(->> % fs/basename
-                              (str/split #"\.")
-                              first str/lower-case
+        rnahit-ids (map #(->> % get-mlab-gfinfo
+                              first (take 3) (str/join "-")
                               (get @rnaname-id-map))
                         stos)
         genome-groups (map
@@ -567,7 +580,7 @@
                       :when (> fullcnt 0)]
                   [rna (str "v" v) taxon cnt
                    fullcnt (double (* 100.0 (/ cnt fullcnt)))
-                   (->> (get-genomes taxon :new-rnas rna)
+                   (->> (get-genomes taxon :new-rnas rna :version v)
                                  (map :name) set)
                    #_(->> (get-ncs-by-taxon-rna-gene taxon :rna rna)
                         first third vals first set)])]

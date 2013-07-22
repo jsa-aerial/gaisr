@@ -49,7 +49,52 @@
         ))
 
 
-;;; ----------------------------------------------------------------------
+;;; ------------------------------------------------------------------------;;;
+;;;
+;;; We need a fully general purpose way of setting default genome
+;;; fasta directories as several functions use this in large call
+;;; trees.  By making the default a function, we can have the
+;;; 'directory' be multiple directories and different for different
+;;; entries.
+
+(defn refseq46-genome-fasta-dir
+  "Default refseq46 genome fasta dir resolver.  Single location, so
+   args (genome name) is ignored
+  "
+  [& _]
+  "/data2/BioData/GenomeSeqs/RefSeq46")
+
+(defn refseq58-genome-fasta-dir
+  "Default refseq58 genome fasta dir resolver.  Single location, so
+   args (genome name) is ignored
+  "
+  [& _]
+  "/data2/BioData/GenomeSeqs/RefSeq58")
+
+(def genome-db-dir-map
+     "Map of db variants to fasta location resolver functions"
+     (atom {:refseq58 refseq58-genome-fasta-dir
+            :refseq46 refseq46-genome-fasta-dir}))
+
+(def ^{:dynamic true
+       :doc "Default genome fasta location resolver"}
+     default-genome-fasta-dir refseq58-genome-fasta-dir)
+
+
+(defmacro with-genome-db
+  "Binds DBREF as the current genome fasta directory resolver.  DBREF
+   is a genome db fasta directory resolver, which is a function of 1
+   argument returning the director for the genome name passed in.
+   Executes BODY (a group of forms) within context so bound -
+   including across threads
+  "
+  [dbref & body]
+  `(with-bindings*
+     {#'default-genome-fasta-dir ~dbref}
+     (fn[] ~@body)))
+
+
+;;; ------------------------------------------------------------------------;;;
 ;;;
 ;;; Convert Sto and Fasta split sequence format files into conjoined
 ;;; versions.  Many Sto and Fasta files from various sites come in old
@@ -125,20 +170,18 @@
           (cl-format true "~A~40T~A~%" nm sq))))))
 
 
-(def default-genome-fasta-dir
-     (or (getenv "GAISR_DEFAULT_GENOME_DIR")
-         "/data2/BioData/GenomeSeqs/RefSeq58"))
-
 (defn split-join-fasta-file
-  [in-file out-dir
-   & {:keys [base pat] :or {base default-genome-fasta-dir pat #"^gi"}}]
+  [in-file
+   & {:keys [base pat namefn entryfn testfn]
+      :or {base "" pat #"^gi" entryfn identity testfn identity}}]
+  {:pre [(fs/directory? base) (fn? namefn) (fn? testfn)]}
   (doseq [[gi sq] (->> in-file io/read-lines
                        (partition-by #(re-find pat %))
                        (partition-all 2)
-                       (map (fn[[[nm] sbits]] [nm (apply str sbits)])))]
-    (let [nm (->> gi (str/split #"\|") (drop 3) first
-                  (str/split #"\.") first)]
-      (when (re-find #"^NC_" nm)
+                       (map (fn[[[nm] sbits]]
+                              [(entryfn nm) (apply str sbits)])))]
+    (let [nm (namefn gi)]
+      (when (testfn nm sq)
         (io/with-out-writer (fs/join base (str nm ".fna"))
           (println gi)
           (println sq))))))
@@ -161,7 +204,7 @@
              #(split-join-ncbi-fasta-file %))
   "
   [in-file]
-  (let [base default-genome-fasta-dir]
+  (let [base (default-genome-fasta-dir)]
     (doseq [[gi sq] (->> in-file io/read-lines
                          (partition-by #(re-find #"^>gi" %))
                          (partition-all 2)
@@ -417,7 +460,7 @@
   "
   [entry & {:keys [ldelta rdelta] :or {ldelta 0 rdelta 0}}]
   (let [[name range] (str/split #"( |/|:)+" 2 entry)
-        name (re-find #"[A-Za-z0-9]+_[A-Za-z0-9_]+" name)
+        name (re-find #"[A-Za-z0-9]+_[A-Za-z0-9_-]+" name)
         [range strand] (if range (str/split #"/" range) [nil nil])
         [s e st] (if (not range)
                    [1 Long/MAX_VALUE "1"]
@@ -488,8 +531,10 @@
    should always be the default location.
   "
   [entry & {:keys [basedir ldelta rdelta rna]
-            :or {basedir default-genome-fasta-dir ldelta 0 rdelta 0 rna true}}]
-  (let [[name [s e] strand] (entry-parts entry :ldelta ldelta :rdelta rdelta)
+            :or {basedir (default-genome-fasta-dir entry)
+                 ldelta 0 rdelta 0 rna true}}]
+  (let [basedir (if (fn? basedir) (basedir entry) basedir)
+        [name [s e] strand] (entry-parts entry :ldelta ldelta :rdelta rdelta)
         _ (when (<= s 0)
             (raise :type :bad-entry
                    :input [entry ldelta rdelta]
@@ -749,7 +794,7 @@
       (read-seqs filespec :info (if seqs :data :name))
       (->> (get-csv-entry-info fspec)
            (keep (fn[[nm s e sd]]
-                   (when (fs/exists? (fs/join default-genome-fasta-dir
+                   (when (fs/exists? (fs/join (default-genome-fasta-dir nm)
                                               (str nm ".fna")))
                      (str nm "/"
                           (if (> (Integer. s) (Integer. e))

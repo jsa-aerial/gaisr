@@ -272,7 +272,7 @@
            bad-file (fs/replace-type stoin "-bad.txt")
            bad (keep (fn[[nm-coord aln-sq]]
                        (let [nm (first (str/split #"/" 2 nm-coord))
-                             fna (fs/join default-genome-fasta-dir
+                             fna (fs/join (default-genome-fasta-dir nm)
                                           (str nm ".fna"))
                              degapped (degap-seqs aln-sq)
                              actual (if (not (fs/exists? fna))

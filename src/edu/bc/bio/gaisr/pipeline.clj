@@ -1014,13 +1014,19 @@
   [job-config-file &
   {:keys [eval] :or {eval 100.0}}]
   (let [config (parse-config-file job-config-file)
+
+        refdb (config :refdb)
+        stodb (config :stodb)
+
         stodir (config :stodir)
         cmdir (config :cmdir)
         hitdir (config :hitfile-dir)
+
         stos (or (seq (config :cmbuilds))
                  (seq (fs/directory-files stodir "sto")))
         cms  (or (seq (config :calibrates))
                  (seq (fs/directory-files cmdir "cm")))
+
         csvdir (first (config :gen-csvs)) ; HACK (see job-config...)
         ctxsz (atom {})]
 
@@ -1052,7 +1058,7 @@
       ;; csvdir does not exist, generate it.  Place all generated csvs
       ;; into csvdir
       (when csvdir
-        (when (not (fs/exists? csvdir)) (fs/mkdir csvdir))
+        (when (not (fs/exists? csvdir)) (fs/mkdirs csvdir))
         (when (seq cmouts)
           (doseq [cmout cmouts] (cmsearch-out-csv cmout))
           (let [csvs (fs/directory-files cmdir "csv")]
@@ -1061,8 +1067,9 @@
                 (fs/rename csv (fs/join csvdir fname))))))
         (when-let [aggr-dir ((into {} (rest (config :gen-csvs))) :aggregate)]
           (aggregate-csvs csvdir)
-          (when-let [orig (first (fs/glob (fs/join csvdir "*agg*.csv")))]
-            (fs/rename orig (fs/join aggr-dir (fs/basename orig)))))))
+          (when-let [origs (fs/glob (fs/join csvdir "*agg*.csv"))]
+            (doseq [orig origs]
+              (fs/rename orig (fs/join aggr-dir (fs/basename orig))))))))
 
     ;; Sequence Conservation, Context, Size filtering.  Take cmsearch
     ;; results and automatically filter into pos and neg sets
@@ -1072,14 +1079,16 @@
             stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
             csv-dir (opts :csv-dir csvdir)
             out-dir (opts :out-dir csv-dir)
-            chart-dir (fs/join stodir "Charts")]
-        (when (not (fs/exists? chart-dir)) (fs/mkdir chart-dir))
+            chart-dir (or (opts :chart-dir) (fs/join stodir "Charts"))]
+        (when (not (fs/exists? chart-dir)) (fs/mkdirs chart-dir))
         (doseq [sto stos]
           (let [sb (fs/basename sto)
                 cmscsv (first (fs/glob (str csv-dir "/*" sb "*.cmsearch.csv")))
                 run (->> sb (re-find #"[0-9]+([A-Z]|)\.sto$") first
-                         (re-find #"[0-9]+") Integer. inc)
-                [csz gfcsz-found] (hit-context-delta sto :plot chart-dir)]
+                         (#(or (and % (re-find #"[0-9]+" %)) 0))
+                         Integer. inc)
+                [csz gfcsz-found] (hit-context-delta
+                                   sto :stodb stodb :plot chart-dir)]
             (when (not gfcsz-found) ; If gen-stos runs and need to save ctxsz
               (swap! ctxsz #(assoc % sb csz)))
             (compute-candidate-sets
@@ -1087,6 +1096,7 @@
              run csz
              :refn jensen-shannon
              :xlate +RY-XLATE+ :alpha ["R" "Y"]
+             :refdb refdb :stodb stodb
              :crecut 0.01 :limit 19
              :plot-dists chart-dir)))))
 
@@ -1109,7 +1119,8 @@
                 ent (->> (str "*" sb "*-final.ent")
                          (fs/join sccs-dir)
                          fs/glob first)]
-            (next-sto sto cm ent csz)))))
+            (binding [default-genome-fasta-dir (@genome-db-dir-map refdb)]
+              (next-sto sto cm ent csz))))))
 
     :good))
 

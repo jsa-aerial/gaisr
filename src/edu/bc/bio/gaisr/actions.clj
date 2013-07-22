@@ -3,7 +3,7 @@
 ;;                               A C T I O N S                              ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2012 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -435,11 +435,11 @@
 
 
 (defn remote-entry-file-setop
-  "Remote entry file intersection.  If with-seqs is true return
-   entries with their sequences.  This option requires all files to be
-   of the same type.  fs is a vector of file paths of the
-   uploaded-files after renaming for corresponding originating file
-   extensions.
+  "Remote entry file intersection, difference, or union.  If with-seqs
+   is true return entries with their sequences.  This option requires
+   all files to be of the same type.  fs is a vector of file paths of
+   the uploaded-files after renaming for corresponding originating
+   file extensions.
   "
   [op with-seqs fs]
   (remote-try
@@ -451,13 +451,23 @@
          (raise :type :not-same-ftype :msg "Not all files have same type"))))
    (let [res (apply tools/entry-file-setop
                     (keyword op) with-seqs
-                    (if with-seqs fs (cons false fs)))]
+                    (if with-seqs fs (cons true fs)))]
      {:body (json/json-str
              {:info [:NA :NA (vec res)]
               :stat "success"})})))
 
 
 (defn remote-load-new-rna
+  "Loads a new RNA as described by the contents of sto file.  The
+   uploaded sto file is a copy of a 'final' version run of an RNA
+   against some target data 'base', e.g., ECRibleaders all or
+   refseq58.  Actual work done is performed by load-new-rna defined in
+   ...gaisr.new-rnas.
+
+   ***NOTE: there have been examples where this can take a 'long'
+      time (requiring timeout changes in gaisr.rb client calls).
+      Hence it should be refactored into a job!!
+  "
   [uploaded-sto-file]
   (remote-try
    (let [res (load-new-rna uploaded-sto-file)]

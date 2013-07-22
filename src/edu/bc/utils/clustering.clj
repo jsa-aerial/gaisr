@@ -76,8 +76,8 @@
 
    Returns {[k v] | k=[(kefn i) (kefn j)] v =(distfn i j)}
 
-   Uses reducers and xfold to parallelize computation with auto
-   computed queue granularity (see xfold)
+   Uses reducers and vfold to parallelize computation with auto
+   computed queue granularity (see vfold)
   "
    [distfn coll & {:keys [sym keyfn] :or {sym true keyfn identity}}]
    (let [coll (vec coll)
@@ -86,7 +86,7 @@
                (if sym
                  (assoc M [ik jk] d [jk ik] d)
                  (assoc M [ik jk] d)))
-             {} (xfold (fn [[i j]] [(keyfn i) (keyfn j) (distfn i j)])
+             {} (vfold (fn [[i j]] [(keyfn i) (keyfn j) (distfn i j)])
                        (for [k (range cnt)
                              l (range cnt)
                              :let [i (coll k)
@@ -174,7 +174,7 @@
    seq of these new centers.
   "
   [avgfn clusters]
-  (xfold (fn[cl] (avgfn cl)) clusters))
+  (vfold (fn[cl] (avgfn cl)) clusters))
 
 (defn clusters
   "Form and return a set of clusters.  Each cluster is the set of
@@ -184,7 +184,7 @@
   "
   [distfn coll centers]
   (reduce (fn[M [x c]] (assoc M c (conj (get M c []) x)))
-          {} (xfold #(do [% (nearest % distfn centers)]) coll)))
+          {} (vfold #(do [% (nearest % distfn centers)]) coll)))
 
 
 (defn split-worst-cluster
@@ -616,7 +616,7 @@
   [distfn avgfn clustering]
   (math/sqrt
    (/ (sum
-       (xfold
+       (vfold
         (fn[[mi xis]]
           (* (dec (count xis))
              (variance xis :distfn distfn :avgfn avgfn :m mi)))
@@ -631,7 +631,7 @@
   "
   [distfn stdev u coll]
   (let [f (fn[x mi] (if (<= (distfn x mi) stdev) 1 0))]
-    (sum (xfold #(f % u) coll))))
+    (sum (vfold #(f % u) coll))))
 
 (defn intercluster-density
   "Compute the inter cluster point density.  This is the density
@@ -678,9 +678,9 @@
    the better.
   "
   [distfn avgfn clustering]
-  (let [S (apply set/union (xfold #(set (second %)) clustering))
-        Svar (variance S :distfn distfn :avgfn avgfn :rfn xfold)
-        Cvars (xfold (fn[[mi xis]]
+  (let [S (apply set/union (vfold #(set (second %)) clustering))
+        Svar (variance S :distfn distfn :avgfn avgfn :rfn vfold)
+        Cvars (vfold (fn[[mi xis]]
                        (variance xis :distfn distfn :m mi))
                      1 clustering)]
     (mean (map #(/ % Svar) Cvars))))

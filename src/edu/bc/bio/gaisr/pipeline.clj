@@ -759,28 +759,32 @@
       "." (conj (vec (butlast (str/split #"\." (fs/basename cm-filespec))))
                 (str hitpart "cmsearch.out"))))))
 
-(defn core-processing [hit-fna base clus-dirnms&fnms]
-  (doall
-   (map (fn [[dnm fnm]]
-          (-> (fs/join base dnm fnm)
-              cmfinder*
-              ((fn[mstos](map #(cmf-post-process %) mstos)))
-              ((fn[fmstos](map #(cmbuild %) fmstos)))
-              ((fn[cms](pmap #(cmcalibrate %) cms)))
-              ((fn[cms](pmap #(cmsearch % hit-fna (gen-hit-out-filespec %))
-                             cms)))))
-        clus-dirnms&fnms)))
 
+(defn cmfinder-stage [infna]
+  (->> infna (#(cmfinder* %)) (map cmf-post-process)))
 
-(defn process-clusters [hit-fna base clus-dirnms&fnms
-                        & {par :par :or {par 3}}]
-  (let [sz (floor (/ (count clus-dirnms&fnms) par))
-        wsets (partition sz sz {} clus-dirnms&fnms)]
-    (pmap #(core-processing hit-fna base %) wsets)))
+(defn cm-build-calibrate-stage
+  [cmf-mostos & {:keys [par] :or {par 4}}]
+  (-> cmf-mostos (map #(cmbuild %)) (pxmap #(cmcalibrate %) par)))
 
+(defn cmsearch-stage
+  [hit-fna par cms]
+  (pxmap par #(cmsearch % hit-fna (gen-hit-out-filespec %)) cms))
 
-(defn run-pipeline-front [selections
-                          & {:keys [ev wordsize] :or {ev 10}}]
+(defn core-processing [stages base [dnm fnm]]
+  (reduce (fn[V f] (f V))
+          (fs/join base dnm fnm)
+          stages))
+
+(defn process-clusters [stages hitfna base clus-dirnms&fnms
+                        & {par :par :or {par 4}}]
+  (let [stages (map #(if (= % cmsearch-stage) (partial % hitfna par) %)
+                    (ensure-vec stages))]
+    (pxmap #(core-processing stages base %) par clus-dirnms&fnms)))
+
+(defn run-pipeline-front
+  ""
+  [selections & {:keys [ev wordsize] :or {ev 10}}]
   (let [selections-fna (get-selection-fna selections)
         blaster (blastpgm selections-fna)
         wdsz (if wordsize wordsize (if (= blaster tblastn) 4 8))
@@ -789,8 +793,9 @@
         clusters (get-candidates hit-file)]
     [hitfna hit-file]))
 
-(defn run-pipeline-full [selections
-                         & {:keys [ev wordsize] :or {ev 10}}]
+(defn run-pipeline-stages
+  ""
+  [selections stages & {:keys [ev wordsize par] :or {ev 10 par 4}}]
   (let [selections-fna (get-selection-fna selections)
         blaster (blastpgm selections-fna)
         wdsz (if (= blaster tblastn) 4 8)
@@ -799,7 +804,7 @@
         clusters (get-candidates hit-file)
         clusnr-dir (fs/join (fs/dirname hit-file) *clusnr*)
         [base dir-info] (create-pipeline-working-area clusnr-dir)]
-    (doall (process-clusters hitfna base (take 6 dir-info)))))
+    (doall (process-clusters stages hitfna base dir-info :par par))))
 
 
 (defn directory-cms [directory]
@@ -955,6 +960,44 @@
               hfs-cmss)))
 
 
+(defn sto-version
+  "Finds the version of the input sto STO file, where version is based
+   in the versioning scheme used by mlab.  That scheme is that the
+   version is encoded in the name as a -n just before the .sto.  So,
+   for example, my-rna-0.sto, has version 0.  One allowed exception is
+   for the 0 case: if there is no -n, assumes version 0.  For example,
+   my-rna.sto == my-rna-0.sto.
+  "
+  [stoname]
+  (->> stoname (re-find #"-[0-9]+([A-Z]|)\.sto$") first
+       (#(or (and % (re-find #"[0-9]+" %)) 0))))
+
+(defn next-sto-version
+  "Compute next version number for stoname a name of a sto file with
+   version information as given by sto-version (see above)
+  "
+  [stoname]
+  (->> stoname sto-version Integer. inc))
+
+(defn sccs-run
+  "Does the same as next-sto-version, but use context is getting the
+   'run' level of an sccs run.
+  "
+  [stoname]
+  (next-sto-version stoname))
+
+(defn next-sto-name
+  "Compute next sto version name from input variant ISTO name.
+   Basically increase the -n version (or add it if this was a non
+   versioned 0 case.
+  "
+  [isto nxtver grpnm]
+  (let [grpnm (if grpnm (str "-" grpnm) "")]
+    (if (re-find #"-[0-9]+([A-Z]|)\.sto$" isto)
+      (str/replace-re #"-[0-9]+([A-Z]|)\.sto" (str grpnm "-" nxtver ".sto")
+                      isto)
+      (fs/replace-type isto (str grpnm "-" nxtver ".sto")))))
+
 (defn next-sto
   "Take an originating input sto that was put through a run of
    pipeline from cmbuild through cmsearch through to FFP (and or
@@ -967,11 +1010,10 @@
    ensures various #GF commentary lines are preserved and places a
    marker in the output indicating start of new aligned sequences.
   "
-  [isto cm ent & [ctxsz]]
-  (let [oldver (->> isto (re-find #"[0-9]+([A-Z]|)\.sto$")
-                    first (re-find #"[0-9]+"))
-        nxtver (->> oldver Integer. inc str)
-        osto (str/replace-re #"[0-9]+([A-Z]|)\.sto" (str nxtver ".sto") isto)
+  [isto cm ent & [ctxsz grpnm]]
+  (let [oldver (sto-version isto)
+        nxtver (next-sto-version isto)
+        osto (next-sto-name isto nxtver grpnm)
         added (-> ent (read-seqs :info :name) count)
         gc-lines (first (join-sto-fasta-lines isto ""))
 
@@ -1084,9 +1126,7 @@
         (doseq [sto stos]
           (let [sb (fs/basename sto)
                 cmscsv (first (fs/glob (str csv-dir "/*" sb "*.cmsearch.csv")))
-                run (->> sb (re-find #"[0-9]+([A-Z]|)\.sto$") first
-                         (#(or (and % (re-find #"[0-9]+" %)) 0))
-                         Integer. inc)
+                run (sccs-run sb)
                 [csz gfcsz-found] (hit-context-delta
                                    sto :stodb stodb :plot chart-dir)]
             (when (not gfcsz-found) ; If gen-stos runs and need to save ctxsz
@@ -1106,6 +1146,7 @@
       (let [opts (into {} gen-stos)
             stos (opts :stos stos)
             stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
+            grpnm (opts :group-name)
             sccs (config :sccs)
             sccs-dir (some #(when (= (first %) :out-dir) (second %)) sccs)
             sccs-dir (opts :sccs-dir (or sccs-dir csvdir))
@@ -1120,7 +1161,7 @@
                          (fs/join sccs-dir)
                          fs/glob first)]
             (binding [default-genome-fasta-dir (@genome-db-dir-map refdb)]
-              (next-sto sto cm ent csz))))))
+              (next-sto sto cm ent csz grpnm))))))
 
     :good))
 

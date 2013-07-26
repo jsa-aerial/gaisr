@@ -508,7 +508,7 @@
         Mre (if (zero? delta)
               0.9
               (if Mre Mre
-                  (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.925)))
+                  (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.957)))
 
         cutpt (select-cutpoint nm-re-sq :Dy Dy :Mre Mre)
         [good bad] (get-pos-neg-sets nm-re-sq cutpt)]

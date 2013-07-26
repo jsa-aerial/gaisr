@@ -208,7 +208,7 @@
                   sort)
         runtxts (->> (fs/directory-files qinmicro-dir ".txt")
                      (map #(do [(fs/basename %) (io/read-lines %)])))]
-    (doseq [d (drop 3 dirs)]
+    (doseq [d dirs]
       (let [dnm (fs/basename d)
             xpart (str/lower-case dnm)
             sto (-> d (fs/directory-files ".sto")
@@ -222,7 +222,7 @@
                      (str/replace-re #"RNAXXX" sto)
                      (str/replace-re #"XXX" dnm)
                      println)))))))))
-
+(build-config-files)
 
 
 (defn true-positive-rate
@@ -246,10 +246,10 @@
   (float (/ fp (+ fp tn))))
 
 
-(true-positive-rate 122 7)
-(false-negative-rate 1 26)
-
-
+(def eval-cut-points
+     [0.00001, 0.0001, 0.001, 0.01
+      0.1 0.2 0.3 0.5 0.7 0.9
+      1.0 2.0 3.0 4.0 5.0 7.0])
 
 
 (defn build-eval-pos-neg-sets
@@ -267,11 +267,11 @@
                      (take-until #(= % "CSV"))
                      ((fn[bits] (apply fs/join (conj (vec bits) "EVAL-ROC")))))]
     (when (not (fs/exists? basedir)) (fs/mkdirs basedir))
-    (doseq [cpt [0.1 0.2 0.3 0.5 0.7 1.0 2.0 3.0 4.0 5.0 7.0]]
+    (doseq [cpt eval-cut-points]
       (gen-entry-file
        (map first (take-until (fn[[n ev]] (> ev cpt)) evset))
        (fs/join basedir (str "ev-" cpt "-pos.ent"))))
-    (doseq [cpt [0.1 0.2 0.3 0.5 0.7 1.0 2.0 3.0 4.0 5.0 7.0]]
+    (doseq [cpt eval-cut-points]
       (gen-entry-file
        (map first (drop-until (fn[[n ev]] (> ev cpt)) evset))
        (fs/join basedir (str "ev-" cpt "-neg.ent"))))))
@@ -288,7 +288,7 @@
 (defn eval-roc-data []
   (let [base "/home/kaila/Bio/Test/ROC-data"
         RNAs ["L20" "S15" "S4"]
-        cutpts [0.1 0.2 0.3 0.5 0.7 1.0 2.0 3.0 4.0 5.0 7.0]]
+        cutpts eval-cut-points]
     (for [rna RNAs]
       (let [totdir (fs/join base rna "TotPosNeg")
             tot-pos (fs/join totdir (str rna "-good.ent"))
@@ -311,6 +311,10 @@
 
 
 
+(def sccs-cut-points
+     [0.1, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9
+      0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97])
+
 (defn build-sccs-pos-neg-sets
   [csv-hit-file]
   (let [bits (fs/split csv-hit-file)
@@ -324,7 +328,7 @@
     (when (not (fs/exists? outdir)) (fs/mkdirs outdir))
     (when (not (fs/exists? chart-dir)) (fs/mkdirs chart-dir))
 
-    (doseq [Mre [0.8 0.9 0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97]]
+    (doseq [Mre sccs-cut-points]
       (println :Mre Mre)
       (sccs/compute-candidate-sets
        sto csv-hit-file
@@ -353,7 +357,7 @@
 (defn sccs-roc-data []
   (let [base "/home/kaila/Bio/Test/ROC-data"
         RNAs ["L20" "S15" "S4"]
-        cutpts [0.8 0.9 0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97]]
+        cutpts sccs-cut-points]
     (for [rna RNAs]
       (let [totdir (fs/join base rna "TotPosNeg")
             tot-pos (fs/join totdir (str rna "-good.ent"))
@@ -395,7 +399,7 @@
         rnas ["L20" "S15" "S4"]]
     (doseq [i (range 0 3)]
       (let [chart (build-chart (nth rnas i) (nth sccs-data i) (nth eval-data i))
-            chart-file (fs/join "/home/kaila/Bio/Test/ROC-data"
+            chart-file (fs/join "/home/kaila/Bio/Test/ROC-data/Plots2"
                                 (str (nth rnas i) "-roc-plot.png"))]
         (incanter.core/view chart)
         (incanter.core/save
@@ -405,6 +409,42 @@
 
 
 
+(def bp-scores
+     {[\G \C] 1.00, "GC" 1.00, [\C \G] 1.00, "CG" 1.00,
+      [\A \U] 0.99, "AU" 0.99, [\U \A] 0.99, "UA" 0.99,
+      [\G \U] 0.80, "GU" 0.80, [\U \G] 0.80, "UG" 0.80
+      })
+
+(defn base-candidates
+  [bp-index-pairs]
+  (filter (fn[[[b1 i] [b2 j]]]
+            (and (bp-scores [b1 b2])
+                 (> (- j i) 3)))
+          (combins 2 bp-index-pairs)))
+
+(->> "/data2/Bio/QinMicro/RF00059/RF00059-seed-NC.sto"
+     read-seqs
+     degap-seqs
+     norm-elements
+     (take 1)
+     (map (fn[sq] (map #(do [%1 %2]) sq (iterate inc 0))))
+     (map base-candidates)
+     (map (fn[ps] (sort-by #(-> % first second) ps)))
+     first (take-while #(-> % first second (= 0))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+(comment
 
 (defn eval-pos-neg-sets
   [csv-hit-file cut-point]
@@ -437,3 +477,5 @@
      (let [pos (first (fs/glob (fs/join hit-dir "*final.ent")))
            neg (first (fs/glob (fs/join hit-dir "*final-bad.ent")))]
        (sccs-pos-neg-sets pos neg cut-point))))
+
+)

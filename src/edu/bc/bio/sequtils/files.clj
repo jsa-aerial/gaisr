@@ -105,6 +105,24 @@
 ;;; all those back together so that each sequence is on a single line.
 
 
+(defn write-sto
+  [newsto auth-lines comment-lines nm-sq-pairs ss-lines]
+  (let [ss-pairs (if (vector? (first ss-lines))
+                   ss-lines
+                   (map #(let [bits (str/split #"\s+" %)]
+                           [(str/join " " (take 2 bits)) (last bits)])
+                        ss-lines))]
+    (io/with-out-writer newsto
+      (doseq [l auth-lines] (println l))
+      (println)
+      (doseq [l comment-lines] (println l))
+      (println)
+      (doseq [[nm sq] nm-sq-pairs] (cl-format true "~A~40T~A~%" nm sq))
+      (doseq [[gf ss] ss-pairs] (cl-format true "~A~40T~A~%" gf ss))
+      (when (not= (first (last ss-pairs)) "//")
+        (println "//")))))
+
+
 (defn sto-GC-and-seq-lines [stofilespec]
   (seq/separate
    #(and (> (count %) 1)

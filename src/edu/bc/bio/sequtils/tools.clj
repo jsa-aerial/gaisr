@@ -792,10 +792,10 @@
               max-cand-seq 40
               min-len-cand 30
               max-len-cand 100
-              max-out-motifs 3
-              expected-motif-freq 0.80
+              max-out-motifs 4
+              expected-motif-freq 0.70
               min-stem-loops 1
-              max-stem-loops 1
+              max-stem-loops 2
               del-files true}}]
 
   (let [seqin        (fs/fullpath in)
@@ -835,9 +835,10 @@
               cands-file (str seqout-candf dot-i)]
           (when (not (fs/empty? cands-file))
             (let [canda-ofile (str seqin ".align-sto.h" suffix)
-                  motif-ofile (str seqin ".motif-sto.h" suffix)
+                  motif-ofile (fs/replace-type
+                               seqin (str "-motif-h" suffix ".sto"))
                   cm-file     (str seqin ".cm.h"    suffix)
-                  cmf-stdout  (str seqin ".h" stem-loops ".out" dot-i)]
+                  cmf-stdout  (str seqin ".h" stem-loops dot-i ".out")]
               (canda seqin cands-file canda-ofile)
               (cmfinder seqin canda-ofile
                         motif-ofile cm-file
@@ -886,19 +887,26 @@
              (inc (java.lang.Math/log (/ (sm :num) (sm :species-cnt))))))))
     summary-maps)))
 
-(defn cmf-post-process [motif-sto-filespec
-                        & {lt :lt ut :ut w :w
-                           :or {lt 10 ut nil s true w nil}}]
-  (let [infile (fs/fullpath motif-sto-filespec)
-        outfile (str infile ".filtered")
-        cmfpath (get-tool-path :cmfinder)
-        cmfiltercmd (str cmfpath "filter.pl")
-        cmdargs ["-s" "-lt" (str lt)]
-        cmdargs (if ut (conj cmdargs "-ut" (str ut)) cmdargs)
-        cmdargs (conj cmdargs infile outfile)]
-    (assert-tools-exist [cmfiltercmd])
-    (runx cmfiltercmd cmdargs)
-    outfile))
+(defn cmf-post-process
+  [insto & {:keys [threshold] :or {threshold 10}}]
+  (let [insto (fs/fullpath insto)
+        outsto (fs/replace-type insto "-filtered.sto")
+        [gfs seqlines sslines] (join-sto-fasta-lines insto "")
+        gfs (filter #(not (re-find #"^#=GR" %)) gfs)
+        sqs (map (fn[[nm [_ sq]]] [nm sq]) seqlines)
+        sslines (->> sslines (map (fn[[nm [_ sq]]] [nm sq])) butlast)
+        preface (take 2 gfs)
+        m (->> gfs (drop 2) (group-by #(->> % (str/split #"\s+") third)))
+        des (m "DE")
+        SCs (->> des
+                 (map #(let [v (str/split #"\s+" %)]
+                         [(second v) (Float. (last v))]))
+                 (filter (fn[[nm sc]] (> sc threshold)))
+                 (into {}))
+        gfs (filter #(->> % (str/split #"\s+") second SCs) gfs)
+        gd-sqs (filter (fn[[nm sq]] (SCs nm)) sqs)]
+    (write-sto outsto preface gfs gd-sqs sslines)
+    outsto))
 
 
 (defn infernal-2+?

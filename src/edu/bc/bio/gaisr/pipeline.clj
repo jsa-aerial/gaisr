@@ -289,7 +289,7 @@
          [slen %70-qlen] %ident dist [nms ls sseq]]))))
 
 (defn ngram-closeness [[nq lq qseq] [nms ls sseq]
-                       & {c :c n :n :or {c 0.85 n 4}}]
+                       & {:keys [c n] :or {c 0.85 n 4}}]
   (let [qlen (count qseq)
         slen (count sseq)
         %70-qlen (* 0.7 qlen)]
@@ -347,7 +347,7 @@
                           tuple-clusters)]
         (doseq [[tx cnt nrsq-tuples] clusters]
           (nms-sqs->fasta-file
-           (map (fn[[nm rng sq]] [(str nm ":" rng) sq]) nrsq-tuples)
+           (map (fn[[nm rng sq]] [(str nm "/" rng) sq]) nrsq-tuples)
            (fs/join dir (str (s2- tx) "-" cnt ".fna"))))
         clusters))))
 
@@ -761,7 +761,10 @@
 
 
 (defn cmfinder-stage [infna]
-  (->> infna (#(cmfinder* %)) (map cmf-post-process)))
+  (->> infna (#(cmfinder* %))
+       (map cmf-post-process-combine)
+       flatten
+       (map cmf-post-process-filter)))
 
 (defn cm-build-calibrate-stage
   [cmf-mostos & {:keys [par] :or {par 4}}]
@@ -1098,7 +1101,9 @@
 
       ;; Generate csvs for all cmsearch.out's in the cmdir.  If the
       ;; csvdir does not exist, generate it.  Place all generated csvs
-      ;; into csvdir
+      ;; into csvdir.  If aggregating, combine generated csvs and
+      ;; place in aggregation location (also creating when not
+      ;; existing).
       (when csvdir
         (when (not (fs/exists? csvdir)) (fs/mkdirs csvdir))
         (when (seq cmouts)
@@ -1117,6 +1122,8 @@
     ;; results and automatically filter into pos and neg sets
     (when-let [sccs (config :sccs)]
       (let [opts (into {} sccs)
+            Mre (get-in opts [:opts :Mre])
+            Dy  (get-in opts [:opts :Dy])
             stos (opts :stos stos)
             stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
             csv-dir (opts :csv-dir csvdir)
@@ -1138,6 +1145,7 @@
              :xlate +RY-XLATE+ :alpha ["R" "Y"]
              :refdb refdb :stodb stodb
              :crecut 0.01 :limit 19
+             :Mre Mre :Dy Dy
              :plot-dists chart-dir)))))
 
     ;; Take pos SCCS sets, plus the input stos (and corresponding cms)

@@ -211,9 +211,10 @@
     (doseq [d dirs]
       (let [dnm (fs/basename d)
             xpart (str/lower-case dnm)
-            sto (-> d (fs/directory-files ".sto")
-                    first fs/basename
-                    (#(str/replace-re #"\.sto" "" %)))]
+            sto (->> d (#(fs/directory-files % ".sto"))
+                     (remove #(re-find #"(IBD|UC|CD|MH)" %))
+                     first fs/basename
+                     (str/replace-re #"\.sto" ""))]
         (doseq [[nm lines] runtxts]
           (let [nm (fs/join d (str/replace-re #"xxx" xpart nm))]
             (io/with-out-writer nm
@@ -247,10 +248,11 @@
 
 
 (def eval-cut-points
-     [0.00001, 0.0001, 0.001, 0.01
-      0.1 0.2 0.3 0.5 0.7 0.9
-      1.0 2.0 3.0 4.0 5.0 7.0])
+     [1.0e-23, 1.0e-21, 1.0e-19, 1.0e-15, 1.0e-11,
+      1.0e-9, 1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 0.001, 0.01
+      0.1 0.2 0.3 0.5 0.7 0.9 1.0 2.0 3.0 4.0 5.0 7.0])
 
+(count eval-cut-points)
 
 (defn build-eval-pos-neg-sets
   [csv-hit-file]
@@ -312,8 +314,11 @@
 
 
 (def sccs-cut-points
-     [0.1, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9
-      0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97])
+     [0.1, 0.2, 0.3, 0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85,
+      0.9, 0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97
+      0.975, 0.98, 0.985, 0.99, 0.995])
+
+(count sccs-cut-points)
 
 (defn build-sccs-pos-neg-sets
   [csv-hit-file]
@@ -408,34 +413,85 @@
 (build-roc-curves)
 
 
+(defn csv-roc-data
+  []
+  (let [base "/home/kaila/Bio/Test/ROC-data"
+        sccs-data (sccs-roc-data)
+        eval-data (eval-roc-data)
+        step (/ 1.0 (->> sccs-data first count))
+        cols ["RNA" "Cutpt" "TPR" "FPR" "Type"]
+        guess (map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 step))
+        xf #(map (fn[[nm cpt _ tpr _ fpr]]
+                   (cons nm (map str [cpt tpr fpr %1])))
+                 %2)]
+    (println step guess)
+    (doseq [i (range 3)]
+      (let [sccsi (xf "SCCS" (nth sccs-data i))
+            evali (xf "EVAL" (nth eval-data i))
+            all (concat sccsi evali guess)]
+        (spit (fs/join base (str (ffirst all) "-both.csv"))
+              (csv/write-csv (cons cols all)))))))
+(csv-roc-data)
+
+(count (map #(do ["" "" % % "Guess"]) (range 0.0 1.0 0.05)))
+
+(map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 0.05))
+
+
 
 (def bp-scores
      {[\G \C] 1.00, "GC" 1.00, [\C \G] 1.00, "CG" 1.00,
-      [\A \U] 0.99, "AU" 0.99, [\U \A] 0.99, "UA" 0.99,
+      [\A \U] 0.95, "AU" 0.95, [\U \A] 0.95, "UA" 0.95,
       [\G \U] 0.80, "GU" 0.80, [\U \G] 0.80, "UG" 0.80
       })
 
 (defn base-candidates
-  [bp-index-pairs]
-  (filter (fn[[[b1 i] [b2 j]]]
-            (and (bp-scores [b1 b2])
-                 (> (- j i) 3)))
-          (combins 2 bp-index-pairs)))
+  [[cnt base-index-pairs] & {:keys [min-dist] :or {min-dist 4}}]
+  (keep (fn[[[b1 i] [b2 j]]]
+            (let [bp-score (bp-scores [b1 b2])
+                  d (inc (abs (- j i)))]
+              (when (and bp-score (> d min-dist))
+                (let [n (/ d cnt)
+                      score (* n bp-score)]
+                [[b1 i] [b2 j] n score]))))
+        (combins 2 base-index-pairs)))
+
+
+(defn plot-score-dist
+  [chart-file score-count-pairs]
+  (let [[xs ys] [(map first score-count-pairs) (map second score-count-pairs)]
+        chart (incanter.charts/scatter-plot
+               xs ys
+               :x-label "Base pairing score"
+               :y-label "count"
+               :title "Base Pairing Dist")]
+    (incanter.core/save
+     chart chart-file :width 500 :height 500)))
+
+
 
 (->> "/data2/Bio/QinMicro/RF00059/RF00059-seed-NC.sto"
      read-seqs
      degap-seqs
      norm-elements
-     (take 1)
-     (map (fn[sq] (map #(do [%1 %2]) sq (iterate inc 0))))
+     ;(take 5)
+     (map (fn[sq] [(count sq) (map #(do [%1 %2]) sq (iterate inc 0))]))
      (map base-candidates)
-     (map (fn[ps] (sort-by #(-> % first second) ps)))
-     first (take-while #(-> % first second (= 0))))
+     (map (fn[xs] (sort-by #(-> % first second) xs)))
+     (map (fn[xs] (map #(/ (round (* % 1.0e15)) 1.0e15) (map last xs))))
+     (map (fn[xs] (freqn 1 xs)))
+     (map (fn[dist] (sort-by key dist)))
+     (map (fn[i dist]
+            (plot-score-dist
+             (str "/data2/Bio/BPDistRNA/test-bp-dist-" (str i ".png"))
+             dist))
+          (iterate inc 1)))
 
 
 
 
 
+(/ (round 123.534545) 1000.0)
 
 
 

@@ -101,7 +101,7 @@
 (defn process-directive-options [m d l]
   (let [args (->> l (str/split #"\s*:\s*") second)
         args (if (not args)
-               []
+               nil
                (->> args
                     (str/split #"\s*,\s*")
                     (map #(->> % (str/split #"\s+")
@@ -115,7 +115,7 @@
                                     [(keyword k) v])))))
                     flatten
                     vec))]
-    (assoc m d (conj (get m d []) [:args args]))))
+    (assoc m d (conj (get m d []) [:opts (if args (apply assoc {} args) {})]))))
 
 (defn parse-config-file [filespec]
   (let [lseq (filter #(not (or (= "" (str/trim %))

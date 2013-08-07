@@ -302,7 +302,7 @@
   ([chart location]
      (if (= location :display)
        (incanter.core/view chart)
-       (incanter.core/save chart location))))
+       (incanter.core/save chart location :width 600 :height 480))))
 
 (defn plot-cres
   [cre-samples & {:keys [file]}]
@@ -357,16 +357,16 @@
      :legend true)))
 
 (defn plot-cand-dists
-  [prot-name cnt-seqs ctx-delta res cutpt nms-stods & {:keys [file]}]
+  [prot-name cnt-seqs ctx-delta res Mre CDp cutpt nms-stods & {:keys [file]}]
   (let [xs (range cnt-seqs)
         out (if file (fs/join file (str prot-name "-candidates.png")) :display)]
     (render-chart
      out
      xs (map second nms-stods)
      "Sequence" "Sq RE to Hybrid"
-     (str prot-name " Candidates to Hybrid."
+     (str prot-name " Candidate SCCS. Cutpt " cutpt "\n"
           " Ctx Sz: " ctx-delta
-          " Res: " res ", Cutpt: " cutpt)
+          " Res: " res ", Mre: " Mre ", CD%: " CDp)
      :series-label "sq/hbrid-distance"
      :legend true)))
 
@@ -508,7 +508,7 @@
         Mre (if (zero? delta)
               0.9
               (if Mre Mre
-                  (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.957)))
+                  (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.927)))
 
         cutpt (select-cutpoint nm-re-sq :Dy Dy :Mre Mre)
         [good bad] (get-pos-neg-sets nm-re-sq cutpt)]
@@ -517,7 +517,8 @@
     (when plot-dists
       (if (zero? delta)
         (plot-hit-dists pnm sz delta wz cutpt nm-re-sq :file plot-dists)
-        (plot-cand-dists pnm sz delta wz cutpt nm-re-sq :file plot-dists)))
+        (plot-cand-dists pnm sz delta wz Mre (+ Dy 0.5) cutpt
+                         nm-re-sq :file plot-dists)))
     [good bad cutpt nm-re-sq]))
 
 

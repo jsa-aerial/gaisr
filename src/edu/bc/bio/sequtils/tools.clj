@@ -338,11 +338,11 @@
 (defn get-cd-hit-infile [x]
   (if (coll? x)
     (nms-sqs->fasta-file
-     (map (fn[[nm rng sq]] [(str nm ":" rng) sq]) x)
+     (map (fn[[nm rng sq]] [(str nm "/" rng) sq]) x)
      (fs/tempfile "cdhit-" ".fna"))
     (fs/fullpath x)))
 
-(defn cd-hit-est [input outfile & {c :c n :n :or {c 0.90 n 8}}]
+(defn cd-hit-est [input outfile & {:keys [c n] :or {c 0.90 n 8}}]
   (let [infile (get-cd-hit-infile input)
         outfile (fs/fullpath outfile)
         cdhit-path (get-tool-path :cdhit)
@@ -477,7 +477,11 @@
    match.  If multiple candidates, selects randomly.
   "
   [fin & {:keys [blastout]}]
-  {:pre [(in (fs/ftype fin) ["sto" "fna"])]}
+  (when (not (in (fs/ftype fin) ["sto" "fna" "fasta" "aln"]))
+    (raise :type :bad-file-type
+           :from "EMBL-TO-NC"
+           :msg (str "File type " (fs/ftype fin)
+                     " not one of sto fna fasta aln")))
   (if (= (fs/ftype fin) "sto")
     (embl-sto->nc-sto fin)
     (let [fna (fs/fullpath fin)
@@ -836,7 +840,7 @@
           (when (not (fs/empty? cands-file))
             (let [canda-ofile (str seqin ".align-sto.h" suffix)
                   motif-ofile (fs/replace-type
-                               seqin (str "-motif-h" suffix ".sto"))
+                               seqin (str ".motif.h" suffix ".sto"))
                   cm-file     (str seqin ".cm.h"    suffix)
                   cmf-stdout  (str seqin ".h" stem-loops dot-i ".out")]
               (canda seqin cands-file canda-ofile)
@@ -853,6 +857,41 @@
                      (conj motif-stos motif-ofile)))))))
     ))
 
+
+
+
+(defn cmf-post-process-combine
+  [start-fna sto-glob]
+  (let [cmf-path (get-tool-path :cmfinder)
+        combmotif (str cmf-path "CombMotif.pl")]
+    (assert-tools-exist [combmotif])
+    (let [out (runx combmotif start-fna sto-glob)]
+     (if (= out "")
+       ()
+       (->> out (str/split #"\n")
+	    (map #(str/split #"\s+>\s+" %))
+	    (map last))))))
+
+(defn cmf-post-process-filter
+  [insto & {:keys [threshold] :or {threshold 10}}]
+  (let [insto (fs/fullpath insto)
+        outsto (fs/replace-type insto "-filtered.sto")
+        [gfs seqlines sslines] (join-sto-fasta-lines insto "")
+        gfs (filter #(not (re-find #"^#=GR" %)) gfs)
+        sqs (map (fn[[nm [_ sq]]] [nm sq]) seqlines)
+        sslines (->> sslines (map (fn[[nm [_ sq]]] [nm sq])) butlast)
+        preface (take 2 gfs)
+        m (->> gfs (drop 2) (group-by #(->> % (str/split #"\s+") third)))
+        des (m "DE")
+        SCs (->> des
+                 (map #(let [v (str/split #"\s+" %)]
+                         [(second v) (Float. (last v))]))
+                 (filter (fn[[nm sc]] (> sc threshold)))
+                 (into {}))
+        gfs (filter #(->> % (str/split #"\s+") second SCs) gfs)
+        gd-sqs (filter (fn[[nm sq]] (SCs nm)) sqs)]
+    (write-sto outsto preface gfs gd-sqs sslines)
+    outsto))
 
 
 ;;; ------------------------------------------------------------------------;;;
@@ -886,27 +925,6 @@
                                          (/ (sm :bp) sid)))
              (inc (java.lang.Math/log (/ (sm :num) (sm :species-cnt))))))))
     summary-maps)))
-
-(defn cmf-post-process
-  [insto & {:keys [threshold] :or {threshold 10}}]
-  (let [insto (fs/fullpath insto)
-        outsto (fs/replace-type insto "-filtered.sto")
-        [gfs seqlines sslines] (join-sto-fasta-lines insto "")
-        gfs (filter #(not (re-find #"^#=GR" %)) gfs)
-        sqs (map (fn[[nm [_ sq]]] [nm sq]) seqlines)
-        sslines (->> sslines (map (fn[[nm [_ sq]]] [nm sq])) butlast)
-        preface (take 2 gfs)
-        m (->> gfs (drop 2) (group-by #(->> % (str/split #"\s+") third)))
-        des (m "DE")
-        SCs (->> des
-                 (map #(let [v (str/split #"\s+" %)]
-                         [(second v) (Float. (last v))]))
-                 (filter (fn[[nm sc]] (> sc threshold)))
-                 (into {}))
-        gfs (filter #(->> % (str/split #"\s+") second SCs) gfs)
-        gd-sqs (filter (fn[[nm sq]] (SCs nm)) sqs)]
-    (write-sto outsto preface gfs gd-sqs sslines)
-    outsto))
 
 
 (defn infernal-2+?

@@ -191,7 +191,7 @@
 (defn split-join-fasta-file
   [in-file
    & {:keys [base pat namefn entryfn testfn]
-      :or {base "" pat #"^gi" entryfn identity testfn identity}}]
+      :or {base "" pat #"^>gi" entryfn identity testfn (fn[x y] true)}}]
   {:pre [(fs/directory? base) (fn? namefn) (fn? testfn)]}
   (doseq [[gi sq] (->> in-file io/read-lines
                        (partition-by #(re-find pat %))
@@ -877,7 +877,7 @@
 
           "gma" (raise :type :NYI :info "GMA format not yet implemented")
 
-          ("fna" "fa" "hitfna")
+          ("fna" "fa" "hitfna" "fasta")
           (if (= info :data)
             second
             #(re-find #"[A-Za-z0-9._/-]+" (first %))))))
@@ -895,7 +895,7 @@
                       (io/read-lines filespec))
           sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
           sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
-          sqs (if (in type ["fna" "fa" "hitfna"]) (partition 2 sqs) sqs)
+          sqs (if (in type ["fna" "fa" "hitfna" "fasta"]) (partition 2 sqs) sqs)
           sqs (if (= type "sto") (take-while #(re-find #"^[A-Z]" %) sqs) sqs)]
       (map f sqs))))
 

@@ -271,9 +271,9 @@
        (str/replace-re #"[-.]+" "" seqs)))
   ([seqs gap-chars]
      (if (coll? seqs)
-       (map (fn[sq] (apply str (filter (fn[c] #(not (in c gap-chars))) sq)))
+       (map (fn[sq] (apply str (filter (fn[c] (not (in c gap-chars))) sq)))
             seqs)
-       (apply str (filter (fn[c] #(not (in c gap-chars))) seqs)))))
+       (apply str (filter (fn[c] (not (in c gap-chars))) seqs)))))
 
 (defn gaps?
   "Return whether K, a char, string, or coll, contains a \"gap

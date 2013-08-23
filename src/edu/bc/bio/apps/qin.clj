@@ -464,7 +464,7 @@
                xs ys
                :x-label "Base pairing score"
                :y-label "count"
-               :title "Base Pairing Dist")]
+               :title "Base Pair Scoring Distribution")]
     (incanter.core/save
      chart chart-file :width 500 :height 500)))
 
@@ -487,6 +487,21 @@
              dist))
           (iterate inc 1)))
 
+
+;;; 'Control' - random seq behavior
+(->> (map #(first (gen-random-bioseq :rna %)) (repeat 10 108))
+     ;(take 5)
+     (map (fn[sq] [(count sq) (map #(do [%1 %2]) sq (iterate inc 0))]))
+     (map base-candidates)
+     (map (fn[xs] (sort-by #(-> % first second) xs)))
+     (map (fn[xs] (map #(/ (round (* % 1.0e15)) 1.0e15) (map last xs))))
+     (map (fn[xs] (freqn 1 xs)))
+     (map (fn[dist] (sort-by key dist)))
+     (map (fn[i dist]
+            (plot-score-dist
+             (str "/data2/Bio/BPDistRNA/RAND-bp-dist-" (str i ".png"))
+             dist))
+          (iterate inc 1)))
 
 
 

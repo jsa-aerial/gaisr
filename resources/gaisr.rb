@@ -529,7 +529,8 @@ def entry_file_set(args)
   else
     info = result["info"][2] # first two are not used remote job status
     basedir = File.dirname(files[0])
-    filename, ext = File.basename(files[0]).split(".")
+    namebits = File.basename(files[0]).split(".")
+    filename, ext = [namebits.first, namebits.last]
     newfilename = "#{filename}-#{op.upcase}.#{ext}"
     newfullspec = File.join(basedir, newfilename)
     outFile = File.new(newfullspec, "w")

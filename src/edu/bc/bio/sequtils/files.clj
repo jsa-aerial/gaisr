@@ -106,19 +106,49 @@
 
 
 (defn write-sto
+  "A work in progress...  Write a new sto composed of the various
+   given parts to the file spec given as NEWSTO.  AUTH-LINES are the
+   authoring header lines - including the STOCKHOLM line.  Generally
+   there are two of these - the STOCKHOLM line (with version) and the
+   originating author or program that generated the content (for
+   example, Infernal).
+
+   COMMENT-LINES is a collection of the #=GF/GC lines, with the
+   exception of the GC SS_cons and RF lines.  Comment-lines may be
+   empty (for example, []).
+
+   NM-SQ-PAIRS is a collection (typically vector/list) of pairs of the
+   entries (name/start-end/strand) and the associated sequence (in
+   gapped form).  If this is created via JOIN-STO-FASTA-LINES, the
+   vector of [id sq] pairs that is the sequence part of the
+   nm-sq-pair, will have the id part filtered out automatically.
+
+   SS-LINES is the set of 'secondary structure' lines.  These are the
+   GC SS_cons and RF lines.  SS-LINES may contain the final '//' line
+   or not.  If not, it is still written to the file, if so, only the
+   one '//' is written.
+  "
   [newsto auth-lines comment-lines nm-sq-pairs ss-lines]
   (let [ss-pairs (if (vector? (first ss-lines))
-                   ss-lines
+                   (if (vector? (-> ss-lines first second))
+                     (map (fn[[gf [id ss]]] [gf ss]) ss-lines)
+                     ss-lines)
                    (map #(let [bits (str/split #"\s+" %)]
                            [(str/join " " (take 2 bits)) (last bits)])
-                        ss-lines))]
+                        ss-lines))
+        nm-sq-pairs (if (vector? (-> nm-sq-pairs first second))
+                      (map (fn[[nm [id sq]]] [nm sq]) nm-sq-pairs)
+                      nm-sq-pairs)]
     (io/with-out-writer newsto
       (doseq [l auth-lines] (println l))
       (println)
       (doseq [l comment-lines] (println l))
-      (println)
+      (when (seq comment-lines) (println))
       (doseq [[nm sq] nm-sq-pairs] (cl-format true "~A~40T~A~%" nm sq))
-      (doseq [[gf ss] ss-pairs] (cl-format true "~A~40T~A~%" gf ss))
+      (doseq [[gf ss] ss-pairs]
+        (if (not= gf "//")
+          (cl-format true "~A~40T~A~%" gf ss)
+          (println gf)))
       (when (not= (first (last ss-pairs)) "//")
         (println "//")))))
 

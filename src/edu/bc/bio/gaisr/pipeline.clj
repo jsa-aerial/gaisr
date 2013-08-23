@@ -37,7 +37,8 @@
             [clojure.set :as set]
             [clojure-csv.core :as csv]
             [clojure.contrib.io :as io]
-            [edu.bc.fs :as fs])
+            [edu.bc.fs :as fs]
+            [edu.bc.bio.sequtils.sccs :as sccs])
 
   (:use [clojure.contrib.math :as math]
         [clojure.pprint
@@ -49,8 +50,6 @@
         edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         edu.bc.bio.sequtils.tools
-        [edu.bc.bio.sequtils.sccs
-         :only [compute-candidate-sets hit-context-delta]]
 
         [edu.bc.bio.job-config :only [parse-config-file]]
 
@@ -125,7 +124,7 @@
 
 (defn utrs-filter [entries
                    & {:keys [par upstream downstream]
-                      :or {par 10 upstream 500 downstream 25}}]
+                      :or {par 10 upstream 300 downstream 25}}]
   (println :--> " " (first entries))
   (let [q (math/floor (/ (count entries) par))
         entsets (partition q q [] entries)
@@ -397,7 +396,7 @@
   (let [stofile-lazyseq (io/read-lines stofile)
         fmt-line (second stofile-lazyseq)
         file-fmt (cond
-                  (re-find #"CMfinder" fmt-line) :cmfinder
+                  ;;(re-find #"CMfinder" fmt-line) :cmfinder
                   (re-find #"Infernal" fmt-line) :infernal
                   :else :generic ; we hope ...
                   )
@@ -760,11 +759,19 @@
                 (str hitpart "cmsearch.out"))))))
 
 
+
+
+;;; ----------------------------------------------------------------------
+;;; Staged running
+
 (defn cmfinder-stage [infna]
-  (->> infna (#(cmfinder* %))
-       (map cmf-post-process-combine)
-       flatten
-       (map cmf-post-process-filter)))
+  (->> infna (#(cmfinder* % :max-stem-loops 7 :max-out-motifs 7))
+       ;;(#(do (println %) %))
+       get-cmfsto-glob
+       ;;(#(do (println %) %))
+       (cmf-post-process-combine infna)
+       ;;(#(do (println %) %))
+       (mapv cmf-post-process-filter)))
 
 (defn cm-build-calibrate-stage
   [cmf-mostos & {:keys [par] :or {par 4}}]
@@ -785,29 +792,46 @@
                     (ensure-vec stages))]
     (pxmap #(core-processing stages base %) par clus-dirnms&fnms)))
 
-(defn run-pipeline-front
+(defn blast-stage
   ""
   [selections & {:keys [ev wordsize] :or {ev 10}}]
   (let [selections-fna (get-selection-fna selections)
         blaster (blastpgm selections-fna)
-        wdsz (if wordsize wordsize (if (= blaster tblastn) 4 8))
-        hit-file (blaster selections-fna :word-size wdsz :evalue ev)
-        hitfna (fs/replace-type hit-file ".hitfna")
+        wdsz (or wordsize (if (= blaster tblastn) 4 8))
+        hit-file (blaster selections-fna :word-size wdsz :evalue ev)]
+    hit-file))
+
+(defn filter-cluster-stage
+  [hit-file]
+  (let [hitfna (fs/replace-type hit-file ".hitfna")
         clusters (get-candidates hit-file)]
     [hitfna hit-file]))
 
-(defn run-pipeline-stages
-  ""
-  [selections stages & {:keys [ev wordsize par] :or {ev 10 par 4}}]
-  (let [selections-fna (get-selection-fna selections)
-        blaster (blastpgm selections-fna)
-        wdsz (if (= blaster tblastn) 4 8)
-        hit-file (blaster selections-fna :word-size wdsz :evalue ev)
-        hitfna (fs/replace-type hit-file ".hitfna")
-        clusters (get-candidates hit-file)
-        clusnr-dir (fs/join (fs/dirname hit-file) *clusnr*)
+(defn create-area-stage
+  [[hitfna hit-file]]
+  (let [clusnr-dir (fs/join (fs/dirname hit-file) *clusnr*)
         [base dir-info] (create-pipeline-working-area clusnr-dir)]
-    (doall (process-clusters stages hitfna base dir-info :par par))))
+    [hitfna [base dir-info]]))
+
+(defn front-stage
+  [selections & {:keys [ev wordsize] :or {ev 10}}]
+  (->> (blast-stage selections :ev ev :wordsize wordsize)
+       filter-cluster-stage
+       create-area-stage))
+
+
+(defn run-pipeline-stages
+  "(doall (process-clusters stages hitfna base dir-info :par par))"
+  [stages & starting-args]
+  (reduce (fn [args stage-fn]
+            (if (seq? args)
+              (apply stage-fn args)
+              (apply stage-fn args nil)))
+          starting-args stages))
+
+;;; ----------------------------------------------------------------------
+
+
 
 
 (defn directory-cms [directory]
@@ -907,6 +931,8 @@
                   (fs/listdir base))))))
 
 
+
+
 ;;; Running pipeline via config files and directives
 
 (comment
@@ -917,6 +943,11 @@
    ((parse-config-file "/home/kaila/Bio/STOfiles/STO-3txt") :gen-csvs))
 )
 
+
+(defn get-config-csv-dir
+  [config]
+  ;; HACK (see job-config...)
+  (first (config :gen-csvs)))
 
 (defn chk-stos [stofiles]
   (let [chk-info (filter (fn [f]
@@ -1047,6 +1078,179 @@
     osto))
 
 
+(defn pick-clustering
+  [clusterings]
+  (reduce (fn[[sc stos :as A] [[b & others] files]]
+            (let [bsc (first b)
+                  nstos (map #(fs/replace-type % ".sto") files)]
+              (cond
+               (< bsc sc) [bsc nstos]
+               (= bsc sc) [bsc nstos]
+               :else A)))
+          [Integer/MAX_VALUE []] clusterings))
+
+(defn run-splitter
+  ""
+  [clus stos config]
+  (let [opts (into {} clus)
+        kinfo (opts :kinfo)
+        deltas (opts :delta)
+        stodir (opts :sto-dir (config :stodir))
+        stos (opts :stos stos)
+        stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
+        out-dir (opts :out-dir)]
+    (doall
+     (for [sto stos
+           :let [deltas (or deltas (sccs/get-deltas sto))
+                 kinfo (or kinfo (sccs/get-k sto))]]
+       (let [[sc files] (pick-clustering
+                         (for [d deltas]
+                           (sccs/split-sto
+                            sto
+                            :delta d
+                            :clu-dir out-dir
+                            :crecut 0.01 :limit 19 :kinfo kinfo
+                            :vindex (fn[dfn clus & args] (count clus)))))
+             ddir (->> files first fs/split butlast last)
+             delta-file (fs/join out-dir "delta.txt")]
+         (spit delta-file ddir)
+         (doseq [f files]
+           (fs/copy f (fs/join out-dir (fs/basename f)))))))))
+
+
+(defn aggregate-sccs-ents
+  [csv-dir out-dir aggr]
+  (let [aggfn (fn[tgt-glob out-file]
+                (-> (apply entry-file-union true
+                           (fs/glob tgt-glob))
+                    (gen-entry-file out-file)))]
+    (aggfn
+     (str csv-dir "/*hitonly.ent")
+     (fs/join out-dir (str aggr "-hitonly.ent")))
+    (aggfn
+     (str csv-dir "/*hitonly-neg.ent")
+     (fs/join out-dir (str aggr "-hitonly-neg.ent")))
+    (aggfn
+     (str csv-dir "/*final.ent") (fs/join out-dir (str aggr "-pos.ent")))
+    (aggfn
+     (str csv-dir "/*bad.ent") (fs/join out-dir (str aggr "-neg.ent")))))
+
+(defn run-sccs
+  "SCCS: Sequence Conservation, Context, Size filtering.  Take
+   cmsearch results and automatically filter into pos and neg sets.
+
+   SCCS is the config SCCS config options information from
+   parse-config-file.
+
+   CTXSZ is an atom which contains a map of sto basenames to the
+   determined context size if it needs to be computed.  This is used
+   later by next-sto, which will save the computed context size to the
+   next generated sto for future use in order to avoid the expensive
+   hit-context-delta computation.
+
+   STOS is the set of stos for which search results have been found.
+   These results are encoded in the _corresponding_ generated csv
+   files.
+
+   CONFIG is the configuration file information map as produced by
+   parse-config-file.
+  "
+  [sccs ctxsz stos config]
+
+  (let [refdb (config :refdb)
+        stodb (config :stodb)
+        csvdir (get-config-csv-dir config)
+
+        opts (into {} sccs)
+        Mre (get-in opts [:opts :Mre])
+        Dy  (get-in opts [:opts :Dy])
+        run (get-in opts [:opts :run])
+        stodir (opts :sto-dir (config :stodir))
+        stos (opts :stos stos)
+        stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
+        csv-dir (opts :csv-dir csvdir)
+        csv (opts :csv)
+        aggr (opts :aggregate)
+        out-dir (opts :out-dir csv-dir)
+        chart-dir (or (opts :chart-dir) (fs/join stodir "Charts"))]
+
+    (assert-files? stos)
+    (when (not (fs/exists? out-dir)) (fs/mkdirs out-dir))
+    (when (not (fs/exists? chart-dir)) (fs/mkdirs chart-dir))
+    (doseq [sto stos]
+      (let [sb (fs/basename sto)
+            csv-path (str csv-dir "/*" (if csv csv (str sb "*.cmsearch.csv")))
+            _ (assert-files? csv-path)
+            cmscsv (first (fs/glob csv-path))
+            run (or run (sccs-run sb))
+            [csz gfcsz-found] (sccs/hit-context-delta
+                               sto :stodb stodb :plot chart-dir)]
+        (when (not gfcsz-found) ; If gen-stos runs and need to save ctxsz
+          (swap! ctxsz #(assoc % sb csz)))
+        (sccs/compute-candidate-sets
+         sto cmscsv
+         run csz
+         :refn jensen-shannon
+         :xlate +RY-XLATE+ :alpha ["R" "Y"]
+         :refdb refdb :stodb stodb
+         :crecut 0.01 :limit 19
+         :Mre Mre :Dy Dy
+         :plot-dists chart-dir)))
+    (when aggr
+      (aggregate-sccs-ents csv-dir out-dir aggr))
+    (when (and out-dir (not= out-dir csv-dir))
+      (fs/move
+       (->> stos
+            (map #(fs/glob (str csv-dir "/*" (fs/basename %) "*.ent")))
+            flatten)
+       out-dir))))
+
+
+(defn run-next-sto
+  "Generated the next iteration of sto file from input sto and the
+   results of a search and SCCS selection of new RNAs.
+
+   GEN-STOS is the config GEN-STOS config option information from
+   parse-config-file.
+
+   CTXSZ is an atom which contains a map of sto basenames to the
+   determined context size as computed by hit-context-delta (as part
+   of an SCCS run).
+
+   STOS is the starting set of stos for which search results have been
+   found.
+
+   CONFIG is the configuration file information map as produced by
+   parse-config-file.
+  "
+  [gen-stos ctxsz stos config]
+
+  (let [refdb (config :refdb)
+        stodir (config :stodir)
+        cmdir (config :cmdir)
+        csvdir (get-config-csv-dir config)
+
+        opts (into {} gen-stos)
+        stos (opts :stos stos)
+        stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
+        grpnm (opts :group-name)
+        sccs (config :sccs)
+        sccs-dir (some #(when (= (first %) :out-dir) (second %)) sccs)
+        sccs-dir (opts :sccs-dir (or sccs-dir csvdir))
+        out-dir (opts :out-dir (fs/dirname (first stos)))]
+    (doseq [sto stos]
+      (let [sb (fs/basename sto)
+            csz (get (deref ctxsz) sb)
+            cm (->> (str "*" sb "*.cm")
+                    (fs/join cmdir)
+                    fs/glob first)
+            ent (->> (str "*" sb "*-final.ent")
+                     (fs/join sccs-dir)
+                     fs/glob first)]
+        (binding [default-genome-fasta-dir (@genome-db-dir-map refdb)]
+          (next-sto sto cm ent csz grpnm))))))
+
+
 (defn run-config-job
   "Run the tasks specified in the configuratin given in
    JOB-CONFIG-FILE (see edu.bc.bio.job-config ns).  Optional eval key
@@ -1056,12 +1260,9 @@
    currently is, it runs the multiple tasks specified in the config
    file as a _single_ task, i.e., this function.
   "
-  [job-config-file &
-  {:keys [eval] :or {eval 100.0}}]
-  (let [config (parse-config-file job-config-file)
+  [job-config-file & {:keys [eval] :or {eval 100.0}}]
 
-        refdb (config :refdb)
-        stodb (config :stodb)
+  (let [config (parse-config-file job-config-file)
 
         stodir (config :stodir)
         cmdir (config :cmdir)
@@ -1072,7 +1273,7 @@
         cms  (or (seq (config :calibrates))
                  (seq (fs/directory-files cmdir "cm")))
 
-        csvdir (first (config :gen-csvs)) ; HACK (see job-config...)
+        csvdir (get-config-csv-dir config)
         ctxsz (atom {})]
 
     (when (and (config :check-sto) (config :cmbuild))
@@ -1108,70 +1309,30 @@
         (when (not (fs/exists? csvdir)) (fs/mkdirs csvdir))
         (when (seq cmouts)
           (doseq [cmout cmouts] (cmsearch-out-csv cmout))
-          (let [csvs (fs/directory-files cmdir "csv")]
-            (doseq [csv csvs]
-              (let [fname (fs/basename csv)]
-                (fs/rename csv (fs/join csvdir fname))))))
+          (fs/move (fs/directory-files cmdir "csv") csvdir))
         (when-let [aggr-dir ((into {} (rest (config :gen-csvs))) :aggregate)]
           (aggregate-csvs csvdir)
           (when-let [origs (fs/glob (fs/join csvdir "*agg*.csv"))]
-            (doseq [orig origs]
-              (fs/rename orig (fs/join aggr-dir (fs/basename orig))))))))
+            (fs/move origs aggr-dir)))))
 
-    ;; Sequence Conservation, Context, Size filtering.  Take cmsearch
-    ;; results and automatically filter into pos and neg sets
+    ;; Clustering: Splitting input stos by genomic context to enable
+    ;; more accurate SCCS selection on single type regulatory RNAs
+    ;; occuring in diverse genomic contexts.
+    (when-let [clus (config :clus)]
+      (run-splitter clus stos config))
+
+    ;; SCCS: Sequence Conservation, Context, Size filtering.  Take
+    ;; cmsearch results and automatically filter into pos and neg sets
     (when-let [sccs (config :sccs)]
-      (let [opts (into {} sccs)
-            Mre (get-in opts [:opts :Mre])
-            Dy  (get-in opts [:opts :Dy])
-            stos (opts :stos stos)
-            stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
-            csv-dir (opts :csv-dir csvdir)
-            out-dir (opts :out-dir csv-dir)
-            chart-dir (or (opts :chart-dir) (fs/join stodir "Charts"))]
-        (when (not (fs/exists? chart-dir)) (fs/mkdirs chart-dir))
-        (doseq [sto stos]
-          (let [sb (fs/basename sto)
-                cmscsv (first (fs/glob (str csv-dir "/*" sb "*.cmsearch.csv")))
-                run (sccs-run sb)
-                [csz gfcsz-found] (hit-context-delta
-                                   sto :stodb stodb :plot chart-dir)]
-            (when (not gfcsz-found) ; If gen-stos runs and need to save ctxsz
-              (swap! ctxsz #(assoc % sb csz)))
-            (compute-candidate-sets
-             sto cmscsv
-             run csz
-             :refn jensen-shannon
-             :xlate +RY-XLATE+ :alpha ["R" "Y"]
-             :refdb refdb :stodb stodb
-             :crecut 0.01 :limit 19
-             :Mre Mre :Dy Dy
-             :plot-dists chart-dir)))))
+      (run-sccs sccs ctxsz stos config))
 
     ;; Take pos SCCS sets, plus the input stos (and corresponding cms)
     ;; and generate the next stage stos
     (when-let [gen-stos (config :gen-stos)]
-      (let [opts (into {} gen-stos)
-            stos (opts :stos stos)
-            stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
-            grpnm (opts :group-name)
-            sccs (config :sccs)
-            sccs-dir (some #(when (= (first %) :out-dir) (second %)) sccs)
-            sccs-dir (opts :sccs-dir (or sccs-dir csvdir))
-            out-dir (opts :out-dir (fs/dirname (first stos)))]
-        (doseq [sto stos]
-          (let [sb (fs/basename sto)
-                csz (get (deref ctxsz) sb)
-                cm (->> (str "*" sb "*.cm")
-                        (fs/join cmdir)
-                        fs/glob first)
-                ent (->> (str "*" sb "*-final.ent")
-                         (fs/join sccs-dir)
-                         fs/glob first)]
-            (binding [default-genome-fasta-dir (@genome-db-dir-map refdb)]
-              (next-sto sto cm ent csz grpnm))))))
+      (run-next-sto gen-stos ctxsz stos config))
 
     :good))
+
 
 (defn run-config-job-checked
   "Run a configuration with catch and print for any exceptions"

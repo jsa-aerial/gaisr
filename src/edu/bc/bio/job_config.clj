@@ -84,9 +84,6 @@
   (reduce (fn[m fna] (process-1-file m :blast fna))
           m (fs/glob (fs/fullpath l))))
 
-(defn process-sccs-subline [m l]
-  (let [[d v] (str/split #"\s*(:| )\s*" l)]
-    (assoc m :sccs (conj (get m :sccs []) [(keyword d) v]))))
 
 (defn process-gen-csv-subline [m l]
   (let [[d v] (str/split #"\s*(:| )\s*" l)
@@ -94,9 +91,23 @@
         v (if (and (= d :aggregate) (= v "csv-dir")) (first (m :gen-csvs)) v)]
     (assoc m :gen-csvs (conj (get m :gen-csvs []) [(keyword d) v]))))
 
+
+(defn process-sccs-subline [m l]
+  (let [[d v] (str/split #"\s*(:| )\s*" l)]
+    (assoc m :sccs (conj (get m :sccs []) [(keyword d) v]))))
+
+(defn process-cluster-subline [m l]
+  (let [bits (str/split #"\s*(:| )\s*" l)
+	d (first bits)
+	v (if (in d ["kinfo" "delta"])
+	    (vec (map read-string (rest bits)))
+	    (-> bits rest first))]
+    (assoc m :clus (conj (get m :clus []) [(keyword d) v]))))
+
 (defn process-gen-sto-subline [m l]
   (let [[d v] (str/split #"\s*(:| )\s*" l)]
     (assoc m :gen-stos (conj (get m :gen-stos []) [(keyword d) v]))))
+
 
 (defn process-directive-options [m d l]
   (let [args (->> l (str/split #"\s*:\s*") second)
@@ -116,6 +127,7 @@
                     flatten
                     vec))]
     (assoc m d (conj (get m d []) [:opts (if args (apply assoc {} args) {})]))))
+
 
 (defn parse-config-file [filespec]
   (let [lseq (filter #(not (or (= "" (str/trim %))
@@ -201,6 +213,9 @@
           (assoc m :gen-csvs [(get (getf m :csvdir l) :csvdir (m :cmdir))])
           :gen-csvs)
 
+	 #"^(Clus|Cluster)\s*:"
+	 (directive (process-directive-options m :clus l) :clus)
+
          #"^SCCS\s*:"
          (directive (process-directive-options m :sccs l) :sccs)
 
@@ -213,6 +228,7 @@
                :calibrate (process-cm-files m l)
                :cmsearch (process-hit-files m l)
                :gen-csvs (process-gen-csv-subline m l)
+	       :clus (process-cluster-subline m l)
                :sccs (process-sccs-subline m l)
                :gen-stos (process-gen-sto-subline m l))))
      {:refdb :refseq58 :stodb :refseq58} lseq)))

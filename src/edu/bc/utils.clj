@@ -1097,6 +1097,61 @@
 
 
 ;;; ----------------------------------------------------------------
+;;; General file existence check / assert, with standard exception.
+
+
+;; (ns-unmap *ns* 'assert-files?)
+(defmulti
+  ^{:arglists
+    '([coll]
+      [regex]
+      [file-glob])}
+  assert-files?
+  "Assert that the files (including directories) designated by
+   DESIGNATOR exist.  If not, collect all those that do not and raise
+   a standard exeception :type :no-such-files :files <set of names>.
+
+   DESIGNATOR can be a collection, regex or string.  If a collection,
+   each element is taken as a full path of a file; if regex, uses
+   re-directory-files to obtain a collection of paths; if string,
+   treat as file glob and use fs/glob to obtain collection of paths.
+   Check all elements of resulting collection with fs/exists?"
+  (fn[designator]
+    (if (coll? designator)
+      :coll
+      (type designator))))
+
+(defmethod assert-files? :coll
+  [coll]
+  (let [bad (filter #(or (nil? %) (not (fs/exists? %))) coll)]
+    (if (seq bad)
+      (raise :type :no-such-files
+             :files bad)
+      :good)))
+
+(defmethod assert-files? String
+  [gspec]
+  (let [files (fs/glob gspec)]
+    (if (seq files)
+      (assert-files? (fs/glob gspec))
+      (raise :type :no-such-files
+             :files gspec))))
+
+(defmethod assert-files? java.util.regex.Pattern
+  [re]
+  (let [stg (.pattern re)
+        dir (fs/dirname stg)
+        re (re-pattern (fs/basename stg))
+        files (fs/re-directory-files dir re)]
+    (if (seq files)
+      (assert-files? files)
+      (raise :type :no-such-files
+             :files re))))
+
+
+
+
+;;; ----------------------------------------------------------------
 ;;; Some helpers for running external programs.  In particular,
 ;;; running them while ensuring they actually terminate normally.
 

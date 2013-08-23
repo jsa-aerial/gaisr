@@ -37,22 +37,28 @@
   (:require [clojure.contrib.sql :as sql]
             [org.bituf.clj-dbcp :as dbcp]
             [clojure.contrib.string :as str]
-            [clojure.contrib.str-utils :as stru]
-            [clojure.set :as set]
-            [clojure.contrib.seq :as seq]
             [clojure.contrib.io :as io]
-            [clojure.zip :as zip]
             [edu.bc.fs :as fs])
 
   (:use edu.bc.utils
         [edu.bc.log4clj :only [create-loggers log>]]
-        [clojure.contrib.condition
-         :only (raise handler-case *condition* print-stack-trace)]
-        [clojure.contrib.pprint
-         :only (cl-format compile-format)])
+        [edu.bc.bio.gaisr.db-actions
+         :only [mysql-ds sql-query]])
 
   (:import javax.sql.DataSource
            com.mysql.jdbc.jdbc2.optional.MysqlConnectionPoolDataSource))
+
+
+
+
+(defmacro sql-update
+  [sql-op]
+  (let [sqlop? ((ns-interns 'clojure.contrib.sql) (first sql-op))
+        opsym (when sqlop? (symbol "sql"  (name (first sql-op))))
+        sql-op (if sqlop? (cons opsym (rest sql-op)) sql-op)]
+    `(sql/with-connection mysql-ds
+       (sql/transaction
+        ~sql-op))))
 
 
 (create-loggers
@@ -63,21 +69,6 @@
     :filespec "./Logs/rdbinfo.log"
     :max-version 4
     :max-size "5MB"}]])
-
-
-(def db-pw (atom ""))
-
-;;; Define MySql datasource connection pool.  This affords reasonable
-;;; (for mysql...) parallelization of concurrent queries and keeps the
-;;; ansync web service reasonably happy (though mysql is the bottleneck...
-;;;
-(def mysql-ds
-     (dbcp/db-spec
-      (let [ds (dbcp/mysql-datasource
-                "127.0.0.1:3306" "biosql" "root" @db-pw)]
-        (dbcp/set-max-active! ds 50)
-        (dbcp/set-min-max-idle! ds 5 20)
-        ds)))
 
 
 
@@ -110,10 +101,8 @@
         stmt (str "select " fields
                   " from " table
                   " where " constraint)
-        result (first (sql/with-connection mysql-ds
-                        (sql/with-query-results qresults [stmt]
-                          (doall qresults))))]
-    (result :bioentry_id)))
+        result (first (sql-query stmt))]
+    (:bioentry_id result)))
 
 
 (defn print-update-operon-tables [gbname opr-info]
@@ -132,21 +121,21 @@
         "~A operons: ~A" gbname (count opr-info))
   (println gbname "-->" (count opr-info))
   (when (not (empty? opr-info))
-    (let [beid (bioentry-id gbname)
-          opids (sort (reduce #(conj %1 (first %2)) #{} opr-info))
-          opr-rows (repeat (count opids) [beid])
-          opr-loc-rows (sort-by first opr-info)]
-      (sql/with-connection mysql-ds
-        (sql/transaction
-         (apply sql/insert-values
-                :operon [:bioentry_id] opr-rows)
-         (apply sql/insert-values
-                :operon_loc
-                [:operon_id :start_pos :end_pos :strand :protein_id :cog]
-                opr-loc-rows))))))
+    (when-let [beid (bioentry-id gbname)]
+      (let [opids (sort (reduce #(conj %1 (first %2)) #{} opr-info))
+            opr-rows (repeat (count opids) [beid])
+            opr-loc-rows (sort-by first opr-info)]
+        (sql-update
+         (do (apply sql/insert-values
+                    :operon [:bioentry_id] opr-rows)
+             (apply sql/insert-values
+                    :operon_loc
+                    [:operon_id :start_pos :end_pos :strand :protein_id :cog]
+                    opr-loc-rows)))))))
 
 
 ;;;"/data2/BioData/test.txt"
+;;;(populate-operon-tables "/data2/BioData/all_annot/all_annot3.opr")
 (defn populate-operon-tables [file]
   (with-open [opr (io/reader file)]
     (binding [*in* opr]
@@ -183,9 +172,9 @@
     (binding [*in* opr]
       (read-line) ; toss header
       (with-local-vars
-	  [info []
-	   gbname ""
-	   opr-loc-set #{}]
+          [info []
+           gbname ""
+           opr-loc-set #{}]
         (while  (let [x (get-line-info)] (var-set info x))
           (let [[nm opid opinfo] (var-get info)
                 gbnm (var-get gbname)]

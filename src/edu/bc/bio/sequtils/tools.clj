@@ -545,6 +545,38 @@
             [] eset)))
 
 
+(defn entry-file-union
+  "Union the entry sets in the files f1 and f2 or f1, f2 and remaining
+   fs.  Full is true or false.  If true, entries must fully
+   match (name, start, end and strand) to be included in union.  If
+   false, only the names are used to match.  Returns the resulting set
+   of entries sans sequences.  See entry-file-union-with-seqs to
+   include sequences as well.  File types may be fasta (fna, hitfna),
+   sto, aln, and gaisr csv.
+  "
+  ([full f1 f2]
+     (do-entry-file-set-op
+      set/union
+      (get-entry-set full f1) (get-entry-set full f2)))
+  ([full f1 f2 & fs]
+     (apply do-entry-file-set-op
+            set/union
+            (map #(get-entry-set full %) (cons f1 (cons f2 fs))))))
+
+(defn entry-file-union-with-seqs
+  "Like entry-file-union, but returns corresponding sqs for the result
+   entry set as well.  Uses the full entry (full is true for
+   entry-file-union).  Union the entries in files f1 f2, and if non
+   empty those in fs as well.  Take the result set and create the set
+   of pairs [entry sq] for each entry in the set.  Returns the
+   resulting sequence of pairs.
+  "
+  [f1 f2 & fs]
+  (apply do-entry-file-set-op-with-seqs
+         set/union
+         (map #(get-entry-set true %) (cons f1 (cons f2 fs)))))
+
+
 (defn entry-file-intersect
   "Intersect the entry sets in the files f1 and f2 or f1, f2 and
    remaining fs.  Full is true or false.  If true, entries must fully
@@ -618,6 +650,14 @@
   "Generic interface to entry file set operations with and without seqs"
   (fn[op with-seqs & args]
     [op with-seqs]))
+
+(defmethod entry-file-setop [:union false]
+  [_ _ & args]
+  (apply entry-file-union args))
+
+(defmethod entry-file-setop [:union true]
+  [_ _ & args]
+  (apply entry-file-union-with-seqs args))
 
 (defmethod entry-file-setop [:intersect false]
   [_ _ & args]
@@ -840,7 +880,7 @@
           (when (not (fs/empty? cands-file))
             (let [canda-ofile (str seqin ".align-sto.h" suffix)
                   motif-ofile (fs/replace-type
-                               seqin (str ".motif.h" suffix ".sto"))
+                               seqin (str ".motif.h" suffix))
                   cm-file     (str seqin ".cm.h"    suffix)
                   cmf-stdout  (str seqin ".h" stem-loops dot-i ".out")]
               (canda seqin cands-file canda-ofile)
@@ -860,38 +900,51 @@
 
 
 
+(defn get-cmfsto-glob
+  [motifstos]
+  (if (not (seq motifstos))
+    ""
+    (let [f (first motifstos)
+          bn (fs/basename f)
+          dir (fs/dirname f)]
+      (fs/join dir (str/replace-re #"motif\.h[\.0-9]*" "motif.h" bn)))))
+
 (defn cmf-post-process-combine
   [start-fna sto-glob]
-  (let [cmf-path (get-tool-path :cmfinder)
-        combmotif (str cmf-path "CombMotif.pl")]
-    (assert-tools-exist [combmotif])
-    (let [out (runx combmotif start-fna sto-glob)]
-     (if (= out "")
-       ()
-       (->> out (str/split #"\n")
-	    (map #(str/split #"\s+>\s+" %))
-	    (map last))))))
+  (when (not= "" sto-glob)
+    (let [cmf-path (get-tool-path :cmfinder)
+          combmotif (str cmf-path "CombMotif.pl")]
+      (assert-tools-exist [combmotif])
+      (let [out (runx combmotif start-fna sto-glob)
+            dir (fs/dirname sto-glob)]
+        (doall (map fs/rm (fs/re-directory-files dir "*(cm|cand)*")))
+        (if (= out "")
+          (fs/glob (str sto-glob "*"))
+          (->> out (str/split #"\n")
+               (map #(str/split #"\s+>\s+" %))
+               (map last)))))))
 
 (defn cmf-post-process-filter
   [insto & {:keys [threshold] :or {threshold 10}}]
-  (let [insto (fs/fullpath insto)
-        outsto (fs/replace-type insto "-filtered.sto")
-        [gfs seqlines sslines] (join-sto-fasta-lines insto "")
-        gfs (filter #(not (re-find #"^#=GR" %)) gfs)
-        sqs (map (fn[[nm [_ sq]]] [nm sq]) seqlines)
-        sslines (->> sslines (map (fn[[nm [_ sq]]] [nm sq])) butlast)
-        preface (take 2 gfs)
-        m (->> gfs (drop 2) (group-by #(->> % (str/split #"\s+") third)))
-        des (m "DE")
-        SCs (->> des
-                 (map #(let [v (str/split #"\s+" %)]
-                         [(second v) (Float. (last v))]))
-                 (filter (fn[[nm sc]] (> sc threshold)))
-                 (into {}))
-        gfs (filter #(->> % (str/split #"\s+") second SCs) gfs)
-        gd-sqs (filter (fn[[nm sq]] (SCs nm)) sqs)]
-    (write-sto outsto preface gfs gd-sqs sslines)
-    outsto))
+  (when (fs/exists? (fs/fullpath insto))
+    (let [insto (fs/fullpath insto)
+          outsto (str insto "-filtered.sto")
+          [gfs seqlines sslines] (join-sto-fasta-lines insto "")
+          gfs (filter #(not (re-find #"^#=GR" %)) gfs)
+          sqs (map (fn[[nm [_ sq]]] [nm sq]) seqlines)
+          sslines (->> sslines (map (fn[[nm [_ sq]]] [nm sq])) butlast)
+          preface (take 2 gfs)
+          m (->> gfs (drop 2) (group-by #(->> % (str/split #"\s+") third)))
+          des (m "DE")
+          SCs (->> des
+                   (map #(let [v (str/split #"\s+" %)]
+                           [(second v) (Float. (last v))]))
+                   (filter (fn[[nm sc]] (> sc threshold)))
+                   (into {}))
+          gfs (filter #(->> % (str/split #"\s+") second SCs) gfs)
+          gd-sqs (filter (fn[[nm sq]] (SCs nm)) sqs)]
+      (write-sto outsto preface gfs gd-sqs sslines)
+      outsto)))
 
 
 ;;; ------------------------------------------------------------------------;;;

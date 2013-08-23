@@ -369,6 +369,45 @@ if it is not or if the file cannot be deleted."
 
 
 
+
+;; (ns-unmap *ns* 'move)
+(defmulti
+  ^{:arglists
+    '([coll newdir]
+      [regex newdir]
+      [file-glob newdir])}
+  move
+  "Move the files (including directories) designated by DESIGNATOR to
+   the directory NEWDIR.  DESIGNATOR can be collection, regex or
+   string.  If a collection, each element is taken as a full path of a
+   file; if regex, uses re-directory-files to obtain a collection of
+   paths; if string, treat as file glob and use fs/glob to obtain
+   collection of paths.  Move all elements of resulting collection to
+   newdir."
+  (fn [designator newdir]
+    (if (coll? designator)
+      :coll
+      (type designator))))
+
+(defmethod move :coll
+  [coll newdir]
+  (doseq [f coll]
+    (rename f (join newdir (basename f)))))
+
+(defmethod move String
+  [gspec newdir]
+  (move (glob gspec) newdir))
+
+(defmethod move java.util.regex.Pattern
+  [re newdir]
+  (let [stg (.pattern re)
+        dir (dirname stg)
+        re (re-pattern (basename stg))]
+    (move (re-directory-files dir re) newdir)))
+
+
+
+
 ; walk helper functions
 (defn- w-directory? [f]
   (.isDirectory f))

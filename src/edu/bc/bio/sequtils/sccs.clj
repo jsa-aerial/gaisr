@@ -344,9 +344,10 @@
 
 
 (defn plot-hit-dists
-  [prot-name cnt-seqs ctx-delta res cutpt nms-stods & {:keys [file]}]
+  [chartnm prot-name cnt-seqs ctx-delta res cutpt nms-stods
+   & {:keys [file]}]
   (let [xs (range cnt-seqs)
-        out (if file (fs/join file (str prot-name "-hitonly.png")) :display)]
+        out (if file (fs/join file (str chartnm "-hitonly.png")) :display)]
     (render-chart
      out
      xs (map second nms-stods)
@@ -357,9 +358,10 @@
      :legend true)))
 
 (defn plot-cand-dists
-  [prot-name cnt-seqs ctx-delta res Mre CDp cutpt nms-stods & {:keys [file]}]
+  [chartnm prot-name cnt-seqs ctx-delta res Mre CDp cutpt nms-stods
+   & {:keys [file]}]
   (let [xs (range cnt-seqs)
-        out (if file (fs/join file (str prot-name "-candidates.png")) :display)]
+        out (if file (fs/join file (str chartnm "-candidates.png")) :display)]
     (render-chart
      out
      xs (map second nms-stods)
@@ -405,7 +407,9 @@
 
 (defn select-cutpoint
   [re-points & {:keys [Dy Mre] :or {Mre 0.935}}]
-  (re-cdf-cut re-points Dy Mre))
+  (if (seq re-points)
+    (re-cdf-cut re-points Dy Mre)
+    0))
 
 
 (defn get-pos-neg-sets
@@ -450,10 +454,11 @@
   [wz candidate-file sto-file
    & {:keys [refn delta xlate refdb stodb] :or {refn DX||Y delta 5000}}]
 
+  (assert-files? [(fs/fullpath candidate-file) (fs/fullpath sto-file)])
   (let [cfile (fs/fullpath candidate-file)
         ctype (fs/ftype cfile)
         prot-name (->> cfile
-                       (str/split #"/") last (str/split #"\.") first
+                       fs/basename (str/split #"\.") first
                        (str/replace-re #"_" " "))
 
         entries (with-genome-db refdb
@@ -485,17 +490,17 @@
   [sto-file candidate-file delta run
    & {:keys [refn xlate alpha
              refdb stodb
-             crecut limit wz
+             crecut limit wz scnt
              Dy Mre
              plot-cre plot-dists]
-      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15}}]
+      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15 scnt 5}}]
 
   (let [[wz cres] (if wz
                     [wz]
                     (with-genome-db stodb
                       (res-word-size sto-file :delta delta
                                      :xlate xlate :alpha alpha
-                                     :limit limit :crecut crecut :cnt 5)))
+                                     :limit limit :crecut crecut :cnt scnt)))
         [nm-re-sq pnm sz] (sto-re-dists wz candidate-file sto-file
                                         :refn refn :xlate xlate
                                         :refdb refdb :stodb stodb
@@ -511,13 +516,20 @@
                   (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.927)))
 
         cutpt (select-cutpoint nm-re-sq :Dy Dy :Mre Mre)
-        [good bad] (get-pos-neg-sets nm-re-sq cutpt)]
+        [good bad] (get-pos-neg-sets nm-re-sq cutpt)
+
+        chartnm (->> sto-file
+                     fs/basename (str/split #"\.") first
+                     (str/replace-re #"_" "-"))]
 
     (when (and plot-cre cres) (plot-cres cres))
     (when plot-dists
       (if (zero? delta)
-        (plot-hit-dists pnm sz delta wz cutpt nm-re-sq :file plot-dists)
-        (plot-cand-dists pnm sz delta wz Mre (+ Dy 0.5) cutpt
+        (plot-hit-dists chartnm
+                        pnm sz delta wz cutpt
+                        nm-re-sq :file plot-dists)
+        (plot-cand-dists chartnm
+                         pnm sz delta wz Mre (+ Dy 0.5) cutpt
                          nm-re-sq :file plot-dists)))
     [good bad cutpt nm-re-sq]))
 
@@ -525,20 +537,29 @@
 (declare get-hitonly-final-names)
 
 (defn compute-candidate-sets
-  ""
-  [sto-file candidate-file run delta
-   & {:keys [refn xlate alpha
-             refdb stodb
-             crecut limit
-             Dy Mre
-             plot-cre plot-dists]
-      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15}}]
+  "Compute the positive and negative candidate sets for 'hitonly' and
+  'genomic context' search candidates.  The search candidates are
+  given in CANDIDATE-FILE; typically a csv file from a GEN-CSV config
+  directive, but this can be any 'entry' type file: csv, sto, ent,
+  fna, etc.  SEED-SEQS gives the set of 'original'/originating
+  sequences from which the candidates were derived.  Typically this is
+  a sto file which was used to compute and calibrate a CM and used to
+  search a sequence database (std Infernal pipeline via config
+  directives), but can be any 'originating' set of sequences as given
+  directly or by 'entry' files (sto, ent, fna, etc).
+
+  RUN is an integer indicating
+  "
+  [seed-seqs candidate-file run delta
+   & {:keys [refn xlate alpha refdb stodb crecut limit scnt Dy
+             Mre plot-cre plot-dists]
+      :or {refn DX||Y alpha (alphabet :rna) crecut 0.10 limit 15 scnt 5}}]
 
   (let [refdb (@genome-db-dir-map (if refdb refdb :refseq58))
         stodb (@genome-db-dir-map (if stodb stodb :refseq58))
 
         [first-phase-entry-file final-entry-file]
-        (get-hitonly-final-names candidate-file)
+        (get-hitonly-final-names candidate-file seed-seqs)
 
         first-phase-entry-file (fs/fullpath first-phase-entry-file)
         first-phase-neg-file (fs/replace-type
@@ -553,7 +574,7 @@
          rna-only-bad
          cutpt1
          rna-nm-re-sq] (compute-candidate-info
-                        sto-file candidate-file 0 run
+                        seed-seqs candidate-file 0 run
                         :refn refn :xlate +RY-XLATE+ :alpha alpha
                         :refdb refdb :stodb stodb
                         :limit limit :wz 6
@@ -567,22 +588,23 @@
         [good bad
          cutpt2
          nm-re-sq] (compute-candidate-info
-                    sto-file first-phase-entry-file delta run
+                    seed-seqs first-phase-entry-file delta run
                     :refn refn :xlate xlate :alpha alpha
                     :refdb refdb :stodb stodb
-                    :crecut crecut :limit limit
+                    :crecut crecut :limit limit :scnt scnt
                     :Dy Dy :Mre Mre
                     :plot-cre plot-cre :plot-dists plot-dists)]
 
     (->> good (#(gen-entry-nv-file % final-entry-file)))
     (->> bad (#(gen-entry-nv-file % final-bad-entry-file)))
-    (with-genome-db refdb
-      (entry-file->fasta-file final-entry-file))
+    #_(with-genome-db refdb
+        (entry-file->fasta-file final-entry-file))
 
     [[good bad cutpt2]
      [rna-only-good rna-only-bad cutpt1]
      rna-nm-re-sq
-     nm-re-sq]))
+     nm-re-sq
+     [final-entry-file final-bad-entry-file]]))
 
 
 (defn get-hitonly-final-names
@@ -592,8 +614,18 @@
    candidate file name of the filtered results of the base cmsearch
    output.  Typically the csv file matching a cmsearch.out.
   "
-  [cf]
-  (let [suffix (first (re-find #"(\.[a-z]+|)\.cmsearch\.(csv|out|ent)$" cf))
+  [cf seed-name]
+  (let [prefix (and (string? seed-name)
+                    (->> seed-name fs/basename (str/split #"\.") first))
+        cfdir (fs/dirname cf)
+        ;; This is not done well - can be much cleaner/simpler...
+        cfbase (if (not prefix)
+                 (fs/basename cf)
+                 (str/join
+                  "." (cons prefix
+                            (->> cf fs/basename (str/split #"\.") rest))))
+        cf (fs/join cfdir cfbase)
+        suffix (first (re-find #"(\.[a-z]+|)\.cmsearch\.(csv|out|ent)$" cf))
         suffix-re (re-pattern suffix)
         hitonly (str/replace-re suffix-re "-hitonly.ent" cf)
         final (str/replace-re suffix-re "-final.ent" cf)]
@@ -613,42 +645,111 @@
     (if l (Integer. l) nil)))
 
 (defn hit-context-delta
-  [sto & {:keys [plot mindelta stodb] :or {mindelta 200}}]
+  "Find the genomic context delta for the RNA sequences in STO (a sto
+   file) based on conserved information content of the downstream (3'
+   'trailer') sequence from the RNA locations.  SCNT is the sample
+   count from the sto sequences to use for computation of optimial
+   word size.
+
+   MINDELTA is the minimal downstream amount to check - effectively
+   the same as the starting delta to use for information content
+   calculations.
+
+   STODB is the reference genome database to use and must be keyword
+   that is recognized by GENOME-DB-DIR-MAP.  If not given, defaults to
+   the current default refseq genomes (at time of writing, :refseq58).
+
+   PLOT indicates the directory in which to save the context delta
+   entropy charts, or nil/not given if none should be generated.
+
+   hit-context-delta proceeds as follows:
+
+   For each delta in (take 81 (iterate #(+ % 20) mindelta))
+     get coll of downstream seqs for delta and coordinates of sto seqs
+     compute the optimial word size wz for this set based on scnt
+     use wz to get prob dists for each sq and compute centroid dist
+     compute JSD of each sq to centroid
+     compute mean of JSDs
+
+   Return max delta for min over all JSD points
+  "
+  [sto & {:keys [plot scnt mindelta stodb] :or {scnt 7 mindelta 200}}]
+
   (let [gfcsz (get-saved-ctx-size sto)
         stodb (@genome-db-dir-map (if stodb stodb :refseq58))]
-    (if gfcsz
-      [gfcsz true]
-      (let [pts (vfold (fn[i]
-                         (->> (compute-candidate-info
-                               sto sto
-                               (+ mindelta (* i 20)) 1
-                               :refn jensen-shannon
-                               ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
-                               :refdb stodb :stodb stodb
-                               :crecut 0.01 :limit 19
-                               :plot-dists false)
-                              first (map second) mean))
-                       (range 81))
-            ms (map #(min %1 %2) pts (drop 1 pts))
-            out (if plot
-                  (->> sto fs/basename
-                       (#(fs/replace-type % "-ctxsz.png"))
-                       (fs/join plot))
-                  :display)]
-        (when plot
-          (render-chart
-           out
-           (map #(+ mindelta (* 20 %)) (range (count ms))) ms
-           "Size X 20" "RE/JSD" "RE to subseq"
-           :series-label "Sub Seq Size"
-           :legend true))
-        [(+ mindelta (* 20 (first (pos (apply min pts) pts)))) false]))))
+    (cond
+     ;; Saved in sto from some previous run
+     gfcsz [gfcsz true]
+
+     ;; If only one seq, all deltas give JSD 0, so mindelta
+     (= 1 (count (doall (read-seqs sto :info :name)))) [mindelta false]
+
+     :else ;; compute and select min over delta range
+     (let [pts (vfold (fn[i]
+                        (->> (compute-candidate-info
+                              sto sto
+                              (+ mindelta (* i 20)) 1
+                              :refn jensen-shannon
+                              ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
+                              :refdb stodb :stodb stodb
+                              :crecut 0.01 :limit 19 :scnt scnt
+                              :plot-dists false)
+                             first (map second) mean))
+                      (range 81))
+           ms (map #(min %1 %2) pts (drop 1 pts))
+           out (if plot
+                 (->> sto fs/basename
+                      (#(fs/replace-type % "-ctxsz.png"))
+                      (fs/join plot))
+                 :display)]
+       (when plot
+         (render-chart
+          out
+          (map #(+ mindelta (* 20 %)) (range (count ms))) ms
+          "Size X 20" "RE/JSD" "RE to subseq"
+          :series-label "Sub Seq Size"
+          :legend true))
+       [(+ mindelta (* 20 (last (pos (apply min pts) pts)))) false]))))
+
+(defn save-hit-context-delta
+  "Compute the hit context delta for the sequences in stofile (see
+   hit-context-delta) and save the result in stofile (using our std
+   convention of '#=GF CTXSZ ...' GF line).  The original stofile is
+   renamed to {stofile}-bkup.sto.  ARGS are any ancillary arguments
+   taken by hit-context-delta and are simply passed on through.
+  "
+  [stofile & args]
+  (let [[ctxsz found] (apply hit-context-delta stofile args)
+        [hd nm-sq-pairs ss-lines] (join-sto-fasta-lines stofile "")
+        ctxsz-gf (str "#=GF CTXSZ " ctxsz)]
+    (when (not found)
+      (fs/rename stofile (fs/replace-type stofile "-orig.sto"))
+      (write-sto
+       stofile (take 2 hd) (cons ctxsz-gf (drop 2 hd)) nm-sq-pairs ss-lines))))
+
 
 (defn hit-context-delta-db
-  ""
-  [sto & {:keys [gene cnt margin] :or {cnt 5 margin 0}}]
-  {:pre [(string? gene)]}
+  "Find the genomic context delta for the RNA sequences in STO (a sto
+   file) based on the GENE (symbolic name given as a strin, for
+   example \"rpsD\".  Context is found by using annotation information
+   in the refseq database to find the gene location, size and relative
+   position to the RNA location.  MARGIN is an integer used to give an
+   adjustment to the base delta found (typically left at 0).  CNT
+   provides the number of random selections from the RNAs in STO to
+   use for search.
 
+   Limitation: Requires that all RNAs in STO be from the currently
+   used NCBI refseq microbial GenBank files used to build the current
+   database.  Hence, requires annotations to be used.
+
+   Generally, this is no longer the method of choice; use
+   hit-context-delta which does not require annotations or alignment
+   information.  Directly using conserved information content as
+   determined by various entropy measures.
+  "
+  [sto & {:keys [gene cnt margin] :or {cnt 5 margin 0}}]
+
+  {:pre [(string? gene)]}
   (let [sample (random-subset (read-seqs sto :info :name) cnt)
         nms-loci (map #(let [[nm [s e] sd] (entry-parts %)] [nm s e sd]) sample)
         features (map (fn[[nm s e sd]]
@@ -683,7 +784,7 @@
              (filter second))
         base (+ margin
                 (if (not (seq nms-lens))
-                  (hit-context-delta sto :gene gene :cnt cnt)
+                  (hit-context-delta-db sto :gene gene :cnt cnt)
                   (reduce (fn[sz [nm s]]
                             (first (div (+ sz s) 2)))
                           (-> nms-lens first second) (rest nms-lens))))]
@@ -691,6 +792,18 @@
 
 
 
+
+(defn get-deltas
+  [sto]
+  (let [ctxsz (hit-context-delta sto)]
+    (take 3 (iterate #(+ % 250) ctxsz))))
+
+(defn get-k
+  [sto]
+  (let [cnt (-> sto (read-seqs :info :name) count)]
+    (if (< cnt 15)
+      [2 3]
+      (mapv #(int (ceil (* % cnt))) [0.1 0.12 0.17]))))
 
 (defn get-krange [kinfo seqcnt]
   (cond
@@ -714,12 +827,12 @@
 
         ;; Get entries and their delta adjusted sequences and Goedel
         ;; number them for efficient map key access.
-        entries  (map (fn[i es] [i es]) (iterate inc 0) seqents)
+        entries  (map (fn[i ent] [i ent]) (iterate inc 0) seqents)
         seqs (get-adjusted-seqs (map second entries) delta)
         entries (into {} entries)
         coll (->> seqs
                   (map (fn[[e s]] [e (if xlate (seqXlate s :xmap xlate) s)]))
-                  (mapv (fn[i es] [i es]) (iterate inc 0)))
+                  (mapv (fn[i ent-sq] [i ent-sq]) (iterate inc 0)))
 
         ;; Get the resolution window size for sequence words
         ;; (features), which controls vocabulary distribution content
@@ -730,8 +843,8 @@
                             :crecut crecut :limit limit)
 
         ;; Precompute all the resulting dictionaries of sequences with
-        ;; word size.  This is a vector which is naturally indexed by
-        ;; the numbering of the entries.
+        ;; word size.  This is a _vector_ of said dictionaries and is
+        ;; naturally indexed by the numbering of the entries.
         _ (println :start-coll-ffps (str-date))
         coll-ffps (mapv (fn[[i [e sq]]] (probs wz sq)) coll)
 
@@ -752,7 +865,7 @@
 
 
         ;; Distance function for S-Dbw cluster validity measure.
-        ;; Every 'point' here should be word dictionary as seq-clus
+        ;; Every 'point' here should be a word dictionary as seq-clus
         ;; (see below) is precomputed to be such.
         distfn2 (fn[l r] {:pre [(and (map? l) (map? r))]}
                   (jensen-shannon l r))
@@ -780,26 +893,26 @@
                           (apply clu/refoldin-outliers krnngrph)
                           vec)
             ent-clus (let [coll (into {} coll)]
-                       (map (fn[scc]
-                              (map (fn[x]
-                                     [(entries x) (-> x coll first)])
-                                   scc))
-                            clusters))
+                       (mapv (fn[scc]
+                               (map (fn[x]
+                                      [(entries x) (-> x coll first)])
+                                    scc))
+                             clusters))
             seq-clus (let [coll (into {} coll)]
-                       (map (fn[scc]
-                              (let [v (vfold
-                                       (fn[x] (coll-ffps x))
-                                       (vec scc))]
-                                [(avgfn v) v]))
-                            clusters))
+                       (mapv (fn[scc]
+                               (let [v (vfold
+                                        (fn[x] (coll-ffps x))
+                                        (vec scc))]
+                                 [(avgfn v) v]))
+                             clusters))
             _ (println :end-clustering :start-S-Dbw (str-date))]
         [(if vindex (vindex distfn2 (vec seq-clus) :avgfn avgfn) 0.0)
          ent-clus k]))))
 
 (defn split-sto
   ""
-  [entfile & {:keys [delta xlate alpha crecut limit kinfo]
-              :or {alpha (alphabet :rna)}}]
+  [entfile & {:keys [delta xlate alpha crecut limit kinfo vindex clu-dir]
+              :or {alpha (alphabet :rna) vindex clu/S-Dbw-index}}]
   (let [ents-sqs (read-seqs entfile :info :both)
         entries (map first ents-sqs)
         entsq-map (into {} ents-sqs)
@@ -819,33 +932,90 @@
 
         basedir (fs/dirname entfile)
         name (->> entfile fs/basename (str/split #"\.") first)
-        clu-dir (fs/join basedir (str "CLU-" name))
-        _ (when (not (fs/exists? clu-dir)) (fs/mkdir clu-dir))
+        clu-dir (if clu-dir clu-dir (fs/join basedir (str "CLU-" name)))
+        _ (when (not (fs/exists? clu-dir)) (fs/mkdirs clu-dir))
         clud-dir (fs/join clu-dir (str "d" delta))
         _ (when (not (fs/exists? clud-dir)) (fs/mkdir clud-dir))
 
+        ;; Compute cluster sets for each k; sort by index score, so
+        ;; that 'best' is first cluster set
         clu-info (->> (krnn-seqs-clust
                        entries
                        :delta delta
                        :xlate xlate :alpha alpha
                        :crecut crecut :limit limit
-                       :kinfo kinfo)
+                       :kinfo kinfo
+                       :vindex vindex)
                       (sort-by first <))
+
+        ;; Get 'best' k and corresponding 'best' clusters as sets of
+        ;; the original entries
         k (->> clu-info first third)
-        entgrps (->> clu-info first second (map #(map first %)))
-        fs (->> entgrps
+        ent-clus (->> clu-info first second (map #(map first %)))
+
+        fs (->> ent-clus
                 (map (fn[i ents]
                        (gen-entry-file
                         ents (fs/join clud-dir (str "clu-k" k "-" i ".ent"))))
                      (iterate inc 1))
                 doall)
-        stos (->> entgrps
+        stos (->> ent-clus
                   (map (fn[i ents]
                          (let [f (str "clu-k" k "-" i ".sto")]
                            (gen-sto (fs/join clud-dir f) ents)))
                        (iterate inc 1))
                   doall)]
     [(map (fn[[s ents k]] [s k (count ents) (map count ents)]) clu-info) fs]))
+
+
+(defn sto-ctx-merge
+  "Take a set of clusters, as output by split-sto from an original
+   input sto of presumed multiple genomic contexts, compute the best
+   context delta for each, then merge clusters according to equal
+   context deltas.  The output is a new set of stos reflecting the
+   merge (this could be the same as the input if no merge is
+   possible).
+
+   STOS is the set of clusters as the stos generated by split-sto.
+   BASE is a directory file specification for where to put the merged
+   resulting stos, with the default the location of the input stos.
+   PLOT indicates the directory to save the context delta entropy
+   charts, or nil/not given if none should be generated.  MINDELTA is
+   the minimum delta for hit-context-delta and SCNT is the sampling
+   count for hit-context-delta.
+
+   NOTE: it is _not_ necessarily true that the clusters resulting from
+   merges reflect contexts that should 'go together'.  This is
+   especially true for significantly diverse contexts.  Hence
+   sto-ctx-merge likely should only be used on known similar contexts,
+   such as those for S6.
+  "
+  [stos & {:keys [base plot scnt mindelta stodb] :or {scnt 7 mindelta 200}}]
+
+  (let [ctx-info (mapv (fn[sto]
+                         [sto
+                          (-> sto (read-seqs :info :name) count)
+                          (first (hit-context-delta
+                                  sto :plot plot :scnt scnt
+                                  :mindelta mindelta :stodb stodb))])
+                       (sort stos))
+        sto-grps (group-by third ctx-info)
+        base (if base base (-> stos first fs/dirname))]
+    (doseq [[sz stos] sto-grps]
+      (let [stos-nms-sqs (map #(second (join-sto-fasta-lines (first %) ""))
+                              stos)
+            nms-sqs (apply concat (map #(map (fn[[nm [id sq]]] [nm sq]) %)
+                                       stos-nms-sqs))
+            [hd _ ss-lines] (join-sto-fasta-lines (ffirst stos) "")
+
+            name-prefix (str/join
+                         "-" (butlast (str/split
+                                       #"-" (-> stos ffirst fs/basename))))
+            clus (str/join "-" (map #(->> % (str/split #"-")
+                                          last (str/split #"\.") first)
+                                    (map #(-> % first fs/basename) stos)))
+            merge-name (fs/join base (str name-prefix "-" clus ".sto"))]
+        (write-sto merge-name hd [(str "#=GF CTXSZ " sz)] nms-sqs ss-lines)))))
 
 
 

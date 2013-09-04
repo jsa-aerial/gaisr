@@ -348,22 +348,28 @@
    COLL as determined by the k nearest neighbors graph over COLL (see
    knn-graph).  Distance of knn graph is determined by distance
    function distfn, preferably a metric, but can be a 'similarity
-   measure' such as relative entropy.  Returns the graph encoded as a
-   map (sparse edge set matrix), with keys items in COLL and values
-   sets of items in COLL.
+   measure' such as relative entropy.
+
+   Alternately, the signature with KNNGRAPH, provides the k nearest
+   neighbor graph as a direct input.
+
+   Returns the graph encoded as a map (sparse edge set matrix), with
+   keys items in COLL and values sets of items in COLL.
 
    NOTE: the size of the value sets for krnn need not be k, typically
    isn't k, and can range from 0 to (count coll).
   "
-  [k distfn coll]
-  (let [knngrph (knn-graph k distfn coll)]
-    (conj (reduce (fn[[krnnM rnncntM] p]
-                    (reduce (fn[[krnnM rnncntM] q]
-                              [(assoc krnnM q (conj (get krnnM q []) p))
-                               (assoc rnncntM q (inc (get rnncntM q 0)))])
-                            [krnnM rnncntM] (knngrph p)))
-                  [{} {}] coll)
-          knngrph)))
+  ([knngraph coll]
+     (conj (reduce (fn[[krnnM rnncntM] p]
+                     (reduce (fn[[krnnM rnncntM] q]
+                               [(assoc krnnM q (conj (get krnnM q []) p))
+                                (assoc rnncntM q (inc (get rnncntM q 0)))])
+                             [krnnM rnncntM] (knngraph p)))
+                   [{} {}] coll)
+           knngraph))
+  ([k distfn coll]
+     (krnn-graph (knn-graph k distfn coll) coll)))
+
 
 
 (defn split-krnn
@@ -416,25 +422,33 @@
 
 (defn refoldin-outliers
   "Takes a krnn graph and the SCC 'clusters' corresponding to the s"
-  [krnngrph rnnG>k-sccs rnnG<k-sccs]
-  (let [clusters (first (reduce (fn[[M i] scc]
-                                  [(assoc M i scc) (inc i)])
-                                [{} 0] rnnG>k-sccs))
-        outliers (->> rnnG<k-sccs
-                      (map seq) flatten
-                      (map #(do [% (set (krnngrph %))]))
-                      (into {}))]
-    #_(prn clusters)
-    (->>
-     (reduce (fn[clus [o ons]]
-               (->> clus (map (fn[[k v]] [k (count (set/intersection v ons))]))
-                    (sort-by second >) first
-                    ((fn[[k cnt]]
-                       (if (not= 0 cnt)
-                         (assoc clus k (conj (clus k) o))
-                         (assoc clus (gen-uid) #{o}))))))
-             clusters outliers)
-     vals set)))
+  ([krnngrph rnnG>k-sccs rnnG<k-sccs]
+     (let [clusters (first (reduce (fn[[M i] scc]
+				     [(assoc M i scc) (inc i)])
+				   [{} 0] rnnG>k-sccs))
+	   outliers (->> rnnG<k-sccs
+			 (map seq) flatten
+			 (map #(do [% (set (krnngrph %))]))
+			 (into {}))]
+       #_(prn clusters)
+       (->>
+	(reduce (fn[clus [o ons]]
+		  (->> clus
+		       (map (fn[[k v]] [k (count (set/intersection v ons))]))
+		       (sort-by second >) first
+		       ((fn[[k cnt]]
+			  (if (not= 0 cnt)
+			    (assoc clus k (conj (clus k) o))
+			    (assoc clus (gen-uid) #{o}))))))
+		clusters outliers)
+	vals set)))
+  ([krnngrph rnnG>k-sccs rnnG<k-sccs knngrph & {:keys [minsize] {minsize 1}}]
+     (let [cluster-sets (refoldin-outliers krnngrph rnnG>k-sccs rnnG<k-sccs)
+	   x-tons (filter #(<= (count %) minsize) cluster-sets)
+	   clus-mintons (set/difference cluster-sets singletons)]
+       (when (seq x-tons)
+	 
+       
 
 
 (defn krnn-clust

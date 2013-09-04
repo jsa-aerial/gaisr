@@ -38,6 +38,7 @@
             [clojure-csv.core :as csv]
             [clojure.contrib.io :as io]
             [edu.bc.fs :as fs]
+            [edu.bc.utils.clustering :as clus]
             [edu.bc.bio.sequtils.sccs :as sccs])
 
   (:use [clojure.contrib.math :as math]
@@ -362,7 +363,8 @@
 
 (defn get-generic-sto-locs [stofile-lazyseq]
   (reduce (fn[m s-loc]
-            (let [[nm [s e] strand] (entry-parts s-loc)]
+            (let [[nm [s e] strand] (entry-parts s-loc)
+                  [s e] (if (neg? (Integer. strand)) [e s] [s e])] ; BOGUS!
               (assoc m nm (conj (get m nm []) [s e]))))
           {} (map #(first (str/split #"\s+" %))
                   (filter #(re-find #"^N(C|S|Z)" %) stofile-lazyseq))))
@@ -579,7 +581,7 @@
         orig-seq (hit-seq-map h)
         [s e] (if loc (vec (str/split #"-" loc)) ["1" (str (count orig-seq))])
         s (Long. s)
-        e (min (Long. e) (count orig-seq))
+        e (->> e Long. (#(if (< % Long/MAX_VALUE) % (count orig-seq))))
         info (reduce
               (fn[cur nxt] ; Keep the one with best Evalue
                 (if (< (Float. (nth nxt 4)) (Float. (nth cur 4)))
@@ -1089,12 +1091,25 @@
                :else A)))
           [Integer/MAX_VALUE []] clusterings))
 
+(defn get-cluster-validity-index
+  [opts]
+  (let [vindex (keyword (str/lower-case (opts :cvindex "default")))]
+    (case vindex
+          :s-dbw clus/S-Dbw-index
+          :davies-bouldin clus/davies-bouldin-index
+          (:default :min-count) (fn[dfn clus & args] (count clus))
+          (raise :type :unknown-cvindex
+                 :msg (str "Given cluster validity index '"
+                           (opts :cvindex)
+                           "' does not indicate a valid function.")))))
+
 (defn run-splitter
   ""
   [clus stos config]
   (let [opts (into {} clus)
         kinfo (opts :kinfo)
         deltas (opts :delta)
+        vindex (get-cluster-validity-index opts)
         stodir (opts :sto-dir (config :stodir))
         stos (opts :stos stos)
         stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
@@ -1110,7 +1125,7 @@
                             :delta d
                             :clu-dir out-dir
                             :crecut 0.01 :limit 19 :kinfo kinfo
-                            :vindex (fn[dfn clus & args] (count clus)))))
+                            :vindex vindex)))
              ddir (->> files first fs/split butlast last)
              delta-file (fs/join out-dir "delta.txt")]
          (spit delta-file ddir)

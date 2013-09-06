@@ -281,7 +281,7 @@
   [x]
   (or (num-key-freq-map? x)
       (and (sequential? (first x))
-	   (= (count (first x)) 2)
+           (= (count (first x)) 2)
            (number? (ffirst x)))))
 
 (defn flatten-pair-coll
@@ -1158,7 +1158,8 @@
    are false and log2.  If sym? is true, treat [x y] and [y x] as
    equal.  logfn can be used to provide a log of a different base.
    log2, the default, reports in bits.  If no options are required,
-   the empty map must be passed: (joint-entropy transpose {} my-coll)
+   the empty map must be passed: (total-correlation transpose {}
+   my-coll)
 
    NOTE: the \"degenerate\" case of only two colls, is simply mutual
    information.
@@ -1268,7 +1269,8 @@
    are false and log2.  If sym? is true, treat [x y] and [y x] as
    equal.  logfn can be used to provide a log of a different base.
    log2, the default, reports in bits.  If no options are required,
-   the empty map must be passed: (joint-entropy transpose {} my-coll)
+   the empty map must be passed: (interaction-information transpose {}
+   my-coll)
 
    For collections coll1..colln and variadic combinator over any
    subset of collections, Computes:

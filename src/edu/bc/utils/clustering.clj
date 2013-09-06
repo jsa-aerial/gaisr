@@ -325,8 +325,7 @@
    be a 'similarity measure' such as relative entropy.  O(nlogn)
    complexity.
   "
-  [k distfn p
-  coll]
+  [k distfn p coll]
   (take k (sort-by #(distfn p %) coll)))
 
 (defn knn-graph
@@ -424,31 +423,44 @@
   "Takes a krnn graph and the SCC 'clusters' corresponding to the s"
   ([krnngrph rnnG>k-sccs rnnG<k-sccs]
      (let [clusters (first (reduce (fn[[M i] scc]
-				     [(assoc M i scc) (inc i)])
-				   [{} 0] rnnG>k-sccs))
-	   outliers (->> rnnG<k-sccs
-			 (map seq) flatten
-			 (map #(do [% (set (krnngrph %))]))
-			 (into {}))]
+                                     [(assoc M i scc) (inc i)])
+                                   [{} 0] rnnG>k-sccs))
+           outliers (->> rnnG<k-sccs
+                         (map seq) flatten
+                         (map #(do [% (set (krnngrph %))]))
+                         (into {}))]
        #_(prn clusters)
        (->>
-	(reduce (fn[clus [o ons]]
-		  (->> clus
-		       (map (fn[[k v]] [k (count (set/intersection v ons))]))
-		       (sort-by second >) first
-		       ((fn[[k cnt]]
-			  (if (not= 0 cnt)
-			    (assoc clus k (conj (clus k) o))
-			    (assoc clus (gen-uid) #{o}))))))
-		clusters outliers)
-	vals set)))
-  ([krnngrph rnnG>k-sccs rnnG<k-sccs knngrph & {:keys [minsize] {minsize 1}}]
+        (reduce (fn[clus [o ons]]
+                  (->> clus
+                       (map (fn[[k v]] [k (count (set/intersection v ons))]))
+                       (sort-by second >) first
+                       ((fn[[k cnt]]
+                          (if (not= 0 cnt)
+                            (assoc clus k (conj (clus k) o))
+                            (assoc clus (gen-uid) #{o}))))))
+                clusters outliers)
+        vals (map set) set)))
+  ([krnngrph rnnG>k-sccs rnnG<k-sccs knngrph & {:keys [minsize]
+                                                :or {minsize 1}}]
      (let [cluster-sets (refoldin-outliers krnngrph rnnG>k-sccs rnnG<k-sccs)
-	   x-tons (filter #(<= (count %) minsize) cluster-sets)
-	   clus-mintons (set/difference cluster-sets singletons)]
-       (when (seq x-tons)
-	 
-       
+           x-tons (set (filter #(<= (count %) minsize) cluster-sets))
+           xset (->> x-tons (map seq) flatten set)
+           clusters>x-tons (set/difference cluster-sets x-tons)]
+       (if (seq x-tons)
+         (set (reduce (fn [CLUS x-ton]
+			;; Bug: if an outlier really is not 'close' to
+			;; anything but other outliers, this will drop
+			;; them
+                        (map (fn[C]
+                               (let [[p kv] x-ton]
+                                 (if (in (first kv) C)
+                                   (conj C p)
+                                   C)))
+                             CLUS))
+                      clusters>x-tons
+                      x-tons))
+         cluster-sets))))
 
 
 (defn krnn-clust

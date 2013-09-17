@@ -56,7 +56,8 @@
 
   (:import (java.util Date Calendar Locale)
            java.lang.Thread
-           (java.text SimpleDateFormat)))
+           (java.text SimpleDateFormat)
+	   java.lang.management.ManagementFactory))
 
 
 
@@ -126,6 +127,9 @@
 
 (declare runx)
 
+;;; Move to use
+;;; (. (ManagementFactory/getOperatingSystemMXBean) getSystemLoadAverage)
+;;; Instead or in addition????
 (defn cpu-use
   "Obtain and return cpu utilization.  Requires the 'top' command is
    available, and takes the second of two samplings (first samples
@@ -151,6 +155,46 @@
           :used use
           :both [idle use]
           idle)))
+
+(defn self-process-id
+  "Return the process id of the running JVM.  Uses ManagementFactory
+   getRuntimeMXBean, which has a getName method.  The getName method
+   will _likely_ return name as: <pid>@<host-name>, as a string.  This
+   method then pulls off the pid from this and returns it as a string.
+  "
+  []
+  (->> (. (ManagementFactory/getRuntimeMXBean) getName)
+       (str/split #"@") first))
+
+(defn fd-use
+  "Returns count of current file descriptors held.  Often (typically)
+   this can be larger (indeed, _much_ larger) than the count actually
+   being used.  This is due to the fact that things like io/read-lines
+   or equivalent will not close the file unless it is read in
+   entirety.  There are many cases where reading only the first few
+   lines is what is needed.  Further, reading them all just to get a
+   few is completely loses all advantage of lazy evaluation (not to
+   mention possible memory blow up)
+
+   *** NOTE: (bug!) UNIX only.  Uses /proc/<pid>/fd to determine all
+       descriptors currently held by the process (the JVM here).
+  " []
+  (let [pid (self-process-id)]
+    (->> pid (#(fs/join "/proc" % "fd"))
+	 (runx "ls") (str/split #"\n") count)))
+
+(defn force-gc-finalize
+  "Tries to force a GC in order to finalize no longer used OS
+   resources - in particular file descriptors (see fd-use).
+
+   *** NOTE: as described by System.gc(), which we use here, this may
+       or may not actually accomplish the task at hand as it is only a
+       'suggestion' to the collector to run.  If it does run, all no
+       longer used resoureces should be finalized, i.e., closed and
+       returned.
+  "
+  []
+  (System/gc))
 
 
 ;;; Extra predicates...

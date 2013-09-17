@@ -1133,23 +1133,6 @@
            (fs/copy f (fs/join out-dir (fs/basename f)))))))))
 
 
-(defn aggregate-sccs-ents
-  [csv-dir out-dir aggr]
-  (let [aggfn (fn[tgt-glob out-file]
-                (-> (apply entry-file-union true
-                           (fs/glob tgt-glob))
-                    (gen-entry-file out-file)))]
-    (aggfn
-     (str csv-dir "/*hitonly.ent")
-     (fs/join out-dir (str aggr "-hitonly.ent")))
-    (aggfn
-     (str csv-dir "/*hitonly-neg.ent")
-     (fs/join out-dir (str aggr "-hitonly-neg.ent")))
-    (aggfn
-     (str csv-dir "/*final.ent") (fs/join out-dir (str aggr "-pos.ent")))
-    (aggfn
-     (str csv-dir "/*bad.ent") (fs/join out-dir (str aggr "-neg.ent")))))
-
 (defn run-sccs
   "SCCS: Sequence Conservation, Context, Size filtering.  Take
    cmsearch results and automatically filter into pos and neg sets.
@@ -1212,7 +1195,7 @@
          :Mre Mre :Dy Dy
          :plot-dists chart-dir)))
     (when aggr
-      (aggregate-sccs-ents csv-dir out-dir aggr))
+      (sccs/aggregate-sccs-ents csv-dir out-dir aggr))
     (when (and out-dir (not= out-dir csv-dir))
       (fs/move
        (->> stos

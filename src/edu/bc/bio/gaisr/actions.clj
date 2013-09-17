@@ -163,31 +163,6 @@
 
 
 
-(defn process-name2tax [filespec user-dir]
-  (log> "rootLogger" :info "NAMES2TAX: ~S, ~S" filespec user-dir)
-  (with-local-vars [names {}]
-    (do-text-file [filespec]
-      (when (and (> (count $line) 3)
-                 (or (= ">gi"  (subs $line 0 3))
-                     (= "#=GS" (subs $line 0 4))
-                     (= "NC_"  (subs $line 0 3))))
-        (var-set names (assoc (var-get names)
-                         (first (re-find #"N(C|S|Z)_[0-9A-Z]+" $line)) 1))))
-    (if (empty? (var-get names))
-      {:error (cl-format
-               nil "File '~A' Unknown format, empty, or no names"
-               (fs/basename filespec))}
-      (let [results (names->tax (var-get names))
-            tax-filespec (fs/replace-type (fs/basename filespec) ".tax")
-            tax-filespec (fs/join user-dir tax-filespec)]
-        (io/with-out-writer tax-filespec
-          (doseq [nv results]
-            (println (str (nv :name) ": " (nv :ancestors)))))
-        {:info (cl-format nil "Generated Taxonomies:~%Taxonomy File: '~A'"
-                          tax-filespec)
-         :tax-filespec tax-filespec}))))
-
-
 
 
 (defmacro remote-try
@@ -226,6 +201,40 @@
                  (str k " " v))))
            cemap)
      (list stktrc))))
+
+
+(defn process-name2tax
+  "Remove access to NAMES->TAX, which takes a set of NCBI names and
+   returns the corresponding set of full NCBI taxonomy lineages for
+   each.  FILESPEC is the local temp file, and USER-DIR is the
+   writable directory to place the output results.
+
+   NOTE: probably should dispense with user-dir, write the output to a
+   /tmp temporary file and download those contents.  By writing to the
+   'permanent' file location, this 'leaks' irrelevant files.  That's
+   because the contents are down loaded to the remote client which
+   then puts them in the users requested destination.
+  "
+  [filespec user-dir]
+  (log> "rootLogger" :info "NAMES2TAX: ~S, ~S" filespec user-dir)
+  (remote-try
+   (let [names (map #(first (entry-parts %)) (read-seqs filespec :info :name))]
+     (if (empty? names)
+       (raise :type :bad-file
+              :msg (cl-format
+                    nil "File '~A' Unknown format, empty, or no names"
+                    (fs/basename filespec)))
+       (let [results (names->tax names)
+             tax-filespec (fs/replace-type (fs/basename filespec) ".tax")
+             tax-filespec (fs/join user-dir tax-filespec)]
+         (io/with-out-writer tax-filespec
+           (doseq [nv results]
+             (println (str (nv :name) ": " (nv :ancestors)))))
+         {:info (cl-format nil "Generated Taxonomies:~%Taxonomy File: '~A'"
+                           tax-filespec)
+          :tax-filespec tax-filespec})))))
+
+
 
 
 (defn remote-busy-check [upload-file]

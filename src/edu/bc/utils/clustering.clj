@@ -440,24 +440,27 @@
                             (assoc clus k (conj (clus k) o))
                             (assoc clus (gen-uid) #{o}))))))
                 clusters outliers)
-        vals (map set) set)))
+        vals (map set) (map seq) set)))
   ([krnngrph rnnG>k-sccs rnnG<k-sccs knngrph & {:keys [minsize]
                                                 :or {minsize 1}}]
      (let [cluster-sets (refoldin-outliers krnngrph rnnG>k-sccs rnnG<k-sccs)
            x-tons (set (filter #(<= (count %) minsize) cluster-sets))
-           xset (->> x-tons (map seq) flatten set)
            clusters>x-tons (set/difference cluster-sets x-tons)]
        (if (seq x-tons)
          (set (reduce (fn [CLUS x-ton]
-			;; Bug: if an outlier really is not 'close' to
-			;; anything but other outliers, this will drop
-			;; them
-                        (map (fn[C]
-                               (let [[p kv] x-ton]
-                                 (if (in (first kv) C)
-                                   (conj C p)
-                                   C)))
-                             CLUS))
+                        ;; Bug: if an outlier really is not 'close' to
+                        ;; anything but other outliers, this will drop
+                        ;; them
+                        (prn :CLUScnts (map count CLUS))
+                        (reduce (fn [CLUS p]
+                                  (let [kv (knngrph p)]
+                                    (prn :P p :countKV (count kv))
+                                    (map (fn[C]
+                                           (if (some #(in % C) kv)
+                                             (conj C p)
+                                             C))
+                                         CLUS)))
+                                CLUS x-ton))
                       clusters>x-tons
                       x-tons))
          cluster-sets))))

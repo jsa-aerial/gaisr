@@ -63,7 +63,8 @@
             [incanter.charts]
             [edu.bc.fs :as fs]
             [edu.bc.utils.graphs :as gr]
-            [edu.bc.utils.clustering :as clu])
+            [edu.bc.utils.clustering :as clu]
+            [edu.bc.bio.sequtils.tools :as tools])
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
@@ -655,7 +656,7 @@
    the same as the starting delta to use for information content
    calculations.
 
-   STODB is the reference genome database to use and must be keyword
+   STODB is the reference genome database to use and must be a keyword
    that is recognized by GENOME-DB-DIR-MAP.  If not given, defaults to
    the current default refseq genomes (at time of writing, :refseq58).
 
@@ -890,7 +891,8 @@
                           ;;(#(do (prn :G>k/G<k %) %))
                           (map #(gr/tarjan (keys %) %))
                           ;;(#(do (prn :sccs %) %))
-                          (apply clu/refoldin-outliers krnngrph)
+                          (#(clu/refoldin-outliers
+                             krnngrph (first %) (second %) knngrph))
                           vec)
             ent-clus (let [coll (into {} coll)]
                        (mapv (fn[scc]
@@ -966,6 +968,34 @@
                        (iterate inc 1))
                   doall)]
     [(map (fn[[s ents k]] [s k (count ents) (map count ents)]) clu-info) fs]))
+
+
+(defn aggregate-sccs-ents
+  "Aggregate the resulting SCCS output entry files for a cluster set.
+   The precondition is that a given set of sequences (typically from a
+   sto) were split using clustering via split-sto; and the results of
+   these were each run through SCCS and the outputs (candidate +/- and
+   hitonly +/- entry files of sequence sets) placed in CSV-DIR.
+   CSV-DIR should only contain the relevant entry files. OUT-DIR is
+   where the aggregated (via tools/entry-file-union) entry files are
+   to be placed and AGGR is the prefix for the names of the aggregated
+   files.
+  "
+  [csv-dir out-dir aggr]
+  (let [aggfn (fn[tgt-glob out-file]
+                (-> (apply tools/entry-file-union true
+                           (fs/glob tgt-glob))
+                    (gen-entry-file out-file)))]
+    (aggfn
+     (str csv-dir "/*hitonly.ent")
+     (fs/join out-dir (str aggr "-hitonly.ent")))
+    (aggfn
+     (str csv-dir "/*hitonly-neg.ent")
+     (fs/join out-dir (str aggr "-hitonly-neg.ent")))
+    (aggfn
+     (str csv-dir "/*final.ent") (fs/join out-dir (str aggr "-pos.ent")))
+    (aggfn
+     (str csv-dir "/*bad.ent") (fs/join out-dir (str aggr "-neg.ent")))))
 
 
 (defn sto-ctx-merge

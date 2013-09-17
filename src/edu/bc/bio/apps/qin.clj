@@ -284,12 +284,16 @@
   (build-eval-pos-neg-sets
    "/home/kaila/Bio/Test/ROC-data/S4/CSV/EV10/S4-auto-0.sto.all-custom-db.cmsearch.csv")
   (build-eval-pos-neg-sets
-   "/home/kaila/Bio/Test/ROC-data/S15/CSV/EV10/S15-auto-0.sto.all-custom-db.cmsearch.csv"))
+   "/home/kaila/Bio/Test/ROC-data/S15/CSV/EV10/S15-auto-0.sto.all-custom-db.cmsearch.csv")
+  (build-eval-pos-neg-sets
+ "/home/kaila/Bio/Test/ROC-data/S6/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv"))
+
+
 
 
 (defn eval-roc-data []
   (let [base "/home/kaila/Bio/Test/ROC-data"
-        RNAs ["L20" "S15" "S4"]
+        RNAs ["S6"] ;["L20" "S15" "S4" "S6"]
         cutpts eval-cut-points]
     (for [rna RNAs]
       (let [totdir (fs/join base rna "TotPosNeg")
@@ -320,21 +324,20 @@
 
 (count sccs-cut-points)
 
-(defn build-sccs-pos-neg-sets
-  [csv-hit-file]
+
+(defn perform-sccs
+  [csv-hit-file Mre bits basedir outdir csvdir chart-dir]
   (let [bits (fs/split csv-hit-file)
         basedir (->> bits (take-until #(= % "CSV")) (apply fs/join))
-        outdir (->> bits
-                    (take-until #(= % "CSV"))
-                    ((fn[bits] (apply fs/join (conj (vec bits) "SCCS-ROC")))))
-        sto (fs/join basedir
-                     (->> bits last (str/split #"\.") first (#(str % ".sto"))))
-        chart-dir (fs/join basedir "Charts")]
-    (when (not (fs/exists? outdir)) (fs/mkdirs outdir))
-    (when (not (fs/exists? chart-dir)) (fs/mkdirs chart-dir))
-
-    (doseq [Mre sccs-cut-points]
-      (println :Mre Mre)
+        clusters (first (fs/glob (fs/join basedir "CLU-*")))
+        stos (ensure-vec
+              (if clusters
+                (sort (fs/directory-files clusters ".sto"))
+                (fs/join basedir
+                         (->> bits last
+                              (str/split #"\.") first
+                              (#(str % ".sto"))))))]
+    (doseq [sto stos]
       (sccs/compute-candidate-sets
        sto csv-hit-file
        1 (sccs/get-saved-ctx-size sto)
@@ -343,20 +346,62 @@
        :refdb :refseq58 :stodb :refseq58
        :crecut 0.01 :limit 19
        :Dy 0.49 :Mre Mre
-       :plot-dists chart-dir)
-      (let [[neg pos] (sort (fs/glob (fs/join basedir "CSV/EV10/*final*.ent")))
-            pos-nm (fs/join outdir (str "sccs-" Mre "-pos.ent"))
-            neg-nm (fs/join outdir (str "sccs-" Mre "-neg.ent"))]
-        (fs/rename pos pos-nm)
-        (fs/rename neg neg-nm)))))
+       :plot-dists chart-dir))
+
+    (when clusters
+      (let [stonm (->> bits last (str/split #"\.") first)
+            aggr (str stonm "-aggr-")
+            candidate-clu-ents  (fs/glob (fs/join  csvdir "*final*.ent"))
+            hitonly-clu-ents (fs/glob (fs/join  csvdir "*hitonly*.ent"))]
+        (sccs/aggregate-sccs-ents csvdir csvdir aggr)
+        (doseq [f (concat candidate-clu-ents hitonly-clu-ents)] (fs/rm f))))
+
+    (let [[neg pos] (sort
+                     (if clusters
+                       (fs/re-directory-files csvdir #"(neg|pos)\.ent$")
+                       (fs/glob (fs/join csvdir "*final*.ent"))))
+          pos-nm (fs/join outdir (str "sccs-" Mre "-pos.ent"))
+          neg-nm (fs/join outdir (str "sccs-" Mre "-neg.ent"))]
+      (fs/rename pos pos-nm)
+      (fs/rename neg neg-nm))))
+
+
+(defn build-sccs-pos-neg-sets
+  [csv-hit-file]
+  (let [bits (fs/split csv-hit-file)
+        basedir (->> bits (take-until #(= % "CSV")) (apply fs/join))
+        outdir (->> bits
+                    (take-until #(= % "CSV"))
+                    ((fn[bits] (apply fs/join (conj (vec bits) "SCCS-ROC")))))
+        csvdir (apply fs/join basedir
+                      (->> bits
+                           (drop-until #(= % "CSV"))
+                           (take 2)))
+        chart-dir (fs/join basedir "Charts")]
+    (when (not (fs/exists? outdir)) (fs/mkdirs outdir))
+    (when (not (fs/exists? chart-dir)) (fs/mkdirs chart-dir))
+    (doseq [Mre sccs-cut-points]
+      (println :Mre Mre)
+      (perform-sccs csv-hit-file Mre bits basedir outdir csvdir chart-dir)
+      (when (> (fd-use) 9000) ; BOGUS??  Why are we leaking FDs???
+        (force-gc-finalize)))))
+
+;;;; JVM arg -XX:-MaxFDLimit to allow going to os/proc limit of fds
+
 
 (do
   (build-sccs-pos-neg-sets
-   "/home/kaila/Bio/Test/ROC-data/L20/CSV/EV10/L20-auto-0.sto.all-custom-db.cmsearch.csv")
+   "/home/kaila/Bio/Test/ROC-data/L20/CSV/EV10/L20-auto-0.sto.all-custom-db.cmsearch.csv" "EV10")
   (build-sccs-pos-neg-sets
-   "/home/kaila/Bio/Test/ROC-data/S4/CSV/EV10/S4-auto-0.sto.all-custom-db.cmsearch.csv")
+   "/home/kaila/Bio/Test/ROC-data/S4/CSV/EV10/S4-auto-0.sto.all-custom-db.cmsearch.csv" "EV10")
   (build-sccs-pos-neg-sets
-   "/home/kaila/Bio/Test/ROC-data/S15/CSV/EV10/S15-auto-0.sto.all-custom-db.cmsearch.csv"))
+   "/home/kaila/Bio/Test/ROC-data/S15/CSV/EV10/S15-auto-0.sto.all-custom-db.cmsearch.csv" "EV10")
+  (build-sccs-pos-neg-sets
+   "/home/kaila/Bio/Test/ROC-data/S6/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv" "Start")
+  (build-sccs-pos-neg-sets
+   "/home/kaila/Bio/Test/ROC-data/S6/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv" "Mid"))
+
+
 
 
 (defn sccs-roc-data []

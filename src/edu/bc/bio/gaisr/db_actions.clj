@@ -425,8 +425,14 @@
 
 
 
-(defn names->tax [names]
-  (let [names (map #(cl-format nil "~S" %) (keys names))
+(defn names->tax
+  "Take the list of NCBI species names (typically NC_*), and convert
+   it to a list of full ancestral lineage for each entry.  Lineage is
+   determined based on the NCBI taxonomy.  Results are returned as a
+   seq of two element maps, each map having keys :name and :ancestors.
+  "
+  [names]
+  (let [names (map #(cl-format nil "~S" %) (set names))
         fields "be.name, a.ancestors"
         tables ["bioentry as be"
                 "taxon as tx"

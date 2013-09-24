@@ -638,7 +638,7 @@
 (defn cluster-stdev
   "Compute the average standard deviation of the spread of clusters in
    CLUSTERING, the result of a (clusters ...) call.  This is not as
-   obvious as it may see, and is basically (avg-std-deviation
+   obvious as it may seem, and is basically (avg-std-deviation
    clustering) except we cheat a bit as we already have the
    means (centers).
   "

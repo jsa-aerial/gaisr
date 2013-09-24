@@ -57,7 +57,7 @@
   (:import (java.util Date Calendar Locale)
            java.lang.Thread
            (java.text SimpleDateFormat)
-	   java.lang.management.ManagementFactory))
+           java.lang.management.ManagementFactory))
 
 
 
@@ -181,7 +181,7 @@
   " []
   (let [pid (self-process-id)]
     (->> pid (#(fs/join "/proc" % "fd"))
-	 (runx "ls") (str/split #"\n") count)))
+         (runx "ls") (str/split #"\n") count)))
 
 (defn force-gc-finalize
   "Tries to force a GC in order to finalize no longer used OS
@@ -392,6 +392,10 @@
        #_(println :>>N n)
        (vfold f n coll)))
   ([f n coll]
+     (when (not (integer? n))
+       (raise :type :illegal-argument
+              :msg (str "VFOLD: Folding granularity N "
+                        n " must be an integer.")))
      (if (< n 1)
        (vfold f coll)
        (r/fold n

@@ -98,10 +98,10 @@
 
 (defn process-cluster-subline [m l]
   (let [bits (str/split #"\s*(:| )\s*" l)
-	d (first bits)
-	v (if (in d ["kinfo" "delta"])
-	    (vec (map read-string (rest bits)))
-	    (-> bits rest first))]
+        d (first bits)
+        v (if (in d ["kinfo" "delta"])
+            (vec (map read-string (rest bits)))
+            (-> bits rest first))]
     (assoc m :clus (conj (get m :clus []) [(keyword d) v]))))
 
 (defn process-gen-sto-subline [m l]
@@ -129,6 +129,19 @@
     (assoc m d (conj (get m d []) [:opts (if args (apply assoc {} args) {})]))))
 
 
+(defn check-config
+  "Check consistency aspects of parsed config directives in CONFIG (a
+   config map)
+  "
+  [config]
+  (let [opts (into {} (config :sccs))]
+    (when (and (opts :aggregate) (not (opts :csv)))
+      (raise :type :bad-config
+             :msg "SCCS aggregation requires explicit CSV option")))
+  ;; Should be several more such checks here.  If all pass, just
+  ;; return config
+  config)
+
 (defn parse-config-file [filespec]
   (let [lseq (filter #(not (or (= "" (str/trim %))
                                (re-find #"^\s*#+" %)))
@@ -144,92 +157,93 @@
 
     ;; Basically a simple state machine.  Not quite an FSA as there is
     ;; some memory involved. But no stack either.
-    (reduce
-     (fn[m l]
-       (condp #(re-find %1 %2) l
-         #"^\s*#+" ; NOTE: need to remove re-find from lseq filter
-         (add-comment m l)
+    (check-config
+     (reduce
+      (fn[m l]
+        (condp #(re-find %1 %2) l
+          #"^\s*#+" ; NOTE: need to remove re-find from lseq filter
+          (add-comment m l)
 
-         #"RefDB\s*:"
-         (let [m (getf m :refdb (str/lower-case l))]
-           (assoc m :refdb (keyword (m :refdb))))
+          #"RefDB\s*:"
+          (let [m (getf m :refdb (str/lower-case l))]
+            (assoc m :refdb (keyword (m :refdb))))
 
-         #"StoDB\s*:"
-         (let [m (getf m :stodb (str/lower-case l))]
-           (assoc m :stodb (keyword (m :stodb))))
+          #"StoDB\s*:"
+          (let [m (getf m :stodb (str/lower-case l))]
+            (assoc m :stodb (keyword (m :stodb))))
 
-         #"^Hitfile-Dir\s*:"
-         (getf m :hitfile-dir l)
+          #"^Hitfile-Dir\s*:"
+          (getf m :hitfile-dir l)
 
-         #"^CM-Dir\s*:"
-         (getf m :cmdir l)
+          #"^CM-Dir\s*:"
+          (getf m :cmdir l)
 
-         #"^STO-Dir\s*:"
-         (getf m :stodir l)
+          #"^STO-Dir\s*:"
+          (getf m :stodir l)
 
-         #"^BLAST\s*:"
-         (directive (process-directive-options m :blast l) :blast)
+          #"^BLAST\s*:"
+          (directive (process-directive-options m :blast l) :blast)
 
-         #"^CM-Build[\s:]*"
-         (directive (assoc m :cmbuild (m :cmdir)) :cmbuild)
+          #"^CM-Build[\s:]*"
+          (directive (assoc m :cmbuild (m :cmdir)) :cmbuild)
 
-         #"^CM-Calibrate[\s:]*"
-         (directive (assoc m :cmcalibrate (m :cmdir)) :calibrate)
-
-
-         ;; NEEDS TO BE FIXED: This clause must come before other
-         ;; cmsearch clauses to ensure both eval and hitfile inclusion.
-         #"^CM-Search\s+eval\s*:\s*[0-9]+[.0-9]*,\s*hitfile\s*:"
-         (let [x (str/split #"," l)
-               [ev hf] (map #(second (str/split #":\s*" %)) x)]
-           (directive
-            (assoc (assoc m :eval (Double. ev)) :hitfile hf)
-            :cmsearch))
-
-         #"^CM-Search\s+hitfile\s*:"
-         (directive
-          (assoc m :hitfile (second (str/split #":\s*" l)))
-          :cmsearch)
-
-         #"^CM-Search\s+eval\s*:"
-         (directive
-          (assoc m :eval (Double. (second (str/split #":\s*" l))))
-          :cmsearch)
-
-         #"^CM-Search\s*:"
-         (directive (assoc m :hitfile nil) :cmsearch)
+          #"^CM-Calibrate[\s:]*"
+          (directive (assoc m :cmcalibrate (m :cmdir)) :calibrate)
 
 
-         #"^Gen-CSVs\s+spread\s*:*"
-         (let [x (str/split #"," l)
-               [sp dir] (map #(str/trim (second (str/split #":\s*" %))) x)]
-           (directive
-            (assoc (assoc m :spread (Integer. sp)) :gen-csvs dir)
-            :gen-csv))
+          ;; NEEDS TO BE FIXED: This clause must come before other
+          ;; cmsearch clauses to ensure both eval and hitfile inclusion.
+          #"^CM-Search\s+eval\s*:\s*[0-9]+[.0-9]*,\s*hitfile\s*:"
+          (let [x (str/split #"," l)
+                [ev hf] (map #(second (str/split #":\s*" %)) x)]
+            (directive
+             (assoc (assoc m :eval (Double. ev)) :hitfile hf)
+             :cmsearch))
 
-         #"^Gen-CSVs[\s:]*"
-         ;; HACK, this needs to be folded into process-directive-options
-         (directive
-          (assoc m :gen-csvs [(get (getf m :csvdir l) :csvdir (m :cmdir))])
-          :gen-csvs)
+          #"^CM-Search\s+hitfile\s*:"
+          (directive
+           (assoc m :hitfile (second (str/split #":\s*" l)))
+           :cmsearch)
 
-	 #"^(Clus|Cluster)\s*:"
-	 (directive (process-directive-options m :clus l) :clus)
+          #"^CM-Search\s+eval\s*:"
+          (directive
+           (assoc m :eval (Double. (second (str/split #":\s*" l))))
+           :cmsearch)
 
-         #"^SCCS\s*:"
-         (directive (process-directive-options m :sccs l) :sccs)
+          #"^CM-Search\s*:"
+          (directive (assoc m :hitfile nil) :cmsearch)
 
-         #"Gen-Stos\s*:"
-         (directive m :gen-stos)
 
-         (case (m :directive)
-               :blast (process-fna-files m l)
-               :cmbuild (process-sto-files m l)
-               :calibrate (process-cm-files m l)
-               :cmsearch (process-hit-files m l)
-               :gen-csvs (process-gen-csv-subline m l)
-	       :clus (process-cluster-subline m l)
-               :sccs (process-sccs-subline m l)
-               :gen-stos (process-gen-sto-subline m l))))
-     {:refdb :refseq58 :stodb :refseq58} lseq)))
+          #"^Gen-CSVs\s+spread\s*:*"
+          (let [x (str/split #"," l)
+                [sp dir] (map #(str/trim (second (str/split #":\s*" %))) x)]
+            (directive
+             (assoc (assoc m :spread (Integer. sp)) :gen-csvs dir)
+             :gen-csv))
+
+          #"^Gen-CSVs[\s:]*"
+          ;; HACK, this needs to be folded into process-directive-options
+          (directive
+           (assoc m :gen-csvs [(get (getf m :csvdir l) :csvdir (m :cmdir))])
+           :gen-csvs)
+
+          #"^(Clus|Cluster)\s*:"
+          (directive (process-directive-options m :clus l) :clus)
+
+          #"^SCCS\s*:"
+          (directive (process-directive-options m :sccs l) :sccs)
+
+          #"Gen-Stos\s*:"
+          (directive m :gen-stos)
+
+          (case (m :directive)
+                :blast (process-fna-files m l)
+                :cmbuild (process-sto-files m l)
+                :calibrate (process-cm-files m l)
+                :cmsearch (process-hit-files m l)
+                :gen-csvs (process-gen-csv-subline m l)
+                :clus (process-cluster-subline m l)
+                :sccs (process-sccs-subline m l)
+                :gen-stos (process-gen-sto-subline m l))))
+      {:refdb :refseq58 :stodb :refseq58} lseq))))
 

@@ -437,9 +437,9 @@
                             (into {}))
         [good-map bad-map] (get-embl-blast-candidates blastout embl-seq-sizes)
         nc-aln-pairs (reduce
-                      (fn[V [id v]]
-                        (conj V [(rand-nth v) (embl-aln-pairs id)]))
-                      [] good-map)
+                      (fn[M [id v]]
+                        (assoc M (rand-nth v) (embl-aln-pairs id)))
+                      {} good-map)
         [sqs-gcs hdgf-lines] (sto-GC-and-seq-lines stoin)
         gc-lines (filter #(.startsWith % "#") sqs-gcs)]
 
@@ -518,7 +518,7 @@
    names if FULL is false.
   "
   [full f]
-  (let [f-ncs (read-seqs f :info :names)]
+  (let [f-ncs (get-entries f)]
     (if full
       (set f-ncs)
       (->> f-ncs (map #(first (entry-parts %))) set))))

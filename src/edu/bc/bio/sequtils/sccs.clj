@@ -192,8 +192,19 @@
 
 
 (defn hybrid-dictionary
+  "Compute the 'hybrid', aka centroid, dictionary or Feature Frequency
+   Profile (FFP) for sqs.  SQS is either a collection of already
+   computed FFPs (probability maps) of sequences, or a collection of
+   sequences, or a string denoting a sequence file (sto, fasta, aln,
+   ...) giving a collection of sequences.  In the latter cases, the
+   sequences will have their FFPs computed based on word/feature
+   length L (resolution size).  In all cases the FFPs are combined,
+   using the minimum entropy principle, into a joint ('hybrid' /
+   centroid) FFP.
+  "
   [l sqs]
   {:pre [(or (string? sqs) (coll? sqs))]}
+
   (let [sqs (if (-> sqs first map?)
               sqs
               (degap-seqs (if (coll? sqs) sqs (read-seqs sqs))))
@@ -981,21 +992,26 @@
    to be placed and AGGR is the prefix for the names of the aggregated
    files.
   "
-  [csv-dir out-dir aggr]
+  [csv-dir csv out-dir aggr]
   (let [aggfn (fn[tgt-glob out-file]
                 (-> (apply tools/entry-file-union true
                            (fs/glob tgt-glob))
-                    (gen-entry-file out-file)))]
+                    (gen-entry-file out-file)))
+        negfn (fn[posf out-file]
+                (-> (tools/entry-file-difference
+                     true csv posf)
+                    (gen-entry-file out-file)))
+        posf (fs/join out-dir (str aggr "-pos.ent"))
+        pos-hitonly-f (fs/join out-dir (str aggr "-hitonly.ent"))]
+
     (aggfn
-     (str csv-dir "/*hitonly.ent")
-     (fs/join out-dir (str aggr "-hitonly.ent")))
+     (str csv-dir "/*hitonly.ent") pos-hitonly-f)
+    (negfn
+     pos-hitonly-f (fs/join out-dir (str aggr "-hitonly-neg.ent")))
     (aggfn
-     (str csv-dir "/*hitonly-neg.ent")
-     (fs/join out-dir (str aggr "-hitonly-neg.ent")))
-    (aggfn
-     (str csv-dir "/*final.ent") (fs/join out-dir (str aggr "-pos.ent")))
-    (aggfn
-     (str csv-dir "/*bad.ent") (fs/join out-dir (str aggr "-neg.ent")))))
+     (str csv-dir "/*final.ent") posf)
+    (negfn
+     posf (fs/join out-dir (str aggr "-neg.ent")))))
 
 
 (defn sto-ctx-merge

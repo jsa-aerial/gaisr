@@ -390,7 +390,7 @@
    conditioned by the residual - unordered - bases of the remaining
    columns.  Let colpairs be (combins 2 (transpose aln)).  For any
    pair of columns [X Y] in colpairs, let Z be colpairs - {X Y}.
-   Compute I(X;Y|Z), the mutual information for X&Y given
+   Compute I(X;Y|Z), the mutual information for X&Y given Z.
   "
   [seqset & {par :par nogaps :nogaps pgap :pgap
              cols :cols norm :norm sym? :sym?

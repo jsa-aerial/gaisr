@@ -229,10 +229,23 @@
 (defn true-positive-rate
   "Ratio of true positives to the total actual positives, the latter
    being the true positives plus the false negatives (the remaining
-   actuals not counted as true): (/ TP (+ TP FN)) = 'sensitivity'
+   actuals not counted as true): (/ TP (+ TP FN)).  AKA 'hit rate',
+   'recall', and 'sensitivity'.
   "
   [tp fn]
-  (float (/ tp (+ tp fn))))
+  (if (== 0 tp fn)
+    (float 1.0) ; no real positives and none predicted => perfect recall
+    (float (/ tp (+ tp fn)))))
+
+(defn true-negative-rate
+  "Ratio of true negatives to the total actual negatives, the latter
+   being the true negatives plus the fase positives (/ TN (+ TN FP)).
+   AKA 'specificity.
+   "
+  [tn fp]
+  (if (== 0 tn fp)
+    (float 1.0) ; no real negatives and none predicted
+    (float (/ tn (+ tn fp)))))
 
 
 (defn false-negative-rate
@@ -244,7 +257,54 @@
    negatives: (/ TN (+ TN FP))
   "
   [fp tn]
-  (float (/ fp (+ fp tn))))
+  (if (== 0 fp tn)
+    (float 0.0)
+    (float (/ fp (+ fp tn)))))
+
+(defn acc
+  "ACCuracy of classification and (by extension across multiple cases)
+   classifier.  TP and TN are the classification TruePostives and
+   TrueNegatives respectivel.  AP and AN are the ActualPositives and
+   ActualNegatives respectively.  Ratio of sum of correct
+   classifications to total values: (TP + TN) / (P + N), so result
+   lies in [0, 1]
+  "
+  [tp tn ap an]
+  (float (/ (+ tp tn) (+ ap an))))
+
+(defn ppv
+  "Positive Predictive Value, aka 'precision'.  Ratio of true
+   positives to all predicted positives: TP / (TP + FP).
+  "
+  [tp fp]
+  (if (== 0 tp fp)
+    (float 1.0) ; no real positives and none predicted => perfect precision
+    (float (/ tp (+ tp fp)))))
+
+(defn mcc
+  "Mathews Correlation Coefficient aka 'phi-coefficient'.  Correlation
+   indicator (coefficient) between real and predicteed
+   classifications.  Values lie in [-1, 1], where -1 indicates
+   complete negative correlation (total disagreement between real and
+   predicted), 0 indicates prediction no better than random guess, and
+   1 indicates perfect correlation (complete agreement).
+
+   Returns (TP*TN - FP*FN) / sqrt(P*N*P'*N'), where
+
+   P = total real positives = TP + FN
+   N = total real negatives = TN + FP
+   P' = predicted positives = TP + FP
+   N' = predicted negatives = TN + FN
+  "
+  [tp tn fp fn]
+  (let [p  (+ tp fn)
+        n  (+ tn fp)
+        p' (+ tp fp)
+        n' (+ tn fn)
+        D  (* p n p' n')]
+    (float (/ (- (* tp tn) (* fp fn))
+              (if (zero? D) 1 (sqrt D))))))
+
 
 
 (def eval-cut-points
@@ -286,38 +346,45 @@
   (build-eval-pos-neg-sets
    "/home/kaila/Bio/Test/ROC-data/S15/CSV/EV10/S15-auto-0.sto.all-custom-db.cmsearch.csv")
   (build-eval-pos-neg-sets
- "/home/kaila/Bio/Test/ROC-data/S6/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv"))
+ "/home/kaila/Bio/Test/ROC-data/S6S/CSV/Start/S6-start.sto.all-custom-db.cmsearch.csv")
+  (build-eval-pos-neg-sets
+ "/home/kaila/Bio/Test/ROC-data/S6M/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv"))
 
 
 
 
-(defn eval-roc-data []
-  (let [base "/home/kaila/Bio/Test/ROC-data"
-        RNAs ["S6"] ;["L20" "S15" "S4" "S6"]
-        cutpts eval-cut-points]
+(defn eval-roc-data
+  [& {:keys [base RNAs]
+      :or {base "/home/kaila/Bio/Test/ROC-data"
+           RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
+  (let [cutpts eval-cut-points]
     (for [rna RNAs]
       (let [totdir (fs/join base rna "TotPosNeg")
-            tot-pos (fs/join totdir (str rna "-good.ent"))
-            tot-neg (fs/join totdir (str rna "-bad.ent"))]
+            tot-pos (fs/join totdir (str rna "-pos.ent"))
+            tot-neg (fs/join totdir (str rna "-neg.ent"))
+            P (-> tot-pos get-entries count)
+            N (-> tot-neg get-entries count)]
         (for [cpt cutpts
               :let [dir (fs/join base rna "EVAL-ROC")
                     pos-ent (fs/join dir (str "ev-" cpt "-pos.ent"))
                     neg-ent (fs/join dir (str "ev-" cpt "-neg.ent"))]]
-          [rna cpt
-           :TPR  (true-positive-rate
-                  (count (tools/entry-file-intersect true pos-ent tot-pos))
-                  (count (tools/entry-file-intersect true neg-ent tot-pos)))
-           :FPR (false-negative-rate
-                  (count (tools/entry-file-intersect true pos-ent tot-neg))
-                  (count (tools/entry-file-intersect true neg-ent tot-neg)))]
-          )))))
+          (let [tp (count (tools/entry-file-intersect true pos-ent tot-pos))
+                fn (count (tools/entry-file-intersect true neg-ent tot-pos))
+                fp (count (tools/entry-file-intersect true pos-ent tot-neg))
+                tn (count (tools/entry-file-intersect true neg-ent tot-neg))]
+            [rna cpt
+             {:TPR (true-positive-rate tp fn)
+              :FPR (false-negative-rate fp tn)
+              :MCC (mcc tp tn fp fn)
+              :ACC (acc tp tn P N)
+              :ppv (ppv tp fp)}])) ))))
 
 (eval-roc-data)
 
 
 
 
-(def sccs-cut-points
+(defparameter sccs-cut-points
      [0.1, 0.2, 0.3, 0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85,
       0.9, 0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97
       0.975, 0.98, 0.985, 0.99, 0.995])
@@ -350,10 +417,10 @@
 
     (when clusters
       (let [stonm (->> bits last (str/split #"\.") first)
-            aggr (str stonm "-aggr-")
+            aggr (str stonm "-aggr")
+            _ (sccs/aggregate-sccs-ents csvdir csv-hit-file csvdir aggr)
             candidate-clu-ents  (fs/glob (fs/join  csvdir "*final*.ent"))
             hitonly-clu-ents (fs/glob (fs/join  csvdir "*hitonly*.ent"))]
-        (sccs/aggregate-sccs-ents csvdir csvdir aggr)
         (doseq [f (concat candidate-clu-ents hitonly-clu-ents)] (fs/rm f))))
 
     (let [[neg pos] (sort
@@ -384,7 +451,8 @@
       (println :Mre Mre)
       (perform-sccs csv-hit-file Mre bits basedir outdir csvdir chart-dir)
       (when (> (fd-use) 9000) ; BOGUS??  Why are we leaking FDs???
-        (force-gc-finalize)))))
+        (force-gc-finalize)))
+    (force-gc-finalize)))
 
 ;;;; JVM arg -XX:-MaxFDLimit to allow going to os/proc limit of fds
 
@@ -396,39 +464,43 @@
    "/home/kaila/Bio/Test/ROC-data/S4/CSV/EV10/S4-auto-0.sto.all-custom-db.cmsearch.csv" "EV10")
   (build-sccs-pos-neg-sets
    "/home/kaila/Bio/Test/ROC-data/S15/CSV/EV10/S15-auto-0.sto.all-custom-db.cmsearch.csv" "EV10")
-  (build-sccs-pos-neg-sets
-   "/home/kaila/Bio/Test/ROC-data/S6/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv" "Start")
-  (build-sccs-pos-neg-sets
-   "/home/kaila/Bio/Test/ROC-data/S6/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv" "Mid"))
+  (build-sccs-pos-neg-sets "/home/kaila/Bio/Test/ROC-data/S6S/CSV/Start/S6-start.sto.all-custom-db.cmsearch.csv")
+  (build-sccs-pos-neg-sets "/home/kaila/Bio/Test/ROC-data/S6M/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv"))
 
 
 
 
-(defn sccs-roc-data []
-  (let [base "/home/kaila/Bio/Test/ROC-data"
-        RNAs ["L20" "S15" "S4"]
-        cutpts sccs-cut-points]
+(defn sccs-roc-data [& {:keys [base RNAs]
+                        :or {base "/home/kaila/Bio/Test/ROC-data"
+                             RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
+  (let [cutpts sccs-cut-points]
     (for [rna RNAs]
       (let [totdir (fs/join base rna "TotPosNeg")
-            tot-pos (fs/join totdir (str rna "-good.ent"))
-            tot-neg (fs/join totdir (str rna "-bad.ent"))]
+            tot-pos (fs/join totdir (str rna "-pos.ent"))
+            tot-neg (fs/join totdir (str rna "-neg.ent"))
+            P (-> tot-pos get-entries count)
+            N (-> tot-neg get-entries count)]
         (for [cpt cutpts
               :let [dir (fs/join base rna "SCCS-ROC")
                     pos-ent (fs/join dir (str "sccs-" cpt "-pos.ent"))
                     neg-ent (fs/join dir (str "sccs-" cpt "-neg.ent"))]]
-          [rna cpt
-           :TPR  (true-positive-rate
-                  (count (tools/entry-file-intersect true pos-ent tot-pos))
-                  (count (tools/entry-file-intersect true neg-ent tot-pos)))
-           :FPR (false-negative-rate
-                  (count (tools/entry-file-intersect true pos-ent tot-neg))
-                  (count (tools/entry-file-intersect true neg-ent tot-neg)))]
-          )))))
+          (let [tp (count (tools/entry-file-intersect true pos-ent tot-pos))
+                fn (count (tools/entry-file-intersect true neg-ent tot-pos))
+                fp (count (tools/entry-file-intersect true pos-ent tot-neg))
+                tn (count (tools/entry-file-intersect true neg-ent tot-neg))]
+            [rna cpt
+             {:TPR (true-positive-rate tp fn)
+              :FPR (false-negative-rate fp tn)
+              :MCC (mcc tp tn fp fn)
+              :ACC (acc tp tn P N)
+              :ppv (ppv tp fp)}])) ))))
 
 
 (defn build-chart [rna sccs-data eval-data]
-  (let [[sccs-x sccs-y] [(map last sccs-data) (map #(nth % 3) sccs-data)]
-        [eval-x eval-y] [(map last eval-data) (map #(nth % 3) eval-data)]
+  (let [sccs-data (map last sccs-data)
+        eval-data (map last eval-data)
+        [sccs-x sccs-y] [(map :FPR sccs-data) (map :TPR sccs-data)]
+        [eval-x eval-y] [(map :FPR eval-data) (map :TPR eval-data)]
         [x y] [(range 0.0 1.0 0.1) (range 0.0 1.0 0.1)]
         chart (incanter.charts/scatter-plot
                sccs-x sccs-y
@@ -443,14 +515,15 @@
     chart))
 
 (defn build-roc-curves
-  []
-  (let [sccs-data (sccs-roc-data)
-        eval-data (eval-roc-data)
-        rnas ["L20" "S15" "S4"]]
-    (doseq [i (range 0 3)]
-      (let [chart (build-chart (nth rnas i) (nth sccs-data i) (nth eval-data i))
-            chart-file (fs/join "/home/kaila/Bio/Test/ROC-data/Plots2"
-                                (str (nth rnas i) "-roc-plot.png"))]
+  [& {:keys [base RNAs]
+      :or {base "/home/kaila/Bio/Test/ROC-data"
+           RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
+  (let [sccs-data (sccs-roc-data :base base :RNAs RNAs)
+        eval-data (eval-roc-data :base base :RNAs RNAs)]
+    (doseq [i (range 0 (count RNAs))]
+      (let [chart (build-chart (nth RNAs i) (nth sccs-data i) (nth eval-data i))
+            chart-file (fs/join base "Plots"
+                                (str (nth RNAs i) "-roc-plot.png"))]
         (incanter.core/view chart)
         (incanter.core/save
          chart chart-file :width 500 :height 500)))))
@@ -459,29 +532,36 @@
 
 
 (defn csv-roc-data
-  []
-  (let [base "/home/kaila/Bio/Test/ROC-data"
-        sccs-data (sccs-roc-data)
-        eval-data (eval-roc-data)
+  [& {:keys [base RNAs]
+      :or {base "/home/kaila/Bio/Test/ROC-data"
+           RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
+  (let [sccs-data (sccs-roc-data :base base :RNAs RNAs)
+        eval-data (eval-roc-data :base base :RNAs RNAs)
         step (/ 1.0 (->> sccs-data first count))
         cols ["RNA" "Cutpt" "TPR" "FPR" "Type"]
         guess (map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 step))
-        xf #(map (fn[[nm cpt _ tpr _ fpr]]
-                   (cons nm (map str [cpt tpr fpr %1])))
+        xf #(map (fn[[nm cpt vm]]
+                   (cons nm (map str [cpt (vm :TPR) (vm :FPR) %1])))
                  %2)]
     (println step guess)
-    (doseq [i (range 3)]
+    (doseq [i (range 0 (count RNAs))]
       (let [sccsi (xf "SCCS" (nth sccs-data i))
             evali (xf "EVAL" (nth eval-data i))
             all (concat sccsi evali guess)]
         (spit (fs/join base (str (ffirst all) "-both.csv"))
               (csv/write-csv (cons cols all)))))))
-(csv-roc-data)
+
+(csv-roc-data :RNAs ["S6S" "S6M"])
 
 (count (map #(do ["" "" % % "Guess"]) (range 0.0 1.0 0.05)))
 
 (map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 0.05))
 
+
+
+
+
+;;; ------------------- Statistical RNA Search ----------------------------;;;
 
 
 (def bp-scores

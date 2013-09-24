@@ -140,12 +140,14 @@
 
 (defn cc-freqs
   "Frequencies of items in each collection in the collection of
-   collections colls.  Uses freq-fn to generate and count items.  Use
-   par to parallelize when (count colls) is large and each (freq-fn
+   collections colls.  Uses freq-fn to generate and count items.  Set
+   PAR to parallelize when (count colls) is large and each (freq-fn
    c), c in colls, is expensive.  Returns a seq of frequency maps, one
-   for each collection in colls."
-  [n colls freq-fn & {par :par :or {par 1}}]
-  (pxmap #(freq-fn n %) par colls))
+   for each collection in colls.
+  "
+  [n colls freq-fn & {:keys [par] :or {par false}}]
+  (let [mfn (if par vfold map)]
+    (mfn #(freq-fn n %) colls)))
 
 (defn cc-tfreqs
   "Same as cc-freqs, but also compute total item frequencies reduced
@@ -170,8 +172,9 @@
    functional base for public functions such as cc-freqs-probs,
    et. al.
 
-   For large (count colls) with expensive freqs&probs-fn, use par to
-   parallelize computation over par chunks.
+   For large (count colls) with expensive freqs&probs-fn, set par to
+   parallelize computation via vfold (and fork/join) using auto
+   partitioning
 
    Return [ccfs&ps allfs allps tcount], where
 
@@ -180,13 +183,14 @@
    allps is the map of probs over all Cs and
    tcount is the total items over coll.
   "
-  [n colls freqs&probs-fn &
-  {par :par :or {par 1}}]
-  (let [ccfs&ps (pxmap #(freqs&probs-fn n %) par colls)
+  [n colls freqs&probs-fn & {:keys [par] :or {par false}}]
+  (let [mfn (if par vfold map)
+        ccfs&ps (mfn #(freqs&probs-fn n %) colls)
         allfs (reduce (fn[m xyz] (merge-with + m (first xyz))) {} ccfs&ps)
         sz (sum allfs)
         allps (reduce (fn[m [k v]] (assoc m k (double (/ v sz)))) {} allfs)]
     [ccfs&ps allfs allps sz]))
+
 
 
 (defn cc-freqn

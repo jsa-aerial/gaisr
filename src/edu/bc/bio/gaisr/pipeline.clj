@@ -1195,7 +1195,7 @@
          :Mre Mre :Dy Dy
          :plot-dists chart-dir)))
     (when aggr
-      (sccs/aggregate-sccs-ents csv-dir out-dir aggr))
+      (sccs/aggregate-sccs-ents csv-dir csv out-dir aggr))
     (when (and out-dir (not= out-dir csv-dir))
       (fs/move
        (->> stos

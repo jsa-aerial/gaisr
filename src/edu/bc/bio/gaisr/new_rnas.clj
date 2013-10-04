@@ -382,12 +382,13 @@
 
 
 (defn count-genomes
-  [taxon & {:keys [new-rnas version gene]
-            :or {new-rnas nil version nil gene nil}}]
+  [taxon & {:keys [new-rnas version clu gene]
+            :or {new-rnas nil version nil clu nil gene nil}}]
   (let [new-rna-name (when new-rnas (str " and rh.name=\"" new-rnas \"))
         new-rna-version (when version (str " and rh.version=" version))
-        new-rna-clause (when (or new-rna-name new-rna-version)
-                         (str new-rna-name new-rna-version))
+        rna-cluster    (when clu (str " and rh.cluster=" clu))
+        new-rna-clause (when (or new-rna-name new-rna-version rna-cluster)
+                         (str new-rna-name rna-cluster new-rna-version))
         gene-clause (when gene
                       (str " and rh.gene_name=\"" gene \"))
         stmt (if new-rnas new-rna-genome-counts genome-counts)
@@ -423,15 +424,16 @@
 
 
 (defn get-genomes
-  [taxon & {:keys [plasmids ncs-only new-rnas version gene]
+  [taxon & {:keys [plasmids ncs-only new-rnas version clu gene]
             :or {plasmids false ncs-only true
-                 new-rnas nil version nil gene nil}}]
+                 new-rnas nil version nil clu nil gene nil}}]
   (let [plasmid-clause " and be.description not regexp \"plasmid\""
         ncsonly-clause " and be.name regexp \"^NC\""
         rna-name       (when new-rnas (str " and rh.name=\"" new-rnas \"))
         rna-version    (when version (str " and rh.version=" version))
-        rna-clause     (when (or rna-name rna-version)
-                         (str rna-name rna-version))
+        rna-cluster    (when clu (str " and rh.cluster=" clu))
+        rna-clause     (when (or rna-name rna-version rna-cluster)
+                         (str rna-name rna-cluster rna-version))
         gene-clause    " and rh.gene_name="
         gene-clause (when gene (str gene-clause  \" gene \"))
 
@@ -573,19 +575,22 @@
     (doseq [grp (for [rna-v (ensure-vec rnas)
                       taxon taxons
                       :let [[rna v] (str/split #"-" rna-v)
+                            [rna clu] (str/split #"(c|C)" rna)
+                            clu (if clu clu 0)
                             fullcnt (-> taxon count-genomes first vals first)
                             cnt (-> taxon
-                                    (count-genomes :new-rnas rna :version v)
+                                    (count-genomes :new-rnas rna
+                                                   :version v :clu clu)
                                     first vals first)]
                       :when (> fullcnt 0)]
-                  [rna (str "v" v) taxon cnt
+                  [rna (str "c" clu) (str "v" v) taxon cnt
                    fullcnt (double (* 100.0 (/ cnt fullcnt)))
-                   (->> (get-genomes taxon :new-rnas rna :version v)
+                   (->> (get-genomes taxon :new-rnas rna :version v :clu clu)
                                  (map :name) set)
                    #_(->> (get-ncs-by-taxon-rna-gene taxon :rna rna)
                         first third vals first set)])]
       (println)
-      (println (str/join ", " (take 6 grp)))
+      (println (str/join ", " (take 7 grp)))
       (doseq [nc (last grp)]
         (println nc))))
   out-file)

@@ -240,7 +240,7 @@
 (defn true-negative-rate
   "Ratio of true negatives to the total actual negatives, the latter
    being the true negatives plus the fase positives (/ TN (+ TN FP)).
-   AKA 'specificity.
+   AKA 'specificity'.
    "
   [tn fp]
   (if (== 0 tn fp)
@@ -283,11 +283,11 @@
 
 (defn mcc
   "Mathews Correlation Coefficient aka 'phi-coefficient'.  Correlation
-   indicator (coefficient) between real and predicteed
-   classifications.  Values lie in [-1, 1], where -1 indicates
-   complete negative correlation (total disagreement between real and
-   predicted), 0 indicates prediction no better than random guess, and
-   1 indicates perfect correlation (complete agreement).
+   indicator (coefficient) between real and predicted classifications.
+   Values lie in [-1, 1], where -1 indicates complete negative
+   correlation (total disagreement between real and predicted), 0
+   indicates prediction no better than random guess, and 1 indicates
+   perfect correlation (complete agreement).
 
    Returns (TP*TN - FP*FN) / sqrt(P*N*P'*N'), where
 

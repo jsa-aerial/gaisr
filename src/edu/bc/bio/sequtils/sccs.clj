@@ -697,7 +697,11 @@
      (= 1 (count (doall (read-seqs sto :info :name)))) [mindelta false]
 
      :else ;; compute and select min over delta range
-     (let [pts (vfold (fn[i]
+     (let [getfile (fn [dir suffix]
+		     (->> sto fs/basename
+			  (#(fs/replace-type % suffix))
+			  (fs/join dir)))
+	   pts (vfold (fn[i]
                         (->> (compute-candidate-info
                               sto sto
                               (+ mindelta (* i 20)) 1
@@ -709,11 +713,9 @@
                              first (map second) mean))
                       (range 81))
            ms (map #(min %1 %2) pts (drop 1 pts))
-           out (if plot
-                 (->> sto fs/basename
-                      (#(fs/replace-type % "-ctxsz.png"))
-                      (fs/join plot))
-                 :display)]
+	   ptfile (getfile (if plot plot (fs/dirname sto)) "-mpts.txt")
+           out (if plot (getfile plot "-ctxsz.png") :display)]
+       
        (when plot
          (render-chart
           out
@@ -721,6 +723,8 @@
           "Size X 20" "RE/JSD" "RE to subseq"
           :series-label "Sub Seq Size"
           :legend true))
+       (io/with-out-writer ptfile
+	 (doseq [m ms] (println m)))
        [(+ mindelta (* 20 (last (pos (apply min pts) pts)))) false]))))
 
 (defn save-hit-context-delta

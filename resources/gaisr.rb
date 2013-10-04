@@ -838,8 +838,9 @@ def display_help (cmd)
     puts "using the -f option, can be listed, one per line, in the given file."
     puts "In either case, an rna must be in the format rnaname[.|-| ]version."
     puts "rnaname is a Meyer lab convention name for new rnas, for example,"
-    puts "rna_00011.  Version is a positive integer denoting the version of"
-    puts "interest.  So, a full example could be rna_00011.2"
+    puts "rna_00011 or, if given with a cluster designation, rna_00011c3."
+    puts "Version is a positive integer denoting the version of interest."
+    puts "So, a full example could be rna_00011c1-2"
     puts ""
     puts "taxons can be given as either a string of comma separated taxon names"
     puts "or by using the -f option, can be listed one per line, in the given"
@@ -851,7 +852,7 @@ def display_help (cmd)
     puts "gaisr rna-taxon-info taxon-info.txt -f rnas.txt -f taxons.txt"
     puts ""
     puts "Output format:"
-    puts "rna-name, version, taxon-name, rna cnt in taxon, total cnt, percent"
+    puts "rna-name, clu, ver, taxon-name, rna cnt in taxon, total cnt, percent"
     puts "list of genomes (by NC name)"
   end
   puts ""
@@ -902,6 +903,11 @@ elsif (@cmd == "load-new-rna")
   load_new_rnas(args)
 
 elsif (@cmd == "rna-taxon-info")
+  if (args.length < 3)
+    puts "#{@cmd} requires outfile, rnas and taxons,"
+    puts "Use #{@cmd} -h for details."
+    exit(1)
+  end
   rna_taxon_info(args)
 
 elsif (@cmd == "check-job")

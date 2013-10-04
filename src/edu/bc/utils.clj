@@ -392,10 +392,8 @@
        #_(println :>>N n)
        (vfold f n coll)))
   ([f n coll]
-     (when (not (integer? n))
-       (raise :type :illegal-argument
-              :msg (str "VFOLD: Folding granularity N "
-                        n " must be an integer.")))
+     (assert (integer? n)
+             (str "VFOLD: Folding granularity N " n " must be an integer."))
      (if (< n 1)
        (vfold f coll)
        (r/fold n

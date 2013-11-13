@@ -814,6 +814,20 @@
       [k (* (math/expt q k) p)])))
 
 
+(defn sampling
+  "First small step toward 'generic' sampler.  CNT is the size of the
+   sample to create.  DIST is some distribution over some event
+   space (aka omega).
+  "
+  [cnt dist]
+  (loop [sample []
+         i cnt]
+    (if (= i 0)
+      sample
+      (recur (conj sample (rand-nth dist))
+             (dec i)))))
+
+
 (defn p-value
   "Compute p-value from distribution D and sample statistics x y
   "

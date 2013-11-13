@@ -1230,7 +1230,11 @@
 
         opts (into {} gen-stos)
         stos (opts :stos stos)
-        stos (if (string? stos) (fs/glob (fs/join stodir stos)) stos)
+        stos (if (string? stos)
+               (->> (str/split #"\s+" stos)
+                    (map #(fs/glob (fs/join stodir %)))
+                    flatten sort)
+               stos)
         grpnm (opts :group-name)
         sccs (config :sccs)
         sccs-dir (some #(when (= (first %) :out-dir) (second %)) sccs)

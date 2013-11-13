@@ -50,10 +50,12 @@
             [incanter.charts]
             [edu.bc.fs :as fs]
             [edu.bc.bio.sequtils.tools :as tools]
-            [edu.bc.bio.sequtils.sccs :as sccs])
+            [edu.bc.bio.sequtils.sccs :as sccs]
+            [edu.bc.bio.gaisr.db-actions :as db])
   (:use clojure.contrib.math
         edu.bc.utils
         edu.bc.utils.probs-stats
+        edu.bc.utils.scores
         edu.bc.bio.seq-utils
         edu.bc.bio.sequtils.files
         edu.bc.bio.sequtils.dists
@@ -226,88 +228,7 @@
 (build-config-files)
 
 
-(defn true-positive-rate
-  "Ratio of true positives to the total actual positives, the latter
-   being the true positives plus the false negatives (the remaining
-   actuals not counted as true): (/ TP (+ TP FN)).  AKA 'hit rate',
-   'recall', and 'sensitivity'.
-  "
-  [tp fn]
-  (if (== 0 tp fn)
-    (float 1.0) ; no real positives and none predicted => perfect recall
-    (float (/ tp (+ tp fn)))))
-
-(defn true-negative-rate
-  "Ratio of true negatives to the total actual negatives, the latter
-   being the true negatives plus the fase positives (/ TN (+ TN FP)).
-   AKA 'specificity'.
-   "
-  [tn fp]
-  (if (== 0 tn fp)
-    (float 1.0) ; no real negatives and none predicted
-    (float (/ tn (+ tn fp)))))
-
-
-(defn false-negative-rate
-  "Ratio of false positives to the total actual negatives, the latter
-   being the true negatives plus the false positives (the remaining
-   actuals not counted as false): (/ FP (+ TN FP)) = 1 - 'specificity'
-
-   Where 'specificity' = ratio of true negatives to total actual
-   negatives: (/ TN (+ TN FP))
-  "
-  [fp tn]
-  (if (== 0 fp tn)
-    (float 0.0)
-    (float (/ fp (+ fp tn)))))
-
-(defn acc
-  "ACCuracy of classification and (by extension across multiple cases)
-   classifier.  TP and TN are the classification TruePostives and
-   TrueNegatives respectivel.  AP and AN are the ActualPositives and
-   ActualNegatives respectively.  Ratio of sum of correct
-   classifications to total values: (TP + TN) / (P + N), so result
-   lies in [0, 1]
-  "
-  [tp tn ap an]
-  (float (/ (+ tp tn) (+ ap an))))
-
-(defn ppv
-  "Positive Predictive Value, aka 'precision'.  Ratio of true
-   positives to all predicted positives: TP / (TP + FP).
-  "
-  [tp fp]
-  (if (== 0 tp fp)
-    (float 1.0) ; no real positives and none predicted => perfect precision
-    (float (/ tp (+ tp fp)))))
-
-(defn mcc
-  "Mathews Correlation Coefficient aka 'phi-coefficient'.  Correlation
-   indicator (coefficient) between real and predicted classifications.
-   Values lie in [-1, 1], where -1 indicates complete negative
-   correlation (total disagreement between real and predicted), 0
-   indicates prediction no better than random guess, and 1 indicates
-   perfect correlation (complete agreement).
-
-   Returns (TP*TN - FP*FN) / sqrt(P*N*P'*N'), where
-
-   P = total real positives = TP + FN
-   N = total real negatives = TN + FP
-   P' = predicted positives = TP + FP
-   N' = predicted negatives = TN + FN
-  "
-  [tp tn fp fn]
-  (let [p  (+ tp fn)
-        n  (+ tn fp)
-        p' (+ tp fp)
-        n' (+ tn fn)
-        D  (* p n p' n')]
-    (float (/ (- (* tp tn) (* fp fn))
-              (if (zero? D) 1 (sqrt D))))))
-
-
-
-(def eval-cut-points
+(defparameter eval-cut-points
      [1.0e-23, 1.0e-21, 1.0e-19, 1.0e-15, 1.0e-11,
       1.0e-9, 1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 0.001, 0.01
       0.1 0.2 0.3 0.5 0.7 0.9 1.0 2.0 3.0 4.0 5.0 7.0])
@@ -556,6 +477,84 @@
 (count (map #(do ["" "" % % "Guess"]) (range 0.0 1.0 0.05)))
 
 (map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 0.05))
+
+
+
+
+(def exon-select
+     "select sfqv.term_id,sfqv.value,loc.start_pos,loc.end_pos,loc.strand
+             from bioentry as be,
+                  seqfeature as sf,
+                  seqfeature_qualifier_value as sfqv,
+                  location as loc
+             where be.bioentry_id=sf.bioentry_id and
+                   sf.seqfeature_id=sfqv.seqfeature_id and
+                   sf.type_term_id=12 and sfqv.term_id=14 and
+                   loc.seqfeature_id=sf.seqfeature_id and
+                   be.name=\"/name/\" and
+                   loc.start_pos > /start/ and
+                   loc.strand = /strand/ limit 50")
+"NC_017986"
+
+(->>
+ (db/sql-query
+  (->> exon-select
+       (str/replace-re #"/name/" "NC_018643")
+       (str/replace-re #"/start/" "1341411")
+       (str/replace-re #"/strand/" "1")))
+ ensure-vec (drop 1)
+ (map #(% :start_pos)))
+
+
+(defn get-sim-entry [entry]
+  (let [[n [s e] st] (entry-parts entry)
+        sz (abs (- e s))
+        starts (->> (db/sql-query
+                     (->> exon-select
+                          (str/replace-re #"/name/" n)
+                          (str/replace-re #"/start/" (str s))
+                          (str/replace-re #"/strand/" (str st))))
+                    ensure-vec (drop 1)
+                    (map #(% :start_pos)))]
+    (set (map #(let [s' (- % sz 50)
+                     e' (+ s' sz)]
+                 (make-entry n s' e' st))
+              starts))))
+
+(defn gen-sim-entries [in-files]
+  (let [ot-files (->> in-files (map #(str/replace-re #"seed" "simout" %))
+                      (map #(fs/replace-type % ".ent")))
+        entry-sets (->> in-files
+                        (map #(read-seqs % :info :name))
+                        (map #(apply set/union (map get-sim-entry %))))]
+    (doseq [[f entries] (partition-all 2 (interleave ot-files entry-sets))]
+      (gen-entry-file entries f))))
+
+(gen-sim-entries (fs/glob "/data2/BioData/RFAM-NC/NC/*seed*.sto"))
+
+
+(=
+ '(let [in-files (fs/glob "/data2/BioData/RFAM-NC/NC/*seed*.sto")
+        ot-files (->> in-files (map #(str/replace-re #"seed" "simout" %))
+                      (map #(fs/replace-type % ".ent")))
+        entry-sets (->> in-files
+                        (map #(read-seqs % :info :name))
+                        (map #(apply set/union (map get-sim-entry %))))]
+    (doseq [[f entries] (partition-all 2 (interleave ot-files entry-sets))]
+      (gen-entry-file entries f)))
+
+ '(let [in-files (fs/glob "/data2/BioData/RFAM-NC/NC/*seed*.sto")
+        ot-files (->> in-files (map #(str/replace-re #"seed" "simout" %))
+                      (map #(fs/replace-type % ".ent")))
+        entry-sets (->> in-files
+                        (map #(read-seqs % :info :name))
+                        (map #(apply set/union (map get-sim-entry %))))]
+    (doseq [[f entries] (partition-all 2 (interleave ot-files entry-sets))]
+      (gen-entry-file entries f))))
+
+
+
+
 
 
 

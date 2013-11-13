@@ -715,11 +715,12 @@
     (mean (map #(/ % Svar) Cvars))))
 
 (defn S-Dbw-index
-  "Compute the 'SDbw' cluster validity index.  By several
-   accounts (IEEE 2010 ICDM paper 'Understanding Internal Clustering
-   Validity Measures', in particular) this is the most robust general
-   internal validity measure across both data sets and clustering
-   algorithms.  It is the default used by FIND-CLUSTERS.
+  "Compute the 'S_Dbw' cluster validity index: Scatter plus Density
+   between.  By several accounts (IEEE 2010 ICDM paper 'Understanding
+   Internal Clustering Validity Measures', in particular) this is the
+   most robust general internal validity measure across both data sets
+   and clustering algorithms.  It is the default used by
+   FIND-CLUSTERS.
 
    It accounts for both compactness of clusters and cluster
    separation.  It does this with a dual density measure:

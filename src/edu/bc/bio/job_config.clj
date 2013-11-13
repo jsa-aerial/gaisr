@@ -105,7 +105,8 @@
     (assoc m :clus (conj (get m :clus []) [(keyword d) v]))))
 
 (defn process-gen-sto-subline [m l]
-  (let [[d v] (str/split #"\s*(:| )\s*" l)]
+  (let [[d & v] (str/split #"\s*(:| )\s*" l)
+        v (if (= 1 (count v)) (first v) (str/join " " v))]
     (assoc m :gen-stos (conj (get m :gen-stos []) [(keyword d) v]))))
 
 

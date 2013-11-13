@@ -59,6 +59,7 @@
   (:require [clojure.contrib.string :as str]
             [clojure.set :as set]
             [clojure.contrib.io :as io]
+            [clojure-csv.core :as csv]
             [incanter.core]
             [incanter.charts]
             [edu.bc.fs :as fs]
@@ -316,6 +317,14 @@
        (incanter.core/view chart)
        (incanter.core/save chart location :width 600 :height 480))))
 
+(defn write-plot-data-csv
+  [file colhdr xs ys name]
+  (spit file
+        (csv/write-csv
+         (cons colhdr
+               (partition-all 3 (map str (interleave xs ys (repeat name))))))))
+
+
 (defn plot-cres
   [cre-samples & {:keys [file]}]
   (doseq [cres cre-samples]
@@ -331,54 +340,74 @@
             " Fmax: " (round (ln cnt)))))))
 
 (defn plot-re-pmf
-  [nm-res  & {:keys [file]}]
+  [nm-res  & {:keys [file name]}]
   (let [pmf-info (map (fn[[re p v]] [re (count v)]) (nm-res-dist nm-res))
         pmf-dist (into {} pmf-info)
-        xs (sort (map first pmf-info))]
+        xs (sort (map first pmf-info))
+        ys (map #(get pmf-dist % 0.0) xs)]
+    (when file
+      (write-plot-data-csv
+       (fs/replace-type file ".csv")
+       ["JSD" "Sq Count" "Name"] xs ys name))
     (render-chart
      (if file file :display)
-     xs (map #(get pmf-dist % 0.0) xs)
-     "RE value" "Sq/RE count" "Sq RE distribution"
+     xs ys
+     "JSD" "Sq count" (str name " Sq RE distribution")
      :series-label "sq/hbrid JSD PMF"
      :legend true)))
 
 (defn plot-re-cdf
-  [nm-res & {:keys [file]}]
+  [nm-res & {:keys [file name]}]
   (let [Fx (nm-res-cdf nm-res)
         step 0.005
-        xs (for [i (range 200)] (* i step))]
+        xs (for [i (range 200)] (* i step))
+        ys (map Fx xs)]
+    (when file
+      (write-plot-data-csv
+       (fs/replace-type file ".csv")
+       ["JSD" "F(x)" "Name"] xs ys name))
     (render-chart
      (if file file :display)
-     xs (map Fx xs)
-     "JSD RE" "Fre-dist(x)" "FFP CDF plot"
+     xs ys
+     "JSD" "F(x)" (str name " FFP RE CDF plot")
      :series-label "sq/hbrid JSD CDF"
      :legend true)))
 
 
 (defn plot-hit-dists
-  [chartnm prot-name cnt-seqs ctx-delta res cutpt nms-stods
+  [chartnm rna-name cnt-seqs ctx-delta res cutpt nms-stods
    & {:keys [file]}]
   (let [xs (range cnt-seqs)
+        ys (map second nms-stods)
         out (if file (fs/join file (str chartnm "-hitonly.png")) :display)]
+    (when file
+      (write-plot-data-csv
+       (fs/replace-type out ".csv")
+       ["Seq" "JSD" "Name"] xs ys (->> rna-name (str/split #"-") first)))
     (render-chart
      out
-     xs (map second nms-stods)
+     xs ys
      "Sequence" "Sq RE to Hybrid"
-     (str prot-name " Hits only to Hybrid."
+     (str rna-name " Hits only to Hybrid."
           " Res: " res ", Cutpt: " cutpt)
      :series-label "sq/hbrid-distance"
      :legend true)))
 
 (defn plot-cand-dists
-  [chartnm prot-name cnt-seqs ctx-delta res Mre CDp cutpt nms-stods
+  [chartnm rna-name cnt-seqs ctx-delta res Mre CDp cutpt nms-stods
    & {:keys [file]}]
   (let [xs (range cnt-seqs)
+        ys (map second nms-stods)
         out (if file (fs/join file (str chartnm "-candidates.png")) :display)]
+    (when file
+      (write-plot-data-csv
+       (fs/replace-type out ".csv")
+       ["Seq" "JSD" "Name"] xs ys (->> rna-name (str/split #"-") first)))
     (render-chart
      out
-     xs (map second nms-stods)
+     xs ys
      "Sequence" "Sq RE to Hybrid"
-     (str prot-name " Candidate SCCS. Cutpt " cutpt "\n"
+     (str rna-name " Candidate SCCS. Cutpt " cutpt "\n"
           " Ctx Sz: " ctx-delta
           " Res: " res ", Mre: " Mre ", CD%: " CDp)
      :series-label "sq/hbrid-distance"
@@ -698,10 +727,10 @@
 
      :else ;; compute and select min over delta range
      (let [getfile (fn [dir suffix]
-		     (->> sto fs/basename
-			  (#(fs/replace-type % suffix))
-			  (fs/join dir)))
-	   pts (vfold (fn[i]
+                     (->> sto fs/basename
+                          (#(fs/replace-type % suffix))
+                          (fs/join dir)))
+           pts (vfold (fn[i]
                         (->> (compute-candidate-info
                               sto sto
                               (+ mindelta (* i 20)) 1
@@ -713,18 +742,20 @@
                              first (map second) mean))
                       (range 81))
            ms (map #(min %1 %2) pts (drop 1 pts))
-	   ptfile (getfile (if plot plot (fs/dirname sto)) "-mpts.txt")
+	   szs (map #(+ mindelta (* 20 %)) (range (count ms)))
+	   nm (->> sto fs/basename (str/split #"-") first)
+           ptfile (getfile (if plot plot (fs/dirname sto)) "-ctxsz.csv")
            out (if plot (getfile plot "-ctxsz.png") :display)]
-       
+
        (when plot
          (render-chart
           out
-          (map #(+ mindelta (* 20 %)) (range (count ms))) ms
+          szs ms
           "Size X 20" "RE/JSD" "RE to subseq"
           :series-label "Sub Seq Size"
           :legend true))
-       (io/with-out-writer ptfile
-	 (doseq [m ms] (println m)))
+       (write-plot-data-csv
+	ptfile ["Extension" "JSD mean" "Name"] szs ms nm)
        [(+ mindelta (* 20 (last (pos (apply min pts) pts)))) false]))))
 
 (defn save-hit-context-delta

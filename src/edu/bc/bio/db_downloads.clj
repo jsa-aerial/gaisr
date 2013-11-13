@@ -176,9 +176,12 @@
 ;;;        (csv/parse-csv (slurp "/data2/Bio/ECRibLeaders/SearchRNAs-50-set.csv")))
 ;;;  "/data2/Bio/ECRibLeaders/RFAM")
 ;;;
-;;;(download-rfam-stos
-;;; ["RF00552"]
-;;; "/data2/Bio/RFAM")
+;;; (download-rfam-stos
+;;;  ["RF00552"]
+;;;  "/data2/Bio/RFAM")
+;;; (download-rfam-stos
+;;;  ["RF00552"]
+;;;  "/data2/Bio/RFAM" :type "full")
 ;;;
 ;;; (download-rfam-stos
 ;;;  (keep #(when (> (count %) 1) (first %))

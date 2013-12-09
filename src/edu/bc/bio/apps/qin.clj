@@ -310,6 +310,8 @@
       0.9, 0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97
       0.975, 0.98, 0.985, 0.99, 0.995])
 
+(->> (range -3.7 6 0.4) (map logistic)) count)
+
 (count sccs-cut-points)
 
 
@@ -481,6 +483,72 @@
 
 
 
+
+
+(def bioinfo-table-template
+     ["{\\scriptsize \\begin{tabular}{ll|lllll}\\toprule"
+      "ncRNA  & xxctpt  & AUC    & TPR    & SPC    & PPV    & MCC " "\\toprule"
+      "S1EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S4EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S7EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S8EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S15EC  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "L20BS  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S4BS   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S6BS   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "S15BS  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam1  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam2  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam3  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam4  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam5  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam6  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam7  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam8  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam9  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam10 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam11 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam12 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam13 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam14 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam15 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam16 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam17 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam18 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam19 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "Rfam20 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
+      "\\botrule"
+      "\\end{tabular}}"])
+
+
+
+(defn build-sim-config-files
+  []
+  (let [sim-dir "/home/kaila/Bio/Test/ROC-data/Sim"
+        dirs (->> (fs/directory-files sim-dir "")
+                  (filter #(not (re-find #"run" %)))
+                  sort)
+        runtxts (->> (fs/directory-files sim-dir ".txt")
+                     (map #(do [(fs/basename %) (io/read-lines %)])))]
+    (doseq [d dirs]
+      (let [dnm (fs/basename d)
+            xpart (str/lower-case dnm)
+            sto (->> d (#(fs/directory-files % ".sto"))
+                     first fs/basename
+                     (str/replace-re #"\.sto" ""))]
+        (doseq [[nm lines] runtxts]
+          (let [nm (fs/join d (str/replace-re #"xxx" xpart nm))]
+            (io/with-out-writer nm
+              (doseq [l lines]
+                (->> l
+                     (str/replace-re #"RNAXXX" sto)
+                     (str/replace-re #"XXX" dnm)
+                     println)))))))))
+
+(build-sim-config-files)
+
+;;; Generate simulated context locations.
+;;;
 (def exon-select
      "select sfqv.term_id,sfqv.value,loc.start_pos,loc.end_pos,loc.strand
              from bioentry as be,
@@ -533,31 +601,107 @@
 (gen-sim-entries (fs/glob "/data2/BioData/RFAM-NC/NC/*seed*.sto"))
 
 
-(=
- '(let [in-files (fs/glob "/data2/BioData/RFAM-NC/NC/*seed*.sto")
-        ot-files (->> in-files (map #(str/replace-re #"seed" "simout" %))
-                      (map #(fs/replace-type % ".ent")))
-        entry-sets (->> in-files
-                        (map #(read-seqs % :info :name))
-                        (map #(apply set/union (map get-sim-entry %))))]
-    (doseq [[f entries] (partition-all 2 (interleave ot-files entry-sets))]
-      (gen-entry-file entries f)))
+(defn gen-sim-db []
+  (let [sim-files (sort (fs/glob "/data2/BioData/RFAM-NC/NC/*simout*.ent"))
+        simctxs (->> sim-files
+                     (map #(read-seqs % :info :name))
+                     (map (fn[ents]
+                            (map #(let [[nm [s e] std] (entry-parts %)
+                                        rdelta (+ (- e s) 850)]
+                                    (gen-name-seq % :ldelta 100 :rdelta rdelta))
+                                 ents))))
+        fullsamps (->> sim-files (map fs/basename)
+                       (map #(str/replace-re #"simout-NC.ent$" "full.sto" %))
+                       (map #(fs/join "/data2/Bio/RFAM" %))
+                       (map #(read-seqs % ))
+                       (map degap-seqs) (map norm-elements)
+                       (map set) (map vec))]
+    (doseq [[f nm-sqs] (map (fn[sim-file seed-simctxs ncRNAs]
+                              [(fs/replace-type sim-file ".fna")
+                               (map (fn[[ent ctxseq]]
+                                      (let [ncRNA (rand-nth ncRNAs)
+                                            [nm [s e] std] (entry-parts ent)
+                                            orig-rna-gap-sz (- (- e s) 950)
+                                            drop-amt (+ 100 orig-rna-gap-sz)
+                                            suffix (str/drop drop-amt ctxseq)
+                                            new-ent (make-entry
+                                                     nm s
+                                                     (dec (+ s 100 (count ncRNA)
+                                                             (count suffix)))
+                                                     std)]
+                                        [new-ent
+                                         (str (str/take 100 ctxseq)
+                                              ncRNA
+                                              (str/drop drop-amt ctxseq))]))
+                                    seed-simctxs)])
+                            sim-files (doall simctxs) (doall fullsamps))]
+      (io/with-out-writer f
+        (doseq [[ent sq] nm-sqs]
+          (println (str ">" ent))
+          (println sq))))))
 
- '(let [in-files (fs/glob "/data2/BioData/RFAM-NC/NC/*seed*.sto")
-        ot-files (->> in-files (map #(str/replace-re #"seed" "simout" %))
-                      (map #(fs/replace-type % ".ent")))
-        entry-sets (->> in-files
-                        (map #(read-seqs % :info :name))
-                        (map #(apply set/union (map get-sim-entry %))))]
-    (doseq [[f entries] (partition-all 2 (interleave ot-files entry-sets))]
-      (gen-entry-file entries f))))
+
+(defn gen-sim-db-0 []
+  (let [sim-files (sort (fs/glob "/data2/BioData/RFAM-NC/NC/*simout*.ent"))
+        simctxs (->> sim-files
+                     (map #(read-seqs % :info :name))
+                     (map (fn[ents]
+                            (map #(let [[nm [s e] std] (entry-parts %)
+                                        rdelta (+ (- e s) 850)]
+                                    (gen-name-seq % :ldelta 100 :rdelta rdelta))
+                                 ents))))
+        fullsamps (->> sim-files (map fs/basename)
+                       (map #(str/replace-re #"simout-NC.ent$" "full.sto" %))
+                       (map #(fs/join "/data2/Bio/RFAM" %))
+                       (map #(read-seqs % ))
+                       (map degap-seqs) (map norm-elements)
+                       (map set) (map vec))]
+    (doseq [[f nm-sqs] (map (fn[sim-file seed-simctxs ncRNAs]
+                              [(fs/replace-type sim-file ".fna")
+                               (map (fn[[ent ctxseq] ncRNA]
+                                      (let [[nm [s e] std] (entry-parts ent)
+                                            orig-rna-gap-sz (- (- e s) 950)
+                                            drop-amt (+ 100 orig-rna-gap-sz)
+                                            suffix (str/drop drop-amt ctxseq)
+                                            new-ent (make-entry
+                                                     nm s
+                                                     (dec (+ s 100 (count ncRNA)
+                                                             (count suffix)))
+                                                     std)]
+                                        [new-ent
+                                         (str (str/take 100 ctxseq)
+                                              ncRNA
+                                              (str/drop drop-amt ctxseq))]))
+                                    seed-simctxs
+                                    ncRNAs)])
+                            sim-files (doall simctxs) (doall fullsamps))]
+      (io/with-out-writer f
+        (doseq [[ent sq] nm-sqs]
+          (println (str ">" ent))
+          (println sq))))))
 
 
-
-
-
-
-
+;;; Create seed CSVs to be unioned to output CSV results
+;;;
+(let [dirs (->> (fs/directory-files "/home/kaila/Bio/Test/ROC-data/Sim" "")
+                (filter #(re-find #"RF0" %)))
+      seeds (->> dirs (map #(-> % fs/basename (str "-seed-NC.sto")))
+                 (map #(fs/join %1 %2) dirs))
+      csvs (map #(fs/replace-type % ".csv") seeds)]
+  (doseq [[seed csv] (partition-all 2 (interleave seeds csvs))]
+    (->> (get-sto-as-csv-info seed)
+         (map (fn[[nm s e _ _ _ std]]
+                (csv/csv-to-stg
+                 (map str [nm 1 2 s e std 11 22 0.0 1.0e-31 0.0 0.0]))))
+         doall (str/join "\n")
+         (spit csv)))
+  (let [CSVs (map #(fs/join % "CSV") dirs)
+        out-csvs (map #(first (fs/directory-files % "cmsearch.csv.bkup")) CSVs)
+        csv-pairs (sort-by first (partition-all 2 (interleave out-csvs csvs)))]
+    (doseq [[ocsv csv] csv-pairs]
+      (io/with-out-writer (fs/replace-type ocsv "")
+        (doseq [l (io/read-lines ocsv)] (println l))
+        (doseq [l (io/read-lines csv)] (println l))))))
 
 
 ;;; ------------------- Statistical RNA Search ----------------------------;;;

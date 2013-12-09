@@ -546,11 +546,12 @@
                                         :refn refn :xlate xlate
                                         :refdb refdb :stodb stodb
                                         :delta delta)
-        ;; For hits, always use 0.9 on CDF
+        ;; For hits, always use 0.9 on CDF (0.5 + Dy, For hits Dy defaults .4)
         Dy (if (zero? delta)
-             0.4
+             (if Dy Dy 0.4)
              (if Dy Dy
                  (case run 1 0.3, 2 0.25, 3 0.2, 4 0.1, 5 0.0, -0.1)))
+        ;; For hits, max out JSD at 0.9, in practice => CDF determines cut
         Mre (if (zero? delta)
               0.9
               (if Mre Mre
@@ -742,8 +743,8 @@
                              first (map second) mean))
                       (range 81))
            ms (map #(min %1 %2) pts (drop 1 pts))
-	   szs (map #(+ mindelta (* 20 %)) (range (count ms)))
-	   nm (->> sto fs/basename (str/split #"-") first)
+           szs (map #(+ mindelta (* 20 %)) (range (count ms)))
+           nm (->> sto fs/basename (str/split #"-") first)
            ptfile (getfile (if plot plot (fs/dirname sto)) "-ctxsz.csv")
            out (if plot (getfile plot "-ctxsz.png") :display)]
 
@@ -755,7 +756,7 @@
           :series-label "Sub Seq Size"
           :legend true))
        (write-plot-data-csv
-	ptfile ["Extension" "JSD mean" "Name"] szs ms nm)
+        ptfile ["Extension" "JSD mean" "Name"] szs ms nm)
        [(+ mindelta (* 20 (last (pos (apply min pts) pts)))) false]))))
 
 (defn save-hit-context-delta

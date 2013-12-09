@@ -160,14 +160,8 @@
    This nonsense has to be accounted for when generating entry files
    from this information in actions/action-request :genfasta and kin.
   "
-  [name prev-name]
-  (if (= name prev-name)
-    (let [i (re-find #"/[0-9]" name)
-          i (when i (Integer. (subs i 1)))]
-      (if (not i)
-        (str name "/2")
-        (str (str/take (dec (count name)) name) (inc i))))
-    name))
+  [name suffix-cnt]
+  (str name "/" suffix-cnt))
 
 (defn base-info
   "A hack for ensuring proper alignment of hit feature info, hit loci
@@ -175,30 +169,38 @@
    species or the database is missing the species (due to unloaded
    data source or some other anomaly)"
   [names]
-  (let [names (sort names)]
-    (loop [prev-name (first names)
+  (let [query-info (base-info-query names)
+        info-map (reduce (fn[M m] (assoc M (m :name) m))
+                         {} query-info)
+        names (sort names)]
+    (loop [prev-name ""
+           suffix-cnt 2
            ns names
-           infos (sort-by :name (base-info-query names))
            ninfos []]
       (if (empty? ns)
         ninfos
         (let [n (first ns)
-              n (subs n 1 (dec (count n)))
-              info-name (:name (first infos))
-              gbid      (:gbid (first infos))]
-          (if (not= n info-name)
-            (recur (twiddle-name n prev-name)
+              n (subs n 1 (dec (count n))) ; Remove quotes (needed for sql)
+              qinfo (info-map n)]
+          (if (= n prev-name)
+            (recur prev-name
+                   (inc suffix-cnt)
                    (drop 1 ns)
-                   infos
-                   (conj ninfos {:name (twiddle-name n prev-name)
-                                 :version 0 :description "NA"
-                                 :bioentry_id (gen-kwuid) :gbid gbid
-                                 :taxon_id 0 :taxname "NA" :ancestors "NA"
+                   (conj ninfos {:name (twiddle-name n suffix-cnt)
+                                 :version (qinfo :version)
+                                 :description (qinfo :description)
+                                 :bioentry_id (gen-kwuid) ;(qinfo :bioentry_id)
+                                 :gbid (qinfo :gbid)
+                                 :taxon_id (qinfo :taxon_id)
+                                 :taxname (qinfo :taxname)
+                                 :ancestors (qinfo :ancestors)
                                  :delta +start-delta+}))
             (recur n
+                   2
                    (drop 1 ns)
-                   (drop 1 infos)
-                   (conj ninfos (first infos)))))))))
+                   (conj ninfos qinfo))))))))
+
+
 ;;;
 ;;; END FUGLY HACK-----------------------------------------------------------
 

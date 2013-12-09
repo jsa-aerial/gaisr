@@ -601,11 +601,11 @@
      (let [locs (sort (sto-loc-map nm))
            [s e] (sort [s e])]
        (if (or (empty? locs)
-               (empty? (keep (fn[[ls le :as v]]
-                               (when (not (or (< ls (+ s 10) le)
-                                              (< ls (- e 10) le)))
-                                 v))
-                             locs)))
+               (reduce (fn[good [ls le]]
+                         (and good
+                              (not (or (< (- ls 10) s (+ ls 10))
+                                       (< (- le 10) e (+ le 10))))))
+                       true locs))
          :good :bad)))
    hit-parts))
 

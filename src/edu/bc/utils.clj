@@ -748,7 +748,7 @@
 
 (defn logistic
   "Compute logistic of X (a number which will be cast as a double.
-   Returns 1.0 / (1.0 + e^x) = e^x / (e^x + 1.0)
+   Returns 1.0 / (1.0 + e^-x) = e^x / (e^x + 1.0)
   "
   [x]
   (let [ex (math/expt Math/E (double x))]

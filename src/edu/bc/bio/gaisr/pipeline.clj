@@ -472,7 +472,7 @@
                      ;;[s e] (if (= st 1) [s e] [e s])
                      nc (ent-name sqinfo)
                      ent (if nc (str nc ":" (ent-loc sqinfo)) sqinfo)]
-                 (assoc M ent [st s e sc ev b gc])))
+                 (assoc M ent (conj (M ent []) [st s e sc ev b gc]))))
              {} lines)]))
 
 (defmethod cmsearch-out-info :1.0
@@ -562,10 +562,21 @@
             (partition 2 (partition-by #(if (re-find #"strand" %) :x :y)
                                        hit-val)))))
 
-(defn get-hit-loc [seq-start seq-end hit-start hit-end]
+
+(defn get-hit-loc
+  "Return the actual hit location of the found RNA. SEQ-START and
+   SEQ-END are the coordinates of the orginal search input sequence
+   and HIT-START and HIT-END are the relative locations of the hit
+   within that sequence."
+  [seq-start seq-end hit-start hit-end]
   (let [strand (if (> seq-start seq-end) -1 1)]
-    [(+ seq-start (* strand (dec hit-start)))
-     (+ seq-start (* strand hit-end))]))
+    (if (> hit-start hit-end)
+      ;; Reverse strand
+      [(+ seq-start hit-start)
+       (+ seq-start (dec hit-end))]
+      ;; Forward strand
+      [(+ seq-start (dec hit-start))
+       (+ seq-start hit-end)])))
 
 (defn get-orig-seq-full-hit
   "Return full original sequence of the hit location given by hit-start S and
@@ -574,14 +585,20 @@
   [orig-seq s e]
   (let [[s e st] (if (> s e) [e s -1] [s e 1])
         twiddle (if (= st -1) reverse-compliment identity)]
+    ;; The only reason to not use gen-name-seq here is that we have
+    ;; already read the original seq and cached it.  For multiple this
+    ;; on the same sequence this can make a substantial time
+    ;; difference.
+    #_(gen-name-seq (make-entry nm s e st))
     (str/replace-re #"T" "U" (twiddle (subs orig-seq (dec s) e)))))
 
 (defn cmsearch-hit-parts [[h v] hit-seq-map]
   (let [[nm loc] (str/split #":" h)
         orig-seq (hit-seq-map h)
-        [s e] (if loc (vec (str/split #"-" loc)) ["1" (str (count orig-seq))])
+        maxlen (count orig-seq)
+        [s e] (if loc (vec (str/split #"-" loc)) ["1" (str maxlen)])
         s (Long. s)
-        e (->> e Long. (#(if (< % Long/MAX_VALUE) % (count orig-seq))))
+        e (->> e Long. (#(if (< % Long/MAX_VALUE) % maxlen)))
         info (reduce
               (fn[cur nxt] ; Keep the one with best Evalue
                 (if (< (Float. (nth nxt 4)) (Float. (nth cur 4)))
@@ -681,7 +698,12 @@
           [sto-loc-map hit-map hit-seq-map stofile]
           (cmsearch-group-hits cmsearch-out)
 
-          hit-parts (map #(cmsearch-hit-parts % hit-seq-map) hit-map)
+          ;;hit-parts (map #(cmsearch-hit-parts % hit-seq-map) hit-map)
+          hit-parts (mapcat (fn[[seq-ent hit-infos]]
+                              (map #(cmsearch-hit-parts [%1 %2] hit-seq-map)
+                                   (repeat seq-ent)
+                                   (ensure-vec hit-infos)))
+                            hit-map)
           groups (group-hit-parts sto-loc-map hit-parts)
 
           good (map #(csv/csv-to-stg (map str %))

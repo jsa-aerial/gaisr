@@ -677,6 +677,95 @@
 
 
 
+(defn fuzzy-entry-file-intersect
+  "Fuzzy intersection of entry files.  By 'fuzzy' we mean exact name
+   match of entries, exact strand match of entries, but start and end
+   within DELTA of f1 versions."
+  ([delta f1 f2]
+     (let [fuzzy-loc (fn[[s1 e1 st1] [s2 e2 st2]]
+                       (when (and (= st1 st2)
+                                  (< (- s1 delta) s2 (+ s1 delta))
+                                  (< (- e1 delta) e2 (+ e1 delta)))
+                         [s1 e1 st1]))
+           F1 (reduce (fn[NMS ent]
+                        (let [[nm [s e] st] (entry-parts ent)]
+                          (assoc NMS nm (conj (get NMS nm []) [s e st]))))
+                      {} (get-entry-set true f1))]
+       (->> (reduce (fn[[F1 res] ent]
+                      (let [[nm [s e] st] (entry-parts ent)]
+                        (if-let [loci (get F1 nm)]
+                          (if-let [loc (some #(fuzzy-loc % [s e st]) loci)]
+                            [F1 (conj res (apply make-entry nm loc))]
+                            [F1 res])
+                          [F1 res])))
+                    [F1 #{}] (get-entry-set true f2))
+            second)))
+  ([delta f1 f2 & fs]
+     (raise
+      :type :NYI
+      :msg "fuzzy-entry-set-intersect not implemented, for 3 and more files"
+      :args [f1 f2 fs])))
+
+
+(defn fuzzy-entry-file-difference
+  "Fuzzy difference of entry files.  By 'fuzzy' we mean exact name
+   match of entries, exact strand match of entries, but start and end
+   within DELTA of f1 versions."
+  ([delta f1 f2]
+     (let [fuzzy-loc (fn[[s1 e1 st1] [s2 e2 st2]]
+                       (when (and (= st1 st2)
+                                  (< (- s1 delta) s2 (+ s1 delta))
+                                  (< (- e1 delta) e2 (+ e1 delta)))
+                         [s1 e1 st1]))
+           F1 (reduce (fn[NMS ent]
+                        (let [[nm [s e] st] (entry-parts ent)]
+                          (assoc NMS nm (conj (get NMS nm []) [s e st]))))
+                      {} (get-entry-set true f1))]
+       (->> (reduce (fn[[F1 res] ent]
+                      (let [[nm [s e] st] (entry-parts ent)]
+                        (if-let [loci (get F1 nm)]
+                          (if-let [loc (some #(fuzzy-loc % [s e st]) loci)]
+                            [F1 (assoc res nm (remove #(= % loc) loci))]
+                            [F1 res])
+                          [F1 res])))
+                    [F1 F1] (get-entry-set true f2))
+            second
+            (filter #(boolean (seq (second %))))
+            (map (fn[[nm loci]] (map #(apply make-entry nm %) loci)))
+            flatten set)))
+  ([delta f1 f2 & fs]
+     (raise
+      :type :NYI
+      :msg "fuzzy-entry-set-difference not implemented, for 3 and more files"
+      :args [f1 f2 fs])))
+
+
+(defn fuzzy-entry-file-union
+  "Fuzzy union of entry files.  By 'fuzzy' we mean exact name
+   match of entries, exact strand match of entries, but start and end
+   within DELTA of f1 versions."
+  ([delta f1 f2]
+     (raise :type :NYI
+            :msg "fuzzy-entry-set-union not yet implemented"))
+  ([delta f1 f2 & fs]
+     (raise :type :NYI
+            :msg "fuzzy-entry-set-union not yet implemented")))
+
+
+(defmethod entry-file-setop [:intersect :fuzzy]
+  [_ _ & args]
+  (apply fuzzy-entry-file-intersect args))
+
+(defmethod entry-file-setop [:difference :fuzzy]
+  [_ _ & args]
+  (apply fuzzy-entry-file-difference args))
+
+(defmethod entry-file-setop [:union :fuzzy]
+  [_ _ & args]
+  (apply fuzzy-entry-file-union args))
+
+
+
 
 ;;; ----------------------------------------------------------------------
 ;;; CMFinder tools and operations

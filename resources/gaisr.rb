@@ -88,7 +88,7 @@ if (@cmd == "-h" or @cmd == "--help")
   puts " * get-seqs [sto|aln|fna|ent] {[+|-]prefix [+|-]suffix}"
   puts " * correct-sto-coordinates stofile+"
   puts " * embl-to-nc embl-file"
-  puts " * entry-file-set op {'with-seqs'} file1 file2 & files"
+  puts " * entry-file-set op {modifier} file1 file2 & files"
   puts " * run-config config-file"
   puts " * check-job {all | jobid+}"
   puts " * load-new-rna <stofile>+"
@@ -509,8 +509,14 @@ end
 
 
 def entry_file_set(args)
-  wsqs = (args[1] == "with-seqs")
-  if ((wsqs and args.length < 4) or (not wsqs and args.length < 3))
+  wsqs = (args[1] == "-with-seqs")
+  names = (args[1] == "-names")
+  fuzzy = (args[1] == "-fuzzy")
+  modifier = (wsqs or fuzzy or names) ? args[1] : "-none"
+  modifier = modifier.slice(1, modifier.length)
+  modifierQ = (modifier != "none")
+
+  if ((modifierQ and args.length < 4) or (not modifierQ and args.length < 3))
     puts "entry-file-set needs at least an operation and two input files"
     exit(1)
   end
@@ -520,17 +526,24 @@ def entry_file_set(args)
     exit(1)
   end
   op = args[0]
+  delta = (fuzzy and args[2] =~ /\A\d+\z/) ? args[2] : nil
 
-  files = if (wsqs) then args[2..args.length] else args[1..args.length] end
-  result = remote_cmd(@cmd, files, op, wsqs)
+  files = modifierQ ? args[2..args.length] : args[1..args.length]
+  files = delta ? files[1..files.length] : files
+  delta = delta ? delta : "10"
+
+  result = remote_cmd(@cmd, files, op, modifier, delta)
   result = JSON.parse(result.body)
+
   if (result["stat"] != "success")
     report_result("ERROR:", result)
   else
     info = result["info"][2] # first two are not used remote job status
+    info = wsqs ? info.sort{|x,y| x[0] <=> y[0]} : info.sort
     basedir = File.dirname(files[0])
     namebits = File.basename(files[0]).split(".")
     filename, ext = [namebits.first, namebits.last]
+    ext = (not wsqs) ? "ent" : ext
     newfilename = "#{filename}-#{op.upcase}.#{ext}"
     newfullspec = File.join(basedir, newfilename)
     outFile = File.new(newfullspec, "w")
@@ -767,21 +780,32 @@ def display_help (cmd)
     puts "check-job."
 
   when "entry-file-set"
-    puts "entry-file-set op {'with-seqs'} file1 file2 & files"
+    puts "entry-file-set op {modifier} file1 file2 & files"
     puts "               op -> ['intersect' | 'difference' | 'union']"
+    puts "         modifier -> ['-with-seqs' | '-fuzzy' {delta} | '-names']"
+    puts "            delta -> positive integer; defaults to 10 bases"
     puts ""
     puts "Performs the 'op' set operation on two or more sto, aln, fasta,"
     puts "or 'entry' files and writes the result to an output file in the same"
-    puts "directory as input and with a filename that is the input name with"
-    puts "'-<opname>' appended.  For example foo-intersect.sto"
+    puts "directory as input and with a filename that is the first input file"
+    puts "name with '-<opname>' appended.  For example foo-intersect.ent"
     puts ""
-    puts "If 'with-seqs' is given (preceding all input files), the output also"
-    puts "has the corresponding sequences for the result entry set.  In this"
-    puts "case all input files must be of the same type (all stos, all fnas,"
-    puts "etc.) and the file type of the output is the same."
-    puts "***NOTE: for sto files, all # lines are removed!"
+    puts "If -fuzzy is given the operation is 'fuzzy': names and strand are"
+    puts "matched exactly, but start and end coordinates are matched if they"
+    puts "are within delta of cooresponding start and end coordinates."
+    puts "***NOTE: Currently fuzzy matches only work on two files."
     puts ""
-    puts "If 'with-seqs' is not given, the output is simply an entry file (a"
+    puts "If -names is given, only the names of entries are compared.  Hence,"
+    puts "all entries with any name matches are collapsed to the single name."
+    puts "Can be considered as an 'extremely' fuzzy matching scheme."
+    puts ""
+    puts "If -with-seqs is given, the output also has the corresponding"
+    puts "sequences for the result entry set.  In this case all input files"
+    puts "must be of the same type (all stos, all fnas, etc.) and the file"
+    puts "type of the output is the same (sto, fna, etc.)."
+    puts "***NOTE: Currently for sto files, all # lines are removed!"
+    puts ""
+    puts "If -with-seqs is not given, the output is simply an entry file (a"
     puts ".ent file) with entries listed one per line."
 
   when "run-config"

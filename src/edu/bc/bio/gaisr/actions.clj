@@ -444,26 +444,38 @@
 
 
 (defn remote-entry-file-setop
-  "Remote entry file intersection, difference, or union.  If with-seqs
+  "Remote entry file intersection, difference, or union.  OPIONS is a
+   vector of strings: [op modifier delta].  Modifier is a member of
+   #{\"with-seqs\" \"names\" \"fuzzy\"}.  Op is the set operation.
+   Delta is the delta to use if the operation is fuzzy.  If with-seqs
    is true return entries with their sequences.  This option requires
    all files to be of the same type.  fs is a vector of file paths of
    the uploaded-files after renaming for corresponding originating
    file extensions.
   "
-  [op with-seqs fs]
+  [options fs]
   (remote-try
-   (when with-seqs
-     (let [x (->> fs
-                  (reduce (fn[M f] (assoc M (fs/ftype f) f)) {})
-                  (#(= (count %) 1)))]
-       (when (not x)
-         (raise :type :not-same-ftype :msg "Not all files have same type"))))
-   (let [res (apply tools/entry-file-setop
-                    (keyword op) with-seqs
-                    (if with-seqs fs (cons true fs)))]
-     {:body (json/json-str
-             {:info [:NA :NA (vec res)]
-              :stat "success"})})))
+   (let [[op modifier delta] (map read-string options)
+         modifier (keyword modifier)
+         wsqs (= modifier :with-seqs)
+         full (not= modifier :names)
+         fuzzy (= modifier :fuzzy)]
+     (prn modifier delta)
+     (when wsqs
+       (let [x (->> fs
+                    (reduce (fn[M f] (assoc M (fs/ftype f) f)) {})
+                    (#(= (count %) 1)))]
+         (when (not x)
+           (raise :type :not-same-ftype :msg "Not all files have same type"))))
+     (let [res (apply tools/entry-file-setop
+                      (keyword op)
+                      (cond wsqs true, fuzzy :fuzzy, :else false)
+                      (cond wsqs fs,
+                            fuzzy (cons delta fs)
+                            :else (cons full fs)))]
+       {:body (json/json-str
+               {:info [:NA :NA (vec res)]
+                :stat "success"})}))))
 
 
 (defn remote-load-new-rna
@@ -619,8 +631,7 @@
 
       (= upload-type "entry-file-set")
       (remote-entry-file-setop
-       (read-string (first (args :misc)))
-       (read-string (second (args :misc)))
+       (args :misc)
        (->> upload-file
             (map #(.getPath %))
             (map #(let [ft (fs/ftype %1)

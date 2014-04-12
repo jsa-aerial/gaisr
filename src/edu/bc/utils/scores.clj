@@ -63,7 +63,7 @@
     (float (/ tn (+ tn fp)))))
 
 
-(defn false-negative-rate
+(defn false-positive-rate
   "Ratio of false positives to the total actual negatives, the latter
    being the true negatives plus the false positives (the remaining
    actuals not counted as false): (/ FP (+ TN FP)) = 1 - 'specificity'
@@ -75,6 +75,21 @@
   (if (== 0 fp tn)
     (float 0.0)
     (float (/ fp (+ fp tn)))))
+
+(defn false-negative-rate
+  "Ratio of false negatives to the total actual positives, the latter
+   being the false negatives plus the true positives (the remaining
+   actual positives not counted as false): (/ FN (+ FN TP)).  AKA
+   'miss rate'.
+
+   *** Somehow this originally named the false POSITIVE rate function
+       - how did that happen??
+  "
+  [fn tp]
+  (if (== 0 fn tp)
+    (float 0.0)
+    (float (/ fn (+ fn tp)))))
+
 
 (defn acc
   "ACCuracy of classification and (by extension across multiple cases)
@@ -121,3 +136,107 @@
               (if (zero? D) 1 (math/sqrt D))))))
 
 
+
+
+
+
+#_(def eval-sim
+     (eval-roc-data
+      :base "/home/kaila/Bio/Test/ROC-data/Sim"
+      :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+                 (map fs/basename) sort)))
+
+#_(def sccs-sim
+     (sccs-roc-data
+      :base "/home/kaila/Bio/Test/ROC-data/Sim"
+      :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+                 (map fs/basename) sort)))
+
+#_(def sccs-scores
+     (->> (sccs-roc-data
+           :base "/home/kaila/Bio/Test/ROC-data/Sim"
+           :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+                      (map fs/basename) sort))
+          (map #(ROC-opt-classifier-pt
+                 % (fn[[nm cpt M]] (M :TPR)) (fn[[nm cpt M]] (M :FPR))))
+          (sort-by first)))
+
+#_(def eval-scores
+     (->> (eval-roc-data
+           :base "/home/kaila/Bio/Test/ROC-data/Sim"
+           :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+                      (map fs/basename) sort))
+          (map #(ROC-opt-classifier-pt
+                 % (fn[[nm cpt M]] (M :TPR)) (fn[[nm cpt M]] (M :FPR))))
+          (sort-by first)))
+
+
+#_(->> (map (fn[[sc [n & r]] [esc [en & er]]]
+            (if (not= n en)
+              (raise :type :name-mismatch :n n :en en)
+              [n sc esc]))
+          (sort-by #(-> % second first) sccs-scores)
+          (sort-by #(-> % second first) eval-scores))
+     (sort-by second))
+
+
+
+
+#_(def eval-ecoli
+     (eval-roc-data
+      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
+      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
+
+#_(def sccs-ecoli
+     (sccs-roc-data
+      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
+      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
+
+
+#_(->> eval-sim
+     (map #(reduce (fn[[r x] [nm cpt M :as R]]
+                     (let [tpr (M :TPR)
+                           fpr (M :FPR)
+                           sc (- 1 (- tpr fpr))]
+                       (if (< sc r)
+                         [sc R]
+                         [r x])))
+                   [10.0 {}] %))
+     (sort-by first))
+
+#_(->> sccs-sim
+     (map #(reduce (fn[[r x] [nm cpt M :as R]]
+                     (let [tpr (M :TPR)
+                           fpr (M :FPR)
+                           sc (- 1 (- tpr fpr))]
+                       (if (< sc r)
+                         [sc R]
+                         [r x])))
+                   [10.0 {}] %))
+     (sort-by first))
+
+
+
+(defn ROC-opt-classifier-pt
+  ""
+  [pts tprfn fprfn]
+  (reduce (fn[[r x] ptrec]
+            (let [tpr (tprfn ptrec)
+                  fpr (fprfn ptrec)
+                  sc (- 1 (- tpr fpr))]
+              (if (< sc r)
+                [sc ptrec]
+                [r x])))
+          [10.0 {}] pts))
+
+
+(defn AUC
+  "A simple trapezoidal area under the curve implementation mostly
+   intended for ROC curve results.
+  "
+  [pts]
+  (sum (fn[[[xi yi :as A] [xj yj :as B] :as C]]
+         (let [[[xi yi] [xj yj]] (if (< yi yj) C [B A])]
+           (+ (* (math/abs (- xi xj)) yi)           ; rectangle
+              (* (math/abs (- xi xj)) (- yj yi))))) ; triangle
+       pts))

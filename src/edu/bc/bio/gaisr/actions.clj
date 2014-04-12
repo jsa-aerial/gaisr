@@ -460,7 +460,6 @@
          wsqs (= modifier :with-seqs)
          full (not= modifier :names)
          fuzzy (= modifier :fuzzy)]
-     (prn modifier delta)
      (when wsqs
        (let [x (->> fs
                     (reduce (fn[M f] (assoc M (fs/ftype f) f)) {})

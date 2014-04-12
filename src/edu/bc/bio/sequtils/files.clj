@@ -794,15 +794,15 @@
                (drop 1 rows))))))
 
 
-(defn canonical-csv-entry-info [entries]
+(defn canonical-csv-entry-info [entries & {:keys [ev] :or {ev 0.0}}]
   (map #(let [[nm [s e] sd] (entry-parts %)
               [s e] (if (= sd "1") [s e] [e s])]
-          [nm s e 0.0 0.0 :new sd])
+          [nm s e ev 0.0 :new sd])
        entries))
 
-(defn get-sto-as-csv-info [stofile]
+(defn get-sto-as-csv-info [stofile & {:keys [ev] :or {ev 0.0}}]
   (let [entries (read-seqs stofile :info :name)]
-    (canonical-csv-entry-info entries)))
+    (canonical-csv-entry-info entries :ev ev)))
 
 (defn get-ent-as-csv-info [ent-file]
   (let [entries (io/read-lines ent-file)]

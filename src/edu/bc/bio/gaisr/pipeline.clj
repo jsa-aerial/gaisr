@@ -570,10 +570,10 @@
    within that sequence."
   [seq-start seq-end hit-start hit-end]
   (let [strand (if (> seq-start seq-end) -1 1)]
-    (if (> hit-start hit-end)
+    (if (neg? strand)
       ;; Reverse strand
-      [(+ seq-start hit-start)
-       (+ seq-start (dec hit-end))]
+      [(- seq-start hit-start)
+       (- seq-start (dec hit-end))]
       ;; Forward strand
       [(+ seq-start (dec hit-start))
        (+ seq-start hit-end)])))
@@ -1258,6 +1258,7 @@
                     flatten sort)
                stos)
         grpnm (opts :group-name)
+        sccs-suffix (or (opts :sccs-suffix) "*final.ent")
         sccs (config :sccs)
         sccs-dir (some #(when (= (first %) :out-dir) (second %)) sccs)
         sccs-dir (opts :sccs-dir (or sccs-dir csvdir))
@@ -1268,7 +1269,7 @@
             cm (->> (str "*" sb "*.cm")
                     (fs/join cmdir)
                     fs/glob first)
-            ent (->> (str "*" sb "*-final.ent")
+            ent (->> (str "*" sb sccs-suffix)
                      (fs/join sccs-dir)
                      fs/glob first)]
         (binding [default-genome-fasta-dir (@genome-db-dir-map refdb)]

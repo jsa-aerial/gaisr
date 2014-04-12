@@ -754,6 +754,17 @@
   (let [ex (math/expt Math/E (double x))]
     (/ ex (+ ex 1.0))))
 
+(defn logit
+  "Compute the log odds of P an element of interval [0..1].  LOGFN is
+   the logarithmic function to use and defaults to log2, log base 2.
+   Other directly available log functions are ln (or simply log) and
+   log10; for any other base see logb which can generate a log
+   function of base b. Returns logfn (p / (1 - p)), the inverse of
+   logistic.
+  "
+  [p & {:keys [logfn] :or {logfn log2}}]
+  (logfn (/ p (- 1 p))))
+
 
 (defn n!
   "For positive integer N, compute N factorial."

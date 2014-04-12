@@ -442,7 +442,6 @@
         ;;_ (print :re-cutoff2 re-cutoff "/ ")
         ;; Round to nearest thousandth
         re-cutoff (/ (round (* 1000 (+ re-cutoff 0.001))) 1000.0)]
-    #_(println :re-cutoff re-cutoff)
     (reduce (fn[cutpt re] (if (<= re re-cutoff) (inc cutpt) cutpt))
             0 (map second nm-res))))
 
@@ -450,7 +449,9 @@
   [re-points & {:keys [Dy Mre] :or {Mre 0.935}}]
   (if (seq re-points)
     (re-cdf-cut re-points Dy Mre)
-    0))
+    (raise :type :no-points
+           :msg "Cutpoint undefined on Empty set of relative entropy points!"
+           :re-points re-points :Dy Dy :Mre Mre)))
 
 
 (defn get-pos-neg-sets
@@ -546,14 +547,14 @@
                                         :refn refn :xlate xlate
                                         :refdb refdb :stodb stodb
                                         :delta delta)
-        ;; For hits, always use 0.9 on CDF (0.5 + Dy, For hits Dy defaults .4)
+        ;; For hits, always use 0.9 on CDF (0.5 + Dy, For hits Dy hard 0.4)
         Dy (if (zero? delta)
-             (if Dy Dy 0.4)
+             0.4
              (if Dy Dy
                  (case run 1 0.3, 2 0.25, 3 0.2, 4 0.1, 5 0.0, -0.1)))
-        ;; For hits, max out JSD at 0.9, in practice => CDF determines cut
+        ;; For hits, max out JSD at 0.7, in practice => CDF determines cut
         Mre (if (zero? delta)
-              0.9
+              0.7
               (if Mre Mre
                   (case run 1 0.953, 2 0.94, 3 0.935, 4 0.93, 0.927)))
 
@@ -735,6 +736,8 @@
                         (->> (compute-candidate-info
                               sto sto
                               (+ mindelta (* i 20)) 1
+                              ;; Force to 0.9 CDF and 0.99 Max RE
+                              :Dy 0.4 :Mre 0.99
                               :refn jensen-shannon
                               ;;:xlate +RY-XLATE+ :alpha ["R" "Y"]
                               :refdb stodb :stodb stodb
@@ -747,6 +750,8 @@
            nm (->> sto fs/basename (str/split #"-") first)
            ptfile (getfile (if plot plot (fs/dirname sto)) "-ctxsz.csv")
            out (if plot (getfile plot "-ctxsz.png") :display)]
+
+       (when (not (fs/exists? plot)) (fs/mkdirs plot))
 
        (when plot
          (render-chart
@@ -1029,7 +1034,10 @@
    files.
   "
   [csv-dir csv out-dir aggr]
-  (let [aggfn (fn[tgt-glob out-file]
+  (let [csv (if (not= (->> csv-dir fs/split second) (->> csv fs/split second))
+              (fs/join csv-dir csv) csv)
+        csv (->> csv fs/glob first)
+        aggfn (fn[tgt-glob out-file]
                 (-> (apply tools/entry-file-union true
                            (fs/glob tgt-glob))
                     (gen-entry-file out-file)))

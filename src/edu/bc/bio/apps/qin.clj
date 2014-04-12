@@ -61,6 +61,76 @@
         edu.bc.bio.sequtils.dists
         ))
 
+(->> "/home/kaila/Bio/Test/ROC-data/Ecoli/S15/Charts/S15-start-ctxsz.csv"
+     slurp csv/parse-csv butlast rest
+     (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
+     (map (fn[[l re]] [l (expt re (-> l log))])) (sort-by second) (take 10))
+
+(->> "/home/kaila/Bio/Test/ROC-data/Ecoli/S8/Charts/S8-start-ctxsz.csv"
+     slurp csv/parse-csv butlast rest
+     (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
+     (map (fn[[l re]] [l (expt re (-> l log))])) (sort-by second) (take 20))
+
+
+(->> "/home/kaila/Bio/Test/ROC-data/Sim//RF00174/CLU/Charts/clu-k41-1-ctxsz.csv"
+     slurp csv/parse-csv butlast rest
+     (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
+     (map (fn[[l re]] [l (expt re (-> l log))])) (sort-by second) (take 20))
+
+
+(->> "/home/kaila/Bio/Test/ROC-data/Sim/RF00379/CLU/Charts/clu-k10-3-ctxsz.csv"
+     slurp csv/parse-csv butlast rest
+     (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
+     (map second)
+     ((fn[coll] (let [mn (apply min coll)
+                      mx (apply max coll)]
+                  [mn mx (- mx mn) (mean coll)]))))
+
+(let [base "/home/kaila/Bio/Test/ROC-data/Sim//RF00634/CLU/Charts"]
+  (for [csv (-> base (fs/join "*ctxsz.csv") fs/glob)]
+    (->> csv
+         slurp csv/parse-csv butlast rest
+         (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
+         (map (fn[[l re]] [l (expt re (-> l log))]))
+         (sort-by second) (take 20))))
+
+
+(map #(map (fn[ent]
+             (let [[nm [s e] st] (entry-parts ent)]
+               (make-entry nm (- s 50) (+ e 100) st)))))
+
+(with-genome-db (@genome-db-dir-map :refseq58)
+  (->> "/home/kaila/Bio/Test/ROC-data/Sim/RF*" fs/glob sort
+       (map #(first (fs/glob (fs/join % "*NC.sto"))))
+       (map #(do [% (read-seqs % :info :name)]))
+       (map (fn[[f ents]]
+              [f (gen-name-seq-pairs ents :ldelta 50 :rdelta 100)]))
+       (map (fn[[f pairs]]
+              (nms-sqs->fasta-file pairs (fs/replace-type f ".fna"))))
+       (#(fs/move % "/home/kaila/Bio/Test/ROC-data/Sim/StartFastas"))))
+
+
+;;gaisr entry-file-set intersect -fuzzy 103 CSV/RF00050-seed-NC.sto.all-sim-db.cmsearch.csv RF00050-seed-NC.sto
+
+;;gaisr entry-file-set difference ../CSV/RF00050-seed-NC.sto.all-sim-db.cmsearch.csv RF00050-pos.ent
+
+;;; In RF00162, NC_003869/1750321-1750369/-1 is really a duplicate of
+;;; NC_003869/1750270-1750369/-1 in the SEED STO!!  So, this will
+;;; cause at least one false positive.
+;;;
+;;; In RF00168, there is another dup
+;;;
+;;; In RF00504, there are seven missing/dups
+;;;
+;;; In RF00557 missing or likely dup of 1
+;;;
+;;;
+
+;;;RF00114/CLU-G:
+;;;RF00521/CLU-G:
+;;;RF00555/CLU-G:
+
+
 
 (defn sto->ent [stofile & {:keys [entfile]}]
   (let [entfile (if entfile
@@ -69,28 +139,6 @@
     (io/with-out-writer entfile
       (doseq [ent (read-seqs stofile :info :name)]
         (println ent)))))
-
-(defn csv-bkup->ent [csv-bkup & {:keys [entfile]}]
-  (let [csv (->> csv-bkup slurp
-                 ((fn[x] (spit "/tmp/x.csv" x) "/tmp/x.csv")))
-        entfile (if entfile
-                  (fs/fullpath entfile)
-                  (fs/replace-type csv-bkup ".ent"))]
-    (io/with-out-writer entfile
-      (doseq [ent (get-entries csv)]
-        (println ent)))))
-
-(let [base "/home/kaila/Bio/Test/ROC-data/Sim"]
-  (doseq [rf (sort (->> (fs/join base "RF*") fs/glob (map fs/basename)))]
-    (let [TotDir (fs/join base rf "TotPosNeg")]
-      (when (not (fs/exists? TotDir)) (fs/mkdir TotDir))
-      (csv-bkup->ent
-       (->> (fs/join base rf "/CSV/*bkup*") fs/glob first slurp
-            ((fn[x] (spit "/tmp/x.csv" x) "/tmp/x.csv")))
-       :entfile (fs/join TotDir (str rf "-neg.ent")))
-      (sto->ent
-       (fs/join base rf (str rf "-seed-NC.sto"))
-       :entfile (fs/join TotDir (str rf "-pos.ent"))))))
 
 
 (def qin-2ksq-totcnts
@@ -260,9 +308,9 @@
 
 
 (defparameter eval-cut-points
-     [1.0e-23, 1.0e-21, 1.0e-19, 1.0e-15, 1.0e-11,
-      1.0e-9, 1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 0.001, 0.01
-      0.1 0.2 0.3 0.5 0.7 0.9 1.0 2.0 3.0 4.0 5.0 7.0])
+  [1.0e-33, 1.0e-30, 1.0e-29 1.0e-28 1.0e-27, 1.0e-24, 1.0e-21, 1.0e-18,
+   1.0e-15, 1.0e-11, 1.0e-9, 1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4,
+   0.001, 0.01 0.1 0.2 0.3 0.5 0.7 0.9 1.0])
 
 (count eval-cut-points)
 
@@ -280,7 +328,8 @@
                      fs/split
                      (take-until #(= % "CSV"))
                      ((fn[bits] (apply fs/join (conj (vec bits) "EVAL-ROC")))))]
-    (when (not (fs/exists? basedir)) (fs/mkdirs basedir))
+    (when (fs/exists? basedir) (fs/rm-rf basedir))
+    (fs/mkdirs basedir)
     (doseq [cpt eval-cut-points]
       (gen-entry-file
        (map first (take-until (fn[[n ev]] (> ev cpt)) evset))
@@ -302,6 +351,15 @@
   (build-eval-pos-neg-sets
  "/home/kaila/Bio/Test/ROC-data/S6M/CSV/Mid/S6-mid.sto.aggregate.cmsearch.csv"))
 
+;;; All Ecoli
+(doseq [f (fs/glob "/home/kaila/Bio/Test/ROC-data/Ecoli/S*")]
+  (let [csv (-> f (fs/join "CSV/*cmsearch.csv") fs/glob first)]
+    (build-eval-pos-neg-sets csv)))
+
+;;; All Sim
+(doseq [f (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")]
+  (let [csv (-> f (fs/join "CSV/*cmsearch.csv") fs/glob first)]
+    (build-eval-pos-neg-sets csv)))
 
 
 
@@ -309,36 +367,46 @@
   [& {:keys [base RNAs]
       :or {base "/home/kaila/Bio/Test/ROC-data"
            RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
-  (let [cutpts eval-cut-points]
-    (for [rna RNAs]
-      (let [totdir (fs/join base rna "TotPosNeg")
-            tot-pos (fs/join totdir (str rna "-pos.ent"))
-            tot-neg (fs/join totdir (str rna "-neg.ent"))
-            P (-> tot-pos get-entries count)
-            N (-> tot-neg get-entries count)]
-        (for [cpt cutpts
-              :let [dir (fs/join base rna "EVAL-ROC")
-                    pos-ent (fs/join dir (str "ev-" cpt "-pos.ent"))
-                    neg-ent (fs/join dir (str "ev-" cpt "-neg.ent"))]]
-          (let [tp (count (tools/entry-file-intersect true pos-ent tot-pos))
-                fn (count (tools/entry-file-intersect true neg-ent tot-pos))
-                fp (count (tools/entry-file-intersect true pos-ent tot-neg))
-                tn (count (tools/entry-file-intersect true neg-ent tot-neg))]
-            [rna cpt
-             {:TPR (true-positive-rate tp fn)
-              :FPR (false-negative-rate fp tn)
-              :MCC (mcc tp tn fp fn)
-              :ACC (acc tp tn P N)
-              :ppv (ppv tp fp)}])) ))))
+  (for [rna RNAs]
+    (let [dir (fs/join base rna "EVAL-ROC")
+          cutpts (->> (fs/glob (fs/join dir "/ev*-pos.ent"))
+                      (map fs/basename)
+                      (map #(->> % (str/split #"-")
+                                 rest butlast
+                                 (str/join "-"))))
+          totdir (fs/join base rna "TotPosNeg")
+          tot-pos (fs/join totdir (str rna "-pos.ent"))
+          tot-neg (fs/join totdir (str rna "-neg.ent"))
+          P (-> tot-pos get-entries count)
+          N (-> tot-neg get-entries count)]
+      (for [cpt cutpts
+            :let [pos-ent (fs/join dir (str "ev-" cpt "-pos.ent"))
+                  neg-ent (fs/join dir (str "ev-" cpt "-neg.ent"))]]
+        (let [tp (count (tools/entry-file-intersect true pos-ent tot-pos))
+              fn (count (tools/entry-file-intersect true neg-ent tot-pos))
+              fp (count (tools/entry-file-intersect true pos-ent tot-neg))
+              tn (count (tools/entry-file-intersect true neg-ent tot-neg))]
+          [rna cpt
+           {:TPR (true-positive-rate tp fn)
+            :FPR (false-positive-rate fp tn)
+            :MCC (mcc tp tn fp fn)
+            :ACC (acc tp tn P N)
+            :ppv (ppv tp fp)}])) )))
 
 (eval-roc-data)
+(def eval-ecoli
+     (eval-roc-data
+      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
+      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
 
-
-(->> (range -0.2 6 0.2) (map logistic) (take 25))
+(->> (range 0.25 0.55 0.01) (map #(do [% (logistic %)])) (take 25))
+(->> (range 1.9 3.0 0.04) (map #(do [% (logistic %)])) (take 25))
+(->> (range 1.8 3.0 0.03) (map #(do [% (logistic %)])) (take 25))
+(->> (range 2.42 3.0 0.03) (map logistic) (take 6))
 
 (defparameter sccs-cut-points
-  (->> (range -3.7 6 0.4) (map logistic))
-  #_(->> (range -0.2 6 0.2) (map logistic) (take 25)) ;
+  #_(->> (range -3.7 6 0.4) (map logistic))
+  (->> (range -0.2 6 0.2) (map logistic) (take 25)) ; single
   #_(->> (range -0.25 4.0 0.1) (map logistic) (take 25)) ; multi
   #_[0.1, 0.2, 0.3, 0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, ; by hand
      0.9, 0.925 0.93 0.935 0.94 0.945 0.95 0.955 0.96 0.97
@@ -370,7 +438,9 @@
        :refdb :refseq58 :stodb :refseq58
        :crecut 0.01 :limit 19
        :Dy 0.49 :Mre Mre
-       :plot-dists chart-dir))
+       :plot-dists chart-dir)
+      (when (> (fd-use) 9000) ; BOGUS??  Why are we leaking FDs???
+        (force-gc-finalize)))
 
     (when clusters
       (let [stonm (->> bits last (str/split #"\.") first)
@@ -480,6 +550,15 @@
                                    rf "CSV" ) ".cmsearch.csv")
                          first)))))))
 
+;;; Old, New
+(let [all (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+               (map #(->> % fs/basename (str/split #"-") first)))
+      new (->> (fs/glob "/data2/BioData/RFAM-NC/NC/*.sto")
+               (map #(->> % fs/basename (str/split #"-") first)))
+      old (set/difference (set all) (set new))]
+  (sort old))
+
+
 (->> (fs/directory-files
       "/home/kaila/Bio/Test/ROC-data/Sim/RF00521/CLU-G" ".sto")
      (map #(sccs/save-hit-context-delta %)))
@@ -488,27 +567,34 @@
 (defn sccs-roc-data [& {:keys [base RNAs]
                         :or {base "/home/kaila/Bio/Test/ROC-data"
                              RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
-  (let [cutpts sccs-cut-points]
-    (for [rna RNAs]
-      (let [totdir (fs/join base rna "TotPosNeg")
-            tot-pos (fs/join totdir (str rna "-pos.ent"))
-            tot-neg (fs/join totdir (str rna "-neg.ent"))
-            P (-> tot-pos get-entries count)
-            N (-> tot-neg get-entries count)]
-        (for [cpt cutpts
-              :let [dir (fs/join base rna "SCCS-ROC")
-                    pos-ent (fs/join dir (str "sccs-" cpt "-pos.ent"))
-                    neg-ent (fs/join dir (str "sccs-" cpt "-neg.ent"))]]
-          (let [tp (count (tools/entry-file-intersect true pos-ent tot-pos))
-                fn (count (tools/entry-file-intersect true neg-ent tot-pos))
-                fp (count (tools/entry-file-intersect true pos-ent tot-neg))
-                tn (count (tools/entry-file-intersect true neg-ent tot-neg))]
-            [rna cpt
-             {:TPR (true-positive-rate tp fn)
-              :FPR (false-negative-rate fp tn)
-              :MCC (mcc tp tn fp fn)
-              :ACC (acc tp tn P N)
-              :ppv (ppv tp fp)}])) ))))
+  (for [rna RNAs]
+    (let [dir (fs/join base rna "SCCS-ROC")
+          cutpts (->> (fs/glob (fs/join dir "/sccs*-pos.ent"))
+                      (map fs/basename)
+                      (map #(->> % (str/split #"-") second)) sort)
+          totdir (fs/join base rna "TotPosNeg")
+          tot-pos (fs/join totdir (str rna "-pos.ent"))
+          tot-neg (fs/join totdir (str rna "-neg.ent"))
+          P (-> tot-pos get-entries count)
+          N (-> tot-neg get-entries count)]
+      (for [cpt cutpts
+            :let [pos-ent (fs/join dir (str "sccs-" cpt "-pos.ent"))
+                  neg-ent (fs/join dir (str "sccs-" cpt "-neg.ent"))]]
+        (let [tp (count (tools/entry-file-intersect true pos-ent tot-pos))
+              fn (count (tools/entry-file-intersect true neg-ent tot-pos))
+              fp (count (tools/entry-file-intersect true pos-ent tot-neg))
+              tn (count (tools/entry-file-intersect true neg-ent tot-neg))]
+          [rna cpt
+           {:TPR (true-positive-rate tp fn)
+            :FPR (false-positive-rate fp tn)
+            :MCC (mcc tp tn fp fn)
+            :ACC (acc tp tn P N)
+            :ppv (ppv tp fp)}])) )))
+
+(def sccs-ecoli
+     (sccs-roc-data
+      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
+      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
 
 
 (defn build-chart [rna sccs-data eval-data]
@@ -537,8 +623,11 @@
         eval-data (eval-roc-data :base base :RNAs RNAs)]
     (doseq [i (range 0 (count RNAs))]
       (let [chart (build-chart (nth RNAs i) (nth sccs-data i) (nth eval-data i))
-            chart-file (fs/join base "Plots"
+            plot-dir (fs/join base "Plots")
+            chart-file (fs/join plot-dir
                                 (str (nth RNAs i) "-roc-plot.png"))]
+        (when (not (fs/directory? plot-dir))
+          (fs/mkdir plot-dir))
         (incanter.core/view chart)
         (incanter.core/save
          chart chart-file :width 500 :height 500)))))
@@ -547,31 +636,34 @@
 
 
 (defn csv-roc-data
-  [& {:keys [base RNAs]
+  [& {:keys [base RNAs subname]
       :or {base "/home/kaila/Bio/Test/ROC-data"
-           RNAs ["L20" "S15" "S4" "S6S" "S6M"]}}]
-  (let [sccs-data (sccs-roc-data :base base :RNAs RNAs)
+           RNAs ["L20" "S15" "S4" "S6S" "S6M"]
+           subname ""}}]
+  (let [subname (if (= subname "") "-" (str "-" subname "-"))
+        sccs-data (sccs-roc-data :base base :RNAs RNAs)
         eval-data (eval-roc-data :base base :RNAs RNAs)
         step (/ 1.0 (->> sccs-data first count))
         cols ["RNA" "Cutpt" "TPR" "FPR" "Type"]
         guess (map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 step))
         xf #(map (fn[[nm cpt vm]]
-                   (cons nm (map str [cpt (vm :TPR) (vm :FPR) %1])))
-                 %2)]
+                   (let [cpt (if (= %1 "SCCS")
+                               (/ (floor (* (Double. cpt) 10000.0)) 10000.0)
+                               cpt)]
+                   (cons nm (map str [cpt (vm :TPR) (vm :FPR) %1]))))
+                 %2)
+        data-dir (fs/join base "ROCdata")]
+    (when (not (fs/directory? data-dir)) (fs/mkdirs data-dir))
     (println step guess)
     (doseq [i (range 0 (count RNAs))]
       (let [sccsi (xf "SCCS" (nth sccs-data i))
             evali (xf "EVAL" (nth eval-data i))
             all (concat sccsi evali guess)]
-        (spit (fs/join base (str (ffirst all) "-both.csv"))
+        (spit (fs/join data-dir (str (ffirst all) subname "both.csv"))
               (csv/write-csv (cons cols all)))))))
 
-(csv-roc-data :RNAs ["S6S" "S6M"])
-
-(count (map #(do ["" "" % % "Guess"]) (range 0.0 1.0 0.05)))
-
-(map #(do ["" "" (str %) (str %) "Guess"]) (range 0.0 1.0 0.05))
-
+(csv-roc-data :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
+              :RNAs ["L1" "L10" "L20" "L4" "S1" "S15" "S2" "S4" "S7" "S8"])
 
 
 
@@ -617,8 +709,7 @@
 (defn build-sim-config-files
   []
   (let [sim-dir "/home/kaila/Bio/Test/ROC-data/Sim"
-        dirs (->> (fs/directory-files sim-dir "")
-                  (filter #(not (re-find #"run" %)))
+        dirs (->> (fs/glob (fs/join sim-dir "RF0*"))
                   sort)
         runtxts (->> (fs/directory-files sim-dir ".txt")
                      (map #(do [(fs/basename %) (io/read-lines %)])))]
@@ -639,6 +730,125 @@
 
 (build-sim-config-files)
 
+
+
+
+
+
+;;;
+
+
+#_(defn get-rf-full-sets-cmcsvs [& {:keys [cutpt] :or {cutpt 1.0e-12}}]
+  (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+       (map #(-> % (fs/join "CSV/*cmsearch.csv") fs/glob first))
+       (map #(do [(->> % fs/basename (str/split #"-") first)
+                  (-> % slurp csv/parse-csv  rest butlast)]))
+       (sort-by first)
+       (map (fn[[n recs]] [n (sort-by (fn[x] (Float. (nth x 9))) recs)]))
+       (map (fn[[n recs]] [n (take-until #(> (Float. (nth % 9)) cutpt) recs)]))
+       #_(map (fn[[n recs]] [n (count recs)]))))
+
+
+
+(defn csv-recs-to-entries [csv-info-recs]
+  (keep (fn[[nm s e sd]]
+          (when (fs/exists? (fs/join (default-genome-fasta-dir nm)
+                                     (str nm ".fna")))
+            (str nm "/"
+                 (if (> (Integer. s) (Integer. e))
+                   (str e "-" s "/-1")
+                   (str s "-" e "/1")))))
+        csv-info-recs))
+
+(defn sane-csv-info [rows]
+  (reduce (fn[res rec]
+            (conj res [(rec 0) (rec 3) (rec 4) (rec 9)]))
+          [] rows))
+
+(defn get-rf-rs58-sets [& {:keys [cutpt] :or {cutpt 1.0e-1}}]
+  (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/TMP/Sim/RF*")
+       (map #(-> % (fs/join "Pre*") fs/glob first))
+       (map #(-> % (fs/join "*.csv") fs/glob first))
+       (map #(do [(->> % fs/basename (str/split #"-") first)
+                  (-> % slurp csv/parse-csv rest butlast sane-csv-info)]))
+       (sort-by first)
+       (map (fn[[n recs]] [n (sort-by (fn[x] (Float. (last x))) recs)]))
+       (map (fn[[n recs]] [n (take-until #(> (Float. (last %)) cutpt) recs)]))
+       (map (fn[[n recs]] [n (->> recs csv-recs-to-entries
+                                 gen-name-seq-pairs vec)]))
+       #_(map (fn[[n recs]] [n (count recs)]))))
+
+
+(defn get-rf-full-sets []
+  (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
+       (map #(-> % fs/basename (str "-full.sto")))
+       (map #(fs/join "/data2/Bio/RFAM" %))
+       (map #(do [(->> % fs/basename (str/split #"-") first)
+                  (-> % (read-seqs :info :both))]))
+       (sort-by first)
+       (map (fn[[n sqs]]
+              [n (vec (map (fn[[ent sq]]
+                             [ent (->> sq degap-seqs norm-elements)])
+                           sqs))]))
+       #_(map (fn[[n recs]] [n (count recs)]))))
+
+
+(defn get-set-counts [& {:keys [cpt58]
+                         :or {cpt58 1.0e-1}}]
+  (let [rs58s (get-rf-rs58-sets :cutpt cpt58)
+        rfFulls (get-rf-full-sets)]
+    (map (fn[[n58 recs58] [nfull recsfull]]
+           (let [cnt58 (count recs58)
+                 cntfull (count recsfull)
+                 m (min cnt58 cntfull)
+                 mx (max cnt58 cntfull)
+                 cnt (if (not= 0 m) m (min mx 100))
+                 cnt (cond (< cnt 20) (if (< mx 100) mx 100)
+                           (> cnt 100) 100
+                           :else cnt)]
+             {:name n58 :cnt cnt :cnt2 (* 2 cnt)
+              :cnt58 cnt58 :cntfull cntfull}))
+         rs58s rfFulls)))
+
+(defn get-sample-sets [& {:keys [cpt58]
+                          :or {cpt58 1.0e-1}}]
+  (let [rs58s (get-rf-rs58-sets :cutpt cpt58)
+        rfFulls (get-rf-full-sets)]
+    (map (fn[[n58 recs58] [nfull recsfull]]
+           (let [cnt58 (count recs58)
+                 cntfull (count recsfull)
+                 m (min cnt58 cntfull)
+                 mx (max cnt58 cntfull)
+                 cnt (if (not= 0 m) m (min mx 100))
+                 cnt (cond (< cnt 20) (if (< mx 100) mx 100)
+                           (> cnt 100) 100
+                           :else cnt)]
+             {:name n58 :cnt cnt :cnt58 cnt58 :cntfull cntfull
+              :set58 (take cnt recs58)
+              :setfull (take (* 2 cnt) recsfull)}))
+         rs58s rfFulls)))
+
+
+(def sim-sample-sets (get-sample-sets))
+
+(->> sim-sample-sets (map :set58)
+     (map #(do [(count %) (mean (map (fn[[ent sq]] (count sq)) %))])))
+(->> sim-sample-sets (map :setfull)
+     (map #(do [(count %) (mean (map (fn[[ent sq]] (count sq)) %))])))
+
+(let [base "/home/kaila/Bio/Test/ROC-data/Sim/AllDBSeeds"
+      samples-58 (->> sim-sample-sets (map #(do [(:name %) (:set58 %)])))
+      samples-full (->> sim-sample-sets (map #(do [(:name %) (:setfull %)])))
+      sample-sets (map (fn[[n58 ents-sqs58] [nfull ents-sqsfull]]
+                         (if (not= n58 nfull)
+                           (raise :name-mismatch :n58 n58 :nfull nfull)
+                           [n58 (concat ents-sqs58 ents-sqsfull)]))
+                       samples-58 samples-full)]
+  (doseq [[nm ents-sqs] sample-sets]
+    (nms-sqs->fasta-file ents-sqs (fs/join base (str nm "-sample.fna")))))
+
+
+
 ;;; Generate simulated context locations.
 ;;;
 (def exon-select
@@ -653,7 +863,7 @@
                    loc.seqfeature_id=sf.seqfeature_id and
                    be.name=\"/name/\" and
                    loc.start_pos > /start/ and
-                   loc.strand = /strand/ limit 50")
+                   loc.strand = /strand/ limit 30")
 "NC_017986"
 
 (->>
@@ -707,27 +917,19 @@
   (let [sim-files (sort (fs/glob "/data2/BioData/RFAM-NC/NC/*simout*.ent"))
         simctxs (->> sim-files
                      (map #(read-seqs % :info :name))
-                     (#(random-subset % (floor (/ (count %) 2))))
                      (map (fn[ents]
                             (map #(let [[nm [s e] std] (entry-parts %)
                                         rdelta (+ (- e s) 850)]
                                     (gen-name-seq % :ldelta 100 :rdelta rdelta))
                                  ents))))
-        fullsamps (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
-                       (filter #(fs/directory? %)) sort
-                       (map #(-> % (fs/join "PrelimCSV")
-                                 (fs/directory-files ".cmsearch.csv")
-                                 first))
-                       (map #(get-csv-entry-info %))
-                       (map (fn[x](filter #(> (Double. (nth % 3)) 1.0e-2) x)))
-                       (map #(map (fn[[n s e]]
-                                    (let [[s e] [(Integer. s) (Integer. e)]
-                                          [s e std] (if (> s e)
-                                                      [e s -1]
-                                                      [s e 1])]
-                                      (make-entry n s e std))) %))
-                       (map #(->> % gen-name-seq-pairs (map second)))
-                       (map vec))]
+        fullsamps (->> "/home/kaila/Bio/Test/ROC-data/Sim/AllDBSeeds/*.fna"
+                       fs/glob sort
+                       (map #(vec (read-seqs % :info :data))))]
+
+    (println :sim-files (count sim-files)
+             :simctxs (count simctxs)
+             :fullsamps (count fullsamps))
+
     (doseq [[f nm-sqs] (map (fn[sim-file seed-simctxs ncRNAs]
                               [(fs/replace-type sim-file ".fna")
                                (map (fn[[ent ctxseq]]
@@ -793,6 +995,12 @@
           (println sq))))))
 
 
+
+
+
+
+
+
 ;;; Backup original search good output CSVs
 ;;;
 (doseq [f (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
@@ -817,27 +1025,22 @@
       (doseq [l (io/read-lines ocsv)] (println l))
       (doseq [l (io/read-lines csv)] (println l)))))
 
+
 ;;; Create seed CSVs to be unioned to output CSV results
 ;;;
-(let [dirs (->> (fs/directory-files "/home/kaila/Bio/Test/ROC-data/Sim" "")
-                (filter #(re-find #"RF0" %)))
-      seeds (->> dirs (map #(-> % fs/basename (str "-seed-NC.sto")))
-                 (map #(fs/join %1 %2) dirs))
-      csvs (map #(fs/replace-type % ".csv") seeds)]
-  (doseq [[seed csv] (partition-all 2 (interleave seeds csvs))]
-    (->> (get-sto-as-csv-info seed)
-         (map (fn[[nm s e _ _ _ std]]
-                (csv/csv-to-stg
-                 (map str [nm 1 2 s e std 11 22 0.0 1.0e-31 0.0 0.0]))))
-         doall (str/join "\n")
-         (spit csv)))
-  (let [CSVs (map #(fs/join % "CSV") dirs)
-        out-csvs (map #(first (fs/directory-files % "cmsearch.csv.bkup")) CSVs)
-        csv-pairs (sort-by first (partition-all 2 (interleave out-csvs csvs)))]
-    (doseq [[ocsv csv] csv-pairs]
-      (io/with-out-writer (fs/replace-type ocsv "")
-        (doseq [l (io/read-lines ocsv)] (println l))
-        (doseq [l (io/read-lines csv)] (println l))))))
+(defn gen-sto-csvs [& {:keys [base RNAs name]
+                       :or {base "/home/kaila/Bio/Test/ROC-data/Ecoli"
+                            RNAs ["S1" "S2" "S4" "L4" "L1" "L10"]
+                            name "foo.sto"}}]
+  (let [seeds (map #(fs/join base % name) RNAs)
+        csvs (map #(-> base (fs/join % (str name "-missing.csv"))) RNAs)]
+    (doseq [[seed csv] (partition-all 2 (interleave seeds csvs))]
+      (->> (get-sto-as-csv-info seed :ev 1.3)
+           (map (fn[[nm s e ev _ _ std]]
+                  (csv/csv-to-stg
+                   (map str [nm 1 2 s e std 11 22 0.0 ev 0.0 0.0]))))
+           doall (str/join "\n")
+           (spit csv)))))
 
 
 

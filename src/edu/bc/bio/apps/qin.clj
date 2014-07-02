@@ -66,10 +66,13 @@
      (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
      (map (fn[[l re]] [l (expt re (-> l log))])) (sort-by second) (take 10))
 
+(sccs/score-ctx
+ "/home/kaila/Bio/Test/ROC-data/Ecoli/S8/Charts/S8-start-ctxsz.csv")
+
 (->> "/home/kaila/Bio/Test/ROC-data/Ecoli/S8/Charts/S8-start-ctxsz.csv"
      slurp csv/parse-csv butlast rest
      (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
-     (map (fn[[l re]] [l (expt re (-> l log))])) (sort-by second) (take 20))
+     (map (fn[[l re]] [l (expt re (-> l log))])) (sort-by second) (take 10))
 
 
 (->> "/home/kaila/Bio/Test/ROC-data/Sim//RF00174/CLU/Charts/clu-k41-1-ctxsz.csv"
@@ -591,11 +594,6 @@
             :ACC (acc tp tn P N)
             :ppv (ppv tp fp)}])) )))
 
-(def sccs-ecoli
-     (sccs-roc-data
-      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
-      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
-
 
 (defn build-chart [rna sccs-data eval-data]
   (let [sccs-data (map last sccs-data)
@@ -665,44 +663,6 @@
 (csv-roc-data :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
               :RNAs ["L1" "L10" "L20" "L4" "S1" "S15" "S2" "S4" "S7" "S8"])
 
-
-
-
-
-(def bioinfo-table-template
-     ["{\\scriptsize \\begin{tabular}{ll|lllll}\\toprule"
-      "ncRNA  & xxctpt  & AUC    & TPR    & SPC    & PPV    & MCC " "\\toprule"
-      "S1EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S4EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S7EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S8EC   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S15EC  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "L20BS  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S4BS   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S6BS   & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "S15BS  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam1  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam2  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam3  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam4  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam5  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam6  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam7  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam8  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam9  & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam10 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam11 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam12 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam13 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam14 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam15 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam16 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam17 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam18 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam19 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "Rfam20 & /ctpt/  & /auc/  & /tpr/  & /spc/  & /ppv/  & /mcc/"
-      "\\botrule"
-      "\\end{tabular}}"])
 
 
 

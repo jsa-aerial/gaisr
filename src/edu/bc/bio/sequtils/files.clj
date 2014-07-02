@@ -910,7 +910,7 @@
           ("fna" "fa" "hitfna" "fasta")
           (if (= info :data)
             second
-            #(re-find #"[A-Za-z0-9._/-]+" (first %))))))
+            #(str/replace-re #">+" "" (first %))))))
 
 (defn read-seqs
   "Read the sequences in FILESPEC and return set as a lazy (Clojure!)
@@ -924,7 +924,7 @@
                          (and (not= l "") (not (.startsWith l "#"))))
                       (io/read-lines filespec))
           sqs (if (re-find #"^CLUSTAL" (first sqs)) (rest sqs) sqs)
-          sqs (drop-until #(re-find #"^(>[A-Za-z]|[A-Za-z])" %) sqs)
+          sqs (drop-until #(re-find #"^(>|)[A-Za-z0-9@]" %) sqs)
           sqs (if (in type ["fna" "fa" "hitfna" "fasta"]) (partition 2 sqs) sqs)
           sqs (if (= type "sto") (take-while #(re-find #"^[A-Z]" %) sqs) sqs)]
       (map f sqs))))

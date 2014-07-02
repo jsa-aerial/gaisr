@@ -203,8 +203,7 @@
 
 
 (defn third [coll]
-  (when (> (count coll) 2)
-    (nth coll 2)))
+  (->> coll (drop 2) first))
 
 
 (defn drop-until

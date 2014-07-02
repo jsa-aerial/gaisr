@@ -96,7 +96,7 @@
    classifier.  TP and TN are the classification TruePostives and
    TrueNegatives respectivel.  AP and AN are the ActualPositives and
    ActualNegatives respectively.  Ratio of sum of correct
-   classifications to total values: (TP + TN) / (P + N), so result
+   classifications to total values: (TP + TN) / (AP + AN), so result
    lies in [0, 1]
   "
   [tp tn ap an]
@@ -137,86 +137,6 @@
 
 
 
-
-
-
-#_(def eval-sim
-     (eval-roc-data
-      :base "/home/kaila/Bio/Test/ROC-data/Sim"
-      :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
-                 (map fs/basename) sort)))
-
-#_(def sccs-sim
-     (sccs-roc-data
-      :base "/home/kaila/Bio/Test/ROC-data/Sim"
-      :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
-                 (map fs/basename) sort)))
-
-#_(def sccs-scores
-     (->> (sccs-roc-data
-           :base "/home/kaila/Bio/Test/ROC-data/Sim"
-           :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
-                      (map fs/basename) sort))
-          (map #(ROC-opt-classifier-pt
-                 % (fn[[nm cpt M]] (M :TPR)) (fn[[nm cpt M]] (M :FPR))))
-          (sort-by first)))
-
-#_(def eval-scores
-     (->> (eval-roc-data
-           :base "/home/kaila/Bio/Test/ROC-data/Sim"
-           :RNAs (->> (fs/glob "/home/kaila/Bio/Test/ROC-data/Sim/RF*")
-                      (map fs/basename) sort))
-          (map #(ROC-opt-classifier-pt
-                 % (fn[[nm cpt M]] (M :TPR)) (fn[[nm cpt M]] (M :FPR))))
-          (sort-by first)))
-
-
-#_(->> (map (fn[[sc [n & r]] [esc [en & er]]]
-            (if (not= n en)
-              (raise :type :name-mismatch :n n :en en)
-              [n sc esc]))
-          (sort-by #(-> % second first) sccs-scores)
-          (sort-by #(-> % second first) eval-scores))
-     (sort-by second))
-
-
-
-
-#_(def eval-ecoli
-     (eval-roc-data
-      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
-      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
-
-#_(def sccs-ecoli
-     (sccs-roc-data
-      :base "/home/kaila/Bio/Test/ROC-data/Ecoli"
-      :RNAs ["S1" "S4" "S7" "S8" "S15"]))
-
-
-#_(->> eval-sim
-     (map #(reduce (fn[[r x] [nm cpt M :as R]]
-                     (let [tpr (M :TPR)
-                           fpr (M :FPR)
-                           sc (- 1 (- tpr fpr))]
-                       (if (< sc r)
-                         [sc R]
-                         [r x])))
-                   [10.0 {}] %))
-     (sort-by first))
-
-#_(->> sccs-sim
-     (map #(reduce (fn[[r x] [nm cpt M :as R]]
-                     (let [tpr (M :TPR)
-                           fpr (M :FPR)
-                           sc (- 1 (- tpr fpr))]
-                       (if (< sc r)
-                         [sc R]
-                         [r x])))
-                   [10.0 {}] %))
-     (sort-by first))
-
-
-
 (defn ROC-opt-classifier-pt
   ""
   [pts tprfn fprfn]
@@ -236,7 +156,9 @@
   "
   [pts]
   (sum (fn[[[xi yi :as A] [xj yj :as B] :as C]]
-         (let [[[xi yi] [xj yj]] (if (< yi yj) C [B A])]
-           (+ (* (math/abs (- xi xj)) yi)           ; rectangle
-              (* (math/abs (- xi xj)) (- yj yi))))) ; triangle
+         (let [[[xi yi] [xj yj]] (if (< yi yj) C [B A])
+               base (math/abs (- xj xi))
+               height (- yj yi)]
+           (+ (* base yi)  ; rectangle
+              (* 1/2 base height)))) ; triangle
        pts))

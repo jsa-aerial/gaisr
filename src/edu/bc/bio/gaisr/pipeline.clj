@@ -1203,8 +1203,8 @@
             _ (assert-files? csv-path)
             cmscsv (first (fs/glob csv-path))
             run (or run (sccs-run sb))
-            [csz gfcsz-found] (sccs/hit-context-delta
-                               sto :stodb stodb :plot chart-dir)]
+            [[[csz _]] gfcsz-found] (sccs/hit-context-delta
+                                     sto :stodb stodb :plot chart-dir)]
         (when (not gfcsz-found) ; If gen-stos runs and need to save ctxsz
           (swap! ctxsz #(assoc % sb csz)))
         (sccs/compute-candidate-sets
@@ -1253,7 +1253,7 @@
         opts (into {} gen-stos)
         stos (opts :stos stos)
         stos (if (string? stos)
-               (->> (str/split #"\s+" stos)
+               (->> (str/split #"[,\s]+" stos)
                     (map #(fs/glob (fs/join stodir %)))
                     flatten sort)
                stos)

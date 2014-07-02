@@ -374,7 +374,13 @@
 ;;; Sequence shuffling with nucleotide/aa frequency distributions
 ;;; preserved.  Currently only provides support for dinucleotide
 ;;; distributions.  Which is basically bogus, but the most typical use
-;;; case??
+;;; case for us.
+;;;
+;;; Also this entire thing needs to be rewritten to better reflect
+;;; proper functional approach and it would help a great deal if the
+;;; main functions were DOCUMENTED!!!  I know this is premordial
+;;; stuff, and it has the benefit of actually working, but it is
+;;; basically embarassing in its current state.
 
 
 (defn nt-cntn
@@ -398,8 +404,8 @@
      (keep #(when (= (subs (first %1) 1 2) "t") %1) test-nts))
 
 
-(def limit-counter (atom 50000))
-(def print-limit-info (atom nil))
+(defparameter limit-counter (atom 50000))
+(defparameter print-limit-info (atom nil))
 
 (defn check-limit [start len ss newseq nts-map]
   (swap! limit-counter dec)
@@ -409,9 +415,15 @@
     (raise :type :explode)))
 
 
-(def shuffles nil)
+(defparameter shuffles nil)
 
-(defn dint-shuffle [start len nts-map legal-ends ss newseq & base-starters]
+(defn dint-shuffle
+  "THIS NEEDS TO BE REDONE!  NOTE IT CAN'T BE CALLED OUTSIDE OF WHERE
+   IT IS CALLED IN dint-seq-shuffle, DUE TO EGREGIOUSLY POOR GLOBAL
+   BINDINGS AND SUCH.
+  "
+  [start len nts-map legal-ends ss newseq &
+  base-starters]
   (cond
    (and (= len 0) (some #(= (last newseq) (first %1)) legal-ends))
    (str ss (subs (last newseq) 1 2))

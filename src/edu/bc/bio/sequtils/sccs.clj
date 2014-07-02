@@ -3,7 +3,7 @@
 ;;                      S E Q U T I L S . S C C S                           ;;
 ;;                                                                          ;;
 ;;                                                                          ;;
-;; Copyright (c) 2011-2013 Trustees of Boston College                       ;;
+;; Copyright (c) 2011-2014 Trustees of Boston College                       ;;
 ;;                                                                          ;;
 ;; Permission is hereby granted, free of charge, to any person obtaining    ;;
 ;; a copy of this software and associated documentation files (the          ;;
@@ -687,6 +687,24 @@
                first (re-find #"CTXSZ\s+([0-9]+|)") second)]
     (if l (Integer. l) nil)))
 
+(defn score-ctx
+  "Power law scoring function for context sizes based on hit context
+   delta relative entropies.  The entropies and lengths are encoded in
+   CSV format in the file CTXSZ-CSV as computed and written by
+   hit-context-delta.  Returns the 'best' 10 scores (delta lengths).
+
+   hit-context-delta by default returns the first, i.e., 'best', such
+   score as its last action when doing a full computation of delta
+   contexts.
+  "
+  [ctxsz-csv]
+  (->> ctxsz-csv
+       slurp csv/parse-csv butlast rest
+       (map (fn[[lstg restg nm]] [(Integer. lstg) (Float. restg)]))
+       (map (fn[[l re]] [l (expt re (-> l log))]))
+       (sort-by second)
+       (take 10)))
+
 (defn hit-context-delta
   "Find the genomic context delta for the RNA sequences in STO (a sto
    file) based on conserved information content of the downstream (3'
@@ -722,12 +740,13 @@
         stodb (@genome-db-dir-map (if stodb stodb :refseq58))]
     (cond
      ;; Saved in sto from some previous run
-     gfcsz [gfcsz true]
+     gfcsz [(list [gfcsz 0.0]) true]
 
      ;; If only one seq, all deltas give JSD 0, so mindelta
-     (= 1 (count (doall (read-seqs sto :info :name)))) [mindelta false]
+     (= 1 (count (doall (read-seqs sto :info :name))))
+     [(list [mindelta 0.0]) false]
 
-     :else ;; compute and select min over delta range
+     :else ;; compute and select max-min over delta range
      (let [getfile (fn [dir suffix]
                      (->> sto fs/basename
                           (#(fs/replace-type % suffix))
@@ -751,7 +770,7 @@
            ptfile (getfile (if plot plot (fs/dirname sto)) "-ctxsz.csv")
            out (if plot (getfile plot "-ctxsz.png") :display)]
 
-       (when (not (fs/exists? plot)) (fs/mkdirs plot))
+       (when (and plot (not (fs/exists? plot))) (fs/mkdirs plot))
 
        (when plot
          (render-chart
@@ -762,7 +781,7 @@
           :legend true))
        (write-plot-data-csv
         ptfile ["Extension" "JSD mean" "Name"] szs ms nm)
-       [(+ mindelta (* 20 (last (pos (apply min pts) pts)))) false]))))
+       [(score-ctx ptfile) false]))))
 
 (defn save-hit-context-delta
   "Compute the hit context delta for the sequences in stofile (see
